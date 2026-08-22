@@ -209,6 +209,10 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
 
+    // LOAD CUSTOM TEXTURES HERE
+    const archerSprite = new Image();
+    archerSprite.src = 'assets/textures/archer.jpg';
+
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playSound(type) {
@@ -926,7 +930,10 @@
             
             if (this.cls === 'warrior') { ctx.fillStyle = '#8899a6'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#111'; ctx.fillRect(6, -6, 12, 12); ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, 10, 5, 20); ctx.fillStyle = '#eee'; ctx.fillRect(20, 12, 25, 6); if (this.abTimer > 0) { ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0, 100*this.whirlMod, 0, Math.PI*2); ctx.stroke(); } } 
             else if (this.cls === 'mage') { ctx.fillStyle = '#2b2b80'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#1a1a4d'; ctx.beginPath(); ctx.moveTo(-5, -15); ctx.lineTo(20, 0); ctx.lineTo(-5, 15); ctx.fill(); ctx.fillStyle = '#6b4226'; ctx.fillRect(10, 12, 35, 5); ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.arc(45, 14, 7, 0, Math.PI*2); ctx.fill(); } 
-            else if (this.cls === 'archer') { ctx.fillStyle = '#2d5a27'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#f5d0b5'; ctx.beginPath(); ctx.arc(8, 0, 10, -Math.PI/2, Math.PI/2); ctx.fill(); ctx.strokeStyle = '#6b4226'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(20, 0, 15, -Math.PI/2, Math.PI/2); ctx.stroke(); } 
+            else if (this.cls === 'archer') { 
+                // Using your archer.jpg sprite
+                ctx.drawImage(archerSprite, -20, -20, 40, 40); 
+            } 
             else if (this.cls === 'priest') { ctx.fillStyle = '#e6e6e6'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffcc00'; ctx.fillRect(10, 12, 30, 4); ctx.fillRect(32, 6, 4, 16); }
             ctx.restore();
             if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 30, 0, Math.PI*2); ctx.stroke(); }
