@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusDefend - Tower Defense Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background-color: #2a2a2a;
+            border: 3px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00ff00;
+            font-size: 14px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="info">
+            <p>Game v1.0</p>
+            <p>Textures loaded from: /assets/textures/</p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas size
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // Simple game loop
+        function gameLoop() {
+            // Clear canvas
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            // Draw placeholder
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '20px Arial';
+            ctx.fillText('Game Ready - Add textures to /assets/textures/', 150, 300);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        gameLoop();
+
+        // Example: Load and display a texture
+        function loadTexture(path, callback) {
+            const image = new Image();
+            image.onload = () => callback(image);
+            image.onerror = () => console.error('Failed to load texture:', path);
+            image.src = path;
+        }
+
+        // You can use this to load your custom textures
+        // loadTexture('./assets/textures/my-texture.png', (img) => {
+        //     ctx.drawImage(img, 0, 0);
+        // });
+    </script>
+</body>
+</html>
