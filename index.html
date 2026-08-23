@@ -197,8 +197,8 @@
     // --- SPRITE CALIBRATION SETTINGS ---
     // Make sure these match the number of columns and rows in your image file!
     // ==========================================
-    const SPRITE_COLS = 10; 
-    const SPRITE_ROWS = 4;
+    const SPRITE_COLS = 4; // 4 columns for the new archer3.png
+    const SPRITE_ROWS = 1;
 
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
     window.addEventListener('resize', resize); resize();
@@ -216,8 +216,8 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
 
-    // LOAD CUSTOM TEXTURES HERE
-    const archerSprite = new Image(); archerSprite.src = 'assets/textures/archer2.png';
+    // LOAD CUSTOM TEXTURES HERE - NOW USING ARCHER 3!
+    const archerSprite = new Image(); archerSprite.src = 'assets/textures/archer3.png';
     const warriorSprite = new Image(); warriorSprite.src = 'assets/textures/warrior.png';
     const mageSprite = new Image(); mageSprite.src = 'assets/textures/mage.png';
     const priestSprite = new Image(); priestSprite.src = 'assets/textures/priest.png';
@@ -707,6 +707,7 @@
             // Animation variables
             this.frameX = 0; 
             this.frameY = 0; 
+            this.animTimer = 0;
             
             this.resetTalents(true);
         }
@@ -845,15 +846,25 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // STATIC ANIMATION LOGIC FOR ALL CLASSES
+            // STATIC & SIMPLE ANIMATION LOGIC FOR NEW 4-FRAME SPRITE
             let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
             
-            this.frameY = 0; // Only 1 row now!
+            this.frameY = 0; // Only 1 row
 
             if (this.lastAttack > this.attackCd - 0.25) {
-                this.frameX = 2; // Attack pose (3rd column)
+                this.frameX = 3; // Attack pose (4th column)
             } else if (isMoving) {
-                this.frameX = 1; // Walk pose (2nd column)
+                // 2-Frame Walk Cycle (Columns 2 and 3)
+                this.animTimer += dt * 8; // Adjust this to make walking faster/slower
+                if (this.animTimer > 1) {
+                    this.animTimer -= 1;
+                    // Toggle between frame index 1 and 2
+                    this.frameX = (this.frameX === 1) ? 2 : 1; 
+                }
+                // Fallback to ensure we start on a valid walk frame
+                if (this.frameX !== 1 && this.frameX !== 2) {
+                    this.frameX = 1;
+                }
             } else {
                 this.frameX = 0; // Idle pose (1st column)
             }
@@ -967,10 +978,10 @@
             else if (this.cls === 'priest') activeSprite = priestSprite;
             
             if (activeSprite.width > 0) {
-                let sW = Math.floor(activeSprite.width / 3); // 3 columns per image
-                let sH = Math.floor(activeSprite.height * 0.75); // Crop text at bottom
+                let sW = Math.floor(activeSprite.width / SPRITE_COLS); // Cut into 4 pieces
+                let sH = Math.floor(activeSprite.height / SPRITE_ROWS); // Full height
                 
-                // Increased size from 70x70 to 110x110 (and offset from -35 to -55 to keep it centered)
+                // Still drawing at 110x110
                 ctx.drawImage(
                     activeSprite, 
                     this.frameX * sW, 
