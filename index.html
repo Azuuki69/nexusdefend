@@ -418,6 +418,10 @@
     const WORLD_W = 5760, WORLD_H = 3240;      // 3x3 screens = 9x the old play area
     const WORLD_CX = WORLD_W / 2, WORLD_CY = WORLD_H / 2;
     const SPAWN_RING = 1250;                   // enemies walk in from here, not the world edge
+    // water.png draws an isometric pond, not a full square: the water body sits at
+    // these fractions of the sprite box. The hitbox is built from the same numbers
+    // so it lands exactly on the visible shoreline.
+    const POND_CX = 0.515, POND_CY = 0.535, POND_RX = 0.410, POND_RY = 0.295;
     let cam = { x: 0, y: 0 };
     function updateCamera() {
         if (!player) return;
@@ -588,11 +592,14 @@
     function isCollidingWithObstacle(x, y, radius) {
         for (let obs of entities.obstacles) {
             if (obs.type === 'lake') {
-                let cx = obs.x + obs.w / 2;
-                let cy = obs.y + obs.h / 2;
-                let obsRadius = (obs.w / 2) * 0.8; 
-                let dx = x - cx; let dy = y - cy; 
-                if (dx*dx + dy*dy < Math.pow(obsRadius + radius, 2)) return true;
+                // Ellipse test on the real water body (the old circle used the box width
+                // for both axes, so it blocked dry grass and let you wade in at the sides).
+                let cx = obs.x + obs.w * POND_CX;
+                let cy = obs.y + obs.h * POND_CY;
+                let rx = obs.w * POND_RX + radius;
+                let ry = obs.h * POND_RY + radius;
+                let dx = (x - cx) / rx; let dy = (y - cy) / ry;
+                if (dx*dx + dy*dy < 1) return true;
             } else {
                 let closeX = Math.max(obs.x, Math.min(x, obs.x + obs.w)); let closeY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
                 let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
@@ -780,10 +787,15 @@
             if (this.type === 'lake' && waterSprite.complete && waterSprite.naturalWidth !== 0) {
                 ctx.drawImage(waterSprite, this.x, this.y, this.w, this.h);
             } else {
-                ctx.fillStyle = this.type === 'lake' ? '#c2b280' : '#3a1c1c'; ctx.beginPath(); ctx.roundRect(this.x - 10, this.y - 10, this.w + 20, this.h + 20, 25); ctx.fill();
-                ctx.fillStyle = this.type === 'lake' ? '#26547c' : '#7c2626'; ctx.beginPath(); ctx.roundRect(this.x, this.y, this.w, this.h, 20); ctx.fill();
+                let cx = this.x + this.w * POND_CX, cy = this.y + this.h * POND_CY;
+                let rx = this.w * POND_RX, ry = this.h * POND_RY;
+                ctx.fillStyle = this.type === 'lake' ? '#c2b280' : '#3a1c1c';
+                ctx.beginPath(); ctx.ellipse(cx, cy, rx + 10, ry + 10, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = this.type === 'lake' ? '#26547c' : '#7c2626';
+                ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); ctx.fill();
                 let offset = Math.sin(performance.now()/500 + this.x) * 5;
-                ctx.fillStyle = this.type === 'lake' ? '#326f9e' : '#9e3232'; ctx.beginPath(); ctx.roundRect(this.x + 10 + offset, this.y + 10, this.w - 40, this.h - 40, 10); ctx.fill();
+                ctx.fillStyle = this.type === 'lake' ? '#326f9e' : '#9e3232';
+                ctx.beginPath(); ctx.ellipse(cx + offset, cy, rx*0.7, ry*0.65, 0, 0, Math.PI*2); ctx.fill();
             }
         }
     }
@@ -1994,13 +2006,19 @@
 
     function generateMap() {
         entities.obstacles = []; entities.resources = []; entities.decorations = [];
-        // Counts scale with the area so the world doesn't feel emptier than it used to.
-        for(let i=0; i<900; i++) { entities.decorations.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 }); }
 
-        // Scattered pools, kept well clear of the nexus approach lanes
-        const lakes = [ [-2250, -1050, 520, 520], [1500, -1250, 620, 460], [-1900, 700, 470, 640],
-                        [1250, 850, 560, 500], [-350, -1400, 480, 380], [200, 1150, 500, 420] ];
-        lakes.forEach(l => entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[3], 'lake')));
+        // A few ponds, well clear of the nexus. Kept square so the sprite is never
+        // stretched out of shape - the pond's own art supplies the oval.
+        const lakes = [ [-2150, -900, 760], [1650, -1150, 620], [-1250, 1000, 680] ];
+        lakes.forEach(l => entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[2], 'lake')));
+
+        // Ground detail, scaled to the area. Placed after the ponds so tufts and pebbles
+        // are not scattered across open water.
+        for(let i=0; i<900; i++) {
+            let dx = Math.random() * WORLD_W, dy = Math.random() * WORLD_H;
+            if (isCollidingWithObstacle(dx, dy, 0)) continue;
+            entities.decorations.push({ x: dx, y: dy, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 });
+        }
 
         for(let i=0; i<240; i++) {
             // Retry placement so resources never overlap each other, obstacles, or the base
@@ -2304,7 +2322,59 @@
         }
     }
 
-    function drawLight(ctx, x, y, radius, color) { let grad = ctx.createRadialGradient(x, y, 0, x, y, radius); grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI*2); ctx.fill(); }
+    // grass.png / snow.png are decorated panels with dark borders and rounded corners,
+    // so tiling them printed a visible grid of squares across the map. Instead we bake a
+    // seamless texture once, in the sprite's own palette, with every stroke wrapped past
+    // the tile edges so it repeats without a seam.
+    const groundPatterns = {};
+    function samplePalette(sprite, fallback) {
+        try {
+            if (!sprite.complete || !sprite.naturalWidth) return fallback;
+            let t = document.createElement('canvas'); t.width = t.height = 48;
+            let g = t.getContext('2d');
+            let nw = sprite.naturalWidth, nh = sprite.naturalHeight;
+            g.drawImage(sprite, nw*0.28, nh*0.28, nw*0.44, nh*0.44, 0, 0, 48, 48);
+            let d = g.getImageData(0, 0, 48, 48).data, px = [];
+            for (let i = 0; i < d.length; i += 4) if (d[i+3] > 200) px.push([d[i], d[i+1], d[i+2]]);
+            if (px.length < 200) return fallback;
+            px.sort((a, b) => (a[0]+a[1]+a[2]) - (b[0]+b[1]+b[2]));
+            const at = f => { let q = px[Math.floor((px.length - 1) * f)]; return 'rgb(' + q[0] + ',' + q[1] + ',' + q[2] + ')'; };
+            return { base: at(0.5), dark: at(0.16), light: at(0.86) };
+        } catch (e) { return fallback; }   // tainted canvas on file:// - use the fallback
+    }
+    function buildGround(sprite, fallback, count) {
+        const S = 512;
+        let cv = document.createElement('canvas'); cv.width = cv.height = S;
+        let g = cv.getContext('2d');
+        let pal = samplePalette(sprite, fallback);
+        g.fillStyle = pal.base; g.fillRect(0, 0, S, S);
+        const strokes = (col, n, lo, hi, wide) => {
+            g.fillStyle = col;
+            for (let i = 0; i < n; i++) {
+                let x = Math.random() * S, y = Math.random() * S;
+                let a = -1.2 + Math.random() * 0.55, len = lo + Math.random() * (hi - lo);
+                for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+                    g.save(); g.translate(x + ox * S, y + oy * S); g.rotate(a);
+                    g.fillRect(0, 0, wide, len); g.restore();
+                }
+            }
+        };
+        strokes(pal.dark, count, 7, 18, 2);
+        strokes(pal.light, Math.floor(count * 0.75), 5, 14, 2);
+        strokes(pal.dark, Math.floor(count * 0.25), 3, 7, 3);
+        return cv;
+    }
+    function groundFill(ctx, kind) {
+        if (!groundPatterns[kind]) {
+            let cv = kind === 'snow'
+                ? buildGround(snowSprite, { base: '#dfe9f2', dark: '#b9c9d8', light: '#ffffff' }, 260)
+                : buildGround(grassSprite, { base: '#4e9c34', dark: '#3c7a29', light: '#6cbe46' }, 900);
+            groundPatterns[kind] = ctx.createPattern(cv, 'repeat');
+        }
+        return groundPatterns[kind];
+    }
+
+    function drawLight(ctx, x, y, radius, color){ let grad = ctx.createRadialGradient(x, y, 0, x, y, radius); grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI*2); ctx.fill(); }
 
     function draw() {
         ctx.save();
@@ -2312,21 +2382,10 @@
 
         ctx.save();
         ctx.translate(-cam.x, -cam.y);          // ---- WORLD SPACE ----
-        // Only the ground tiles the camera can actually see get drawn.
-        let bg = (currentWeather === 'blizzard' && snowSprite.complete && snowSprite.naturalWidth !== 0) ? snowSprite
-               : (grassSprite.complete && grassSprite.naturalWidth !== 0) ? grassSprite : null;
-        if (bg) {
-            let tx0 = Math.floor(cam.x / VIEW_W), tx1 = Math.floor((cam.x + VIEW_W) / VIEW_W);
-            let ty0 = Math.floor(cam.y / VIEW_H), ty1 = Math.floor((cam.y + VIEW_H) / VIEW_H);
-            for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
-                ctx.drawImage(bg, tx * VIEW_W, ty * VIEW_H, VIEW_W, VIEW_H);
-            }
-        }
-        if (!bg) {
-            if (currentWeather === 'bloodmoon') ctx.fillStyle = '#4a2525';
-            else if (currentWeather === 'blizzard') ctx.fillStyle = '#aaddff';
-            else ctx.fillStyle = gameState === 'DAY' ? '#354a29' : '#141d0f';
-        } else if (bg === snowSprite) ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        let snowy = currentWeather === 'blizzard';
+        ctx.fillStyle = groundFill(ctx, snowy ? 'snow' : 'grass');
+        ctx.fillRect(cam.x, cam.y, VIEW_W, VIEW_H);
+        if (snowy) ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         else if (currentWeather === 'bloodmoon') ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
         else if (gameState === 'NIGHT') ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         else ctx.fillStyle = 'rgba(0,0,0,0)';
@@ -2409,7 +2468,12 @@
         ctx.globalAlpha = 0.82;
         ctx.fillStyle = 'rgba(9,11,8,0.92)'; ctx.fillRect(MM_X, MM_Y, MM_W, MM_H);
         ctx.globalAlpha = 1;
-        entities.obstacles.forEach(o => { ctx.fillStyle = 'rgba(60,110,170,0.55)'; ctx.fillRect(mx(o.x), my(o.y), o.w * sx, o.h * sy); });
+        entities.obstacles.forEach(o => {
+            ctx.fillStyle = 'rgba(60,110,170,0.6)';
+            ctx.beginPath();
+            ctx.ellipse(mx(o.x + o.w * POND_CX), my(o.y + o.h * POND_CY), o.w * POND_RX * sx, o.h * POND_RY * sy, 0, 0, Math.PI*2);
+            ctx.fill();
+        });
         ctx.fillStyle = 'rgba(120,180,90,0.6)';
         entities.resources.forEach(r => { if (r.type !== 'cache') ctx.fillRect(mx(r.x)-1, my(r.y)-1, 2, 2); });
         ctx.fillStyle = '#ffcc00';
