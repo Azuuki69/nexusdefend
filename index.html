@@ -1421,9 +1421,16 @@
                     let flip = (target.x < this.x) ? -1 : 1;
                     ctx.scale(flip, 1);
                     if (bear4Sprite.complete && bear4Sprite.naturalWidth !== 0) {
-                        let sW = Math.floor(bear4Sprite.width / 3);
+                        // bear4.png frames are NOT equal width (walk poses vs rearing pose),
+                        // so we slice at the real boundaries instead of dividing evenly.
+                        const bearFrames = [
+                            { sx: 0,   sw: 205 },
+                            { sx: 205, sw: 166 },
+                            { sx: 371, sw: 169 }
+                        ];
+                        let f = bearFrames[this.frameX] || bearFrames[0];
                         let sH = bear4Sprite.height;
-                        ctx.drawImage(bear4Sprite, this.frameX * sW, 0, sW, sH, -80, -80, 160, 160);
+                        ctx.drawImage(bear4Sprite, f.sx, 0, f.sw, sH, -80, -80, 160, 160);
                     } else {
                         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                         ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
