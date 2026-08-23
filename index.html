@@ -228,6 +228,7 @@
     const snowSprite = new Image(); snowSprite.src = 'assets/textures/snow.png';
     const waterSprite = new Image(); waterSprite.src = 'assets/textures/water.png';
     const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin.png';
+    const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -976,17 +977,23 @@
 
             let isWhirling = this.cls === 'warrior' && this.abTimer > 0;
 
-            ctx.rotate(this.angle); if (this.invincible) ctx.globalAlpha = 0.5;
+            if (this.invincible) ctx.globalAlpha = 0.5;
             
             if (isWhirling) {
-                ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
-                ctx.beginPath(); ctx.arc(0, 0, 100 * this.whirlMod, 0, Math.PI*2); ctx.fill();
+                ctx.save();
+                ctx.rotate(performance.now() / 100); 
+                let whirlRadius = 150 * this.whirlMod; 
+                if (whirlwindSprite.complete && whirlwindSprite.naturalWidth !== 0) {
+                    ctx.drawImage(whirlwindSprite, -whirlRadius/2, -whirlRadius/2, whirlRadius, whirlRadius);
+                } else {
+                    ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
+                    ctx.beginPath(); ctx.arc(0, 0, 100 * this.whirlMod, 0, Math.PI*2); ctx.fill();
+                }
+                ctx.restore();
             }
 
             // DRAW CLASS SPRITE
-            if (!isWhirling) ctx.rotate(-this.angle); // Keep character upright normally
-            
-            let flip = (mouse.x < this.x && !isWhirling) ? -1 : 1;
+            let flip = (mouse.x < this.x) ? -1 : 1;
             ctx.scale(flip, 1); // Face the mouse
             
             // Determine which sprite to use based on chosen class
