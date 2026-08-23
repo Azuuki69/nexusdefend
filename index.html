@@ -334,7 +334,7 @@
             </div>
             <div id="build-3" class="build-item" data-icon="⛏️" onclick="player.buildSelection = 3; updateBuildUI();">
                 <span class="build-key">3</span>
-                <strong style="color:#ffcc00;">Extractor</strong><span>30W 30S</span>
+                <strong style="color:#ffcc00;" id="build-3-label">Extractor</strong><span>30W 30S</span>
             </div>
             <div id="build-4" class="build-item" data-icon="💣" onclick="player.buildSelection = 4; updateBuildUI();">
                 <span class="build-key">4</span>
@@ -414,6 +414,12 @@
         if (document.getElementById(`build-${player.buildSelection}`)) {
             document.getElementById(`build-${player.buildSelection}`).classList.add('selected-build');
         }
+        let lbl = document.getElementById('build-3-label');
+        if (lbl && typeof entities !== 'undefined') {
+            let n = extractorCount();
+            lbl.innerText = `Extractor ${n}/${MAX_EXTRACTORS}`;
+            lbl.style.color = n >= MAX_EXTRACTORS ? '#ff6b6b' : '#ffcc00';
+        }
     }
 
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
@@ -472,6 +478,11 @@
     const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
     const chestSprite = new Image(); chestSprite.src = 'assets/textures/chest.png';
     const forgeSprite = new Image(); forgeSprite.src = 'assets/textures/buildings/forge.png';
+    const extractorSprite = new Image(); extractorSprite.src = 'assets/textures/buildings/extractor.png';
+    const EXTRACTOR_CROP = { sx: 28, sy: 42, sw: 618, sh: 308 };
+    const EXTRACTOR_H = 118, EXTRACTOR_FEET = 40, EXTRACTOR_SPACING = 130;
+    const MAX_EXTRACTORS = 3;
+    function extractorCount() { return entities.towers.filter(t => t.type === 3).length; }
     const terrainSprites = { trees: new Image(), rocks: new Image() };
     terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
     terrainSprites.rocks.src = 'assets/textures/terrains/rocks.png';
@@ -1519,7 +1530,17 @@
             costS = Math.floor(costS * this.buildCostMod);
             costM = Math.floor(costM * this.buildCostMod);
             
-            let overlapping = entities.towers.some(t => Math.hypot(t.x - mouse.x, t.y - mouse.y) < 40);
+            // Extractors are big buildings, so they need more room than a barricade does.
+            let placingExtractor = this.buildSelection === 3;
+            let overlapping = entities.towers.some(t => {
+                let need = (placingExtractor || t.type === 3) ? EXTRACTOR_SPACING : 40;
+                return Math.hypot(t.x - mouse.x, t.y - mouse.y) < need;
+            });
+            if (placingExtractor && extractorCount() >= MAX_EXTRACTORS) {
+                playSound('error');
+                entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "EXTRACTOR LIMIT " + MAX_EXTRACTORS + "/" + MAX_EXTRACTORS, '#ff4d4d'));
+                return;
+            }
             let nearBase = Math.hypot(base.x - mouse.x, base.y - mouse.y) < NEXUS_KEEPOUT;
             let onForge = Math.hypot(forgeX() - mouse.x, forgeY() - mouse.y) < 90;
             if (onForge) { playSound('error'); entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "BLOCKED", '#ff4d4d')); return; }
@@ -1529,7 +1550,7 @@
                 inventory.wood -= costW; inventory.stone -= costS; inventory.mana -= costM;
                 let t = new Tower(mouse.x, mouse.y, this.buildSelection, this.cls);
                 t.facing = facingFromAngle(Math.atan2(mouse.y - this.y, mouse.x - this.x));
-                entities.towers.push(t); spawnParticles(mouse.x, mouse.y, '#fff', 15); playSound('pickup');
+                entities.towers.push(t); spawnParticles(mouse.x, mouse.y, '#fff', 15); playSound('pickup'); updateBuildUI();
                 gameStats.towers++; if (gameStats.towers === 5) checkAchievement('builder');
             } else { playSound('error'); entities.texts.push(new FloatingText(this.x, this.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
@@ -1742,8 +1763,25 @@
             }
 
             if (this.type === 3) {
-                ctx.fillStyle = '#996633'; ctx.fillRect(-15, -15, 30, 30);
-                ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+                let dh = EXTRACTOR_H, dw = dh * (EXTRACTOR_CROP.sw / EXTRACTOR_CROP.sh);
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.beginPath(); ctx.ellipse(0, EXTRACTOR_FEET - 6, dw * 0.4, dw * 0.11, 0, 0, Math.PI*2); ctx.fill();
+                if (extractorSprite.complete && extractorSprite.naturalWidth !== 0) {
+                    // The rig glows while it is actually producing, i.e. during the day.
+                    if (gameState === 'DAY') {
+                        let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 520)) * 0.3;
+                        let grad = ctx.createRadialGradient(-dw*0.06, -8, 4, -dw*0.06, -8, 70);
+                        grad.addColorStop(0, 'rgba(120, 255, 190, ' + (0.22 * pulse).toFixed(3) + ')');
+                        grad.addColorStop(1, 'rgba(90, 220, 160, 0)');
+                        ctx.fillStyle = grad;
+                        ctx.beginPath(); ctx.arc(-dw*0.06, -8, 70, 0, Math.PI*2); ctx.fill();
+                    }
+                    ctx.drawImage(extractorSprite, EXTRACTOR_CROP.sx, EXTRACTOR_CROP.sy, EXTRACTOR_CROP.sw, EXTRACTOR_CROP.sh,
+                                  -dw/2, EXTRACTOR_FEET - dh, dw, dh);
+                } else {
+                    ctx.fillStyle = '#996633'; ctx.fillRect(-15, -15, 30, 30);
+                    ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+                }
             } else if (this.type === 4) {
                 ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#ffaa00'; ctx.fillRect(-4, -18, 8, 8);
@@ -2549,7 +2587,9 @@
 
         if (currentWeather === 'blizzard') spawnParticles(cam.x + Math.random()*VIEW_W, cam.y - 10, '#ffffff', 1);
 
+        let towersBefore = entities.towers.length;
         entities.npcs = entities.npcs.filter(n => !n.markedForDeletion); entities.towers = entities.towers.filter(t => !t.markedForDeletion);
+        if (entities.towers.length !== towersBefore) updateBuildUI();   // a destroyed extractor frees its slot
         entities.enemies = entities.enemies.filter(e => !e.markedForDeletion); entities.projectiles = entities.projectiles.filter(p => !p.markedForDeletion);
         entities.resources = entities.resources.filter(r => !r.markedForDeletion); entities.effects = entities.effects.filter(ef => !ef.markedForDeletion);
         entities.texts = entities.texts.filter(txt => !txt.markedForDeletion); entities.particles = entities.particles.filter(p => !p.markedForDeletion);
