@@ -216,7 +216,7 @@
         <div class="class-container">
             <div class="class-card" onclick="startGame('warrior')"><h2>Warrior</h2><ul><li>Melee Arc Attack</li><li>Tower 1: Spike Barricade</li><li>Tower 2: Crossbow</li><li>Ability (E): Whirlwind</li></ul></div>
             <div class="class-card" onclick="startGame('mage')"><h2>Mage</h2><ul><li>Ranged Fireballs</li><li>Tower 1: Knockback Wall</li><li>Tower 2: Fireball Tower</li><li>Ability (E): Meteor</li></ul></div>
-            <div class="class-card" onclick="startGame('archer')"><h2>Archer</h2><ul><li>Fast Ranged Arrows</li><li>Tower 1: Frost Trap</li><li>Tower 2: Sentry Tower</li><li>Ability (E): Triple Dash</li></ul></div>
+            <div class="class-card" onclick="startGame('archer')"><h2>Archer</h2><ul><li>Fast Ranged Arrows</li><li>Tower 1: Frost Trap</li><li>Tower 2: Sentry Tower</li><li>Ability (E): Rain of Arrows</li></ul></div>
             <div class="class-card" onclick="startGame('priest')"><h2>Priest</h2><ul><li>Holy Magic</li><li>Tower 1: Aegis Shield</li><li>Tower 2: Holy Beam</li><li>Ability (E): Holy Nova</li></ul></div>
         </div>
     </div>
@@ -305,7 +305,7 @@
                 <span class="ability-icon" id="ability-e-icon">✨</span>
                 <div class="ability-cd-overlay" id="ability-e-cd" style="--p:0;"></div>
                 <span class="ability-cd-text" id="ability-e-text"></span>
-                <span class="ability-name">Ability</span>
+                <span class="ability-name" id="ability-e-name">Ability</span>
             </div>
             <div id="ability-shift-slot" class="ability-slot">
                 <span class="ability-key">SHIFT</span>
@@ -412,7 +412,37 @@
     }
 
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
-    const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
+    // ---- WORLD / CAMERA ----
+    // The canvas stays 1920x1080; that is now a window onto a much larger world.
+    const VIEW_W = 1920, VIEW_H = 1080;
+    const WORLD_W = 5760, WORLD_H = 3240;      // 3x3 screens = 9x the old play area
+    const WORLD_CX = WORLD_W / 2, WORLD_CY = WORLD_H / 2;
+    const SPAWN_RING = 1250;                   // enemies walk in from here, not the world edge
+    let cam = { x: 0, y: 0 };
+    function updateCamera() {
+        if (!player) return;
+        cam.x = Math.max(0, Math.min(WORLD_W - VIEW_W, player.x - VIEW_W / 2));
+        cam.y = Math.max(0, Math.min(WORLD_H - VIEW_H, player.y - VIEW_H / 2));
+    }
+    const clampWorld = (v, max, pad) => Math.max(pad, Math.min(max - pad, v));
+    // Nine screens of world means most entities are off-camera on any given frame.
+    const inView = (x, y, pad = 120) => x > cam.x - pad && x < cam.x + VIEW_W + pad && y > cam.y - pad && y < cam.y + VIEW_H + pad;
+    // Ring position around the nexus, biased to one side (0=top 1=bottom 2=left 3=right).
+    function ringSpawn(side) {
+        let base_ang = (side === 0 ? -Math.PI/2 : side === 1 ? Math.PI/2 : side === 2 ? Math.PI : 0);
+        let last = null;
+        // Retry: landing inside one of the lakes leaves the spawn permanently stuck.
+        for (let attempt = 0; attempt < 24; attempt++) {
+            let ang = base_ang + (Math.random() - 0.5) * 1.3;
+            let r = SPAWN_RING + Math.random() * 250;
+            last = { x: clampWorld(WORLD_CX + Math.cos(ang) * r, WORLD_W, 40),
+                     y: clampWorld(WORLD_CY + Math.sin(ang) * r, WORLD_H, 40) };
+            if (!isCollidingWithObstacle(last.x, last.y, 45)) return last;
+        }
+        return last;
+    }
+
+    const lightCanvas = document.createElement('canvas'); lightCanvas.width = VIEW_W; lightCanvas.height = VIEW_H; const lctx = lightCanvas.getContext('2d');
 
     // LOAD CUSTOM TEXTURES HERE
     const archerSprite = new Image(); archerSprite.src = 'assets/textures/archer2.png';
@@ -444,6 +474,8 @@
     const BEAR_SCALE = 1.0, BEAR_GROUND = 81;
     const BEAR_SLEEP_SCALE = 0.55, BEAR_SLEEP_GROUND = 67;
     const PREDATOR_BASE_HP = 1000, PREDATOR_HP_GROWTH = 1.15;
+    // Rain of Arrows: a lingering zone that ticks every 0.5s for its duration.
+    const RAIN_RADIUS = 165, RAIN_DURATION = 3.0, RAIN_TICK_DMG = 0.55, RAIN_SPLINTERS = 5;
     function merchantVisits(day) { return (day - 1) % MERCHANT_VISIT_DAYS === 0; }
 
     // --- AUDIO SYSTEM ---
@@ -512,7 +544,7 @@
     
     let forgeUpgrades = { weapon: { level: 0 }, towerHp: { level: 0 }, mining: { level: 0 }, speed: { level: 0 } };
 
-    const keys = {}; let mouse = { x: 0, y: 0, clicked: false, rightClicked: false };
+    const keys = {}; let mouse = { x: 0, y: 0, sx: 0, sy: 0, clicked: false, rightClicked: false };
     
     window.addEventListener('keydown', e => {
         keys[e.key.toLowerCase()] = true;
@@ -525,7 +557,7 @@
     });
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
     
-    canvas.addEventListener('mousemove', e => { const rect = canvas.getBoundingClientRect(); mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width); mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height); });
+    canvas.addEventListener('mousemove', e => { const rect = canvas.getBoundingClientRect(); mouse.sx = (e.clientX - rect.left) * (canvas.width / rect.width); mouse.sy = (e.clientY - rect.top) * (canvas.height / rect.height); });
     canvas.addEventListener('mousedown', e => { if(e.button === 0) mouse.clicked = true; if(e.button === 2) mouse.rightClicked = true; });
     canvas.addEventListener('mouseup', e => { if(e.button === 0) mouse.clicked = false; if(e.button === 2) mouse.rightClicked = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -595,9 +627,9 @@
             { id: 'p3', name: 'Archmage', desc: 'Mana Efficiency', talents: [ { id: 'm_a_1', name: 'Mana Pool', desc: '+100 Max Mana', apply: () => player.recalcStats() }, { id: 'm_a_2', name: 'Leylines', desc: 'Mana Regen x2', apply: () => player.mpRegenMod = 2.0 }, { id: 'm_a_3', name: 'Efficiency', desc: 'Abilities cost 40% less', apply: () => player.data.abCost = Math.floor(player.data.abCost * 0.6) }, { id: 'm_a_4', name: 'Mana Shield (Ult)', desc: 'Mana absorbs 50% dmg', apply: () => player.manaShield = true } ]}
         ],
         archer: [
-            { id: 'p1', name: 'Sniper', desc: 'Ranged Damage', talents: [ { id: 'a_s_1', name: 'Deadly Aim', desc: '+30% Base Damage', apply: () => player.recalcStats() }, { id: 'a_s_2', name: 'Velocity', desc: 'Arrow speed +50%', apply: () => player.projSpeedMod = 1.5 }, { id: 'a_s_3', name: 'Chain Shot', desc: 'Arrows bounce 3 times', apply: () => player.chainBounces = 3 }, { id: 'a_s_4', name: 'Piercing Arrows (Ult)', desc: 'Arrows pierce 3 targets', apply: () => player.piercingArrows = 3 } ]},
+            { id: 'p1', name: 'Sniper', desc: 'Ranged Damage', talents: [ { id: 'a_s_1', name: 'Deadly Aim', desc: '+30% Base Damage', apply: () => player.recalcStats() }, { id: 'a_s_2', name: 'Velocity', desc: 'Arrow speed +50%', apply: () => player.projSpeedMod = 1.5 }, { id: 'a_s_3', name: 'Ricochet', desc: 'Arrows bounce to 3 more targets', apply: () => player.chainBounces = 3 }, { id: 'a_s_4', name: 'Piercing Arrows (Ult)', desc: 'Arrows pierce 3 more targets once bounces run out', apply: () => player.piercingArrows = 3 } ]},
             { id: 'p2', name: 'Trapper', desc: 'Trap Mastery', talents: [ { id: 'a_t_1', name: 'Wide Net', desc: 'Frost Trap radius +50%', apply: () => player.trapSizeMod = 1.5 }, { id: 'a_t_2', name: 'Barbed Traps', desc: 'Traps deal 50% ATK dmg', apply: () => player.trapDmgMult += 0.5 }, { id: 'a_t_3', name: 'Permafrost', desc: 'Trap slow is 80% (was 50%)', apply: () => player.trapSlowMod = 0.2 }, { id: 'a_t_4', name: 'Volatile Ice (Ult)', desc: 'Traps explode on death', apply: () => player.volatileIce = true } ]},
-            { id: 'p3', name: 'Ranger', desc: 'Mobility', talents: [ { id: 'a_r_1', name: 'Fleetfoot', desc: '+30% Move Speed', apply: () => playerBuffs.speedMult += 0.3 }, { id: 'a_r_2', name: 'Quick Step', desc: 'Dash CD -1.5s', apply: () => player.data.abCd = Math.max(1, player.data.abCd - 1.5) }, { id: 'a_r_3', name: 'Volley', desc: 'Dash fires 5 arrows', apply: () => player.dashArrowCount = 5 }, { id: 'a_r_4', name: 'Parting Gift (Ult)', desc: 'Dash leaves explosive arrows', apply: () => player.partingGift = true } ]}
+            { id: 'p3', name: 'Ranger', desc: 'Rain of Arrows', talents: [ { id: 'a_r_1', name: 'Fleetfoot', desc: '+30% Move Speed', apply: () => playerBuffs.speedMult += 0.3 }, { id: 'a_r_2', name: 'Rapid Volley', desc: 'Rain of Arrows CD -2.0s', apply: () => player.data.abCd = Math.max(1, player.data.abCd - 2.0) }, { id: 'a_r_3', name: 'Downpour', desc: 'Rain of Arrows radius +50%', apply: () => player.rainMod = 1.5 }, { id: 'a_r_4', name: 'Splinter Storm (Ult)', desc: 'Rain also drops explosive arrows', apply: () => player.rainSplinters = true } ]}
         ],
         priest: [
             { id: 'p1', name: 'Paladin', desc: 'Self-Combat', talents: [ { id: 'p_p_1', name: 'Holy Vigor', desc: '+100 Max HP', apply: () => player.recalcStats() }, { id: 'p_p_2', name: 'Crusader', desc: '+40% Base Damage', apply: () => player.recalcStats() }, { id: 'p_p_3', name: 'Divine Shield', desc: 'Nova grants Invincibility', apply: () => player.novaInvincibility = true }, { id: 'p_p_4', name: 'Smite (Ult)', desc: 'Attacks are ultra-fast & explosive', apply: () => player.smite = true } ]},
@@ -707,10 +739,10 @@
         } 
         else if (type === 'gates' && !base.hasGates && inventory.wood >= 60 && inventory.stone >= 60) {
             inventory.wood -= 60; inventory.stone -= 60; base.hasGates = true; addShake(15); playSound('levelup');
-            let g1 = new Tower(960, 410, 1, 'warrior'); g1.maxHp = 1000; g1.hp = 1000; entities.towers.push(g1);
-            let g2 = new Tower(960, 670, 1, 'warrior'); g2.maxHp = 1000; g2.hp = 1000; entities.towers.push(g2);
-            let g3 = new Tower(830, 540, 1, 'warrior'); g3.maxHp = 1000; g3.hp = 1000; entities.towers.push(g3);
-            let g4 = new Tower(1090, 540, 1, 'warrior'); g4.maxHp = 1000; g4.hp = 1000; entities.towers.push(g4);
+            [[0,-130],[0,130],[-130,0],[130,0]].forEach(o => {
+                let g = new Tower(base.x + o[0], base.y + o[1], 1, 'warrior');
+                g.maxHp = 1000; g.hp = 1000; entities.towers.push(g);
+            });
             updateForgeUI();
         } 
         else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
@@ -738,7 +770,7 @@
     const classDataInfo = {
         warrior: { hp: 200, mp: 50, spd: 4, atk: 35, range: 80, cd: 0.6, type: 'melee', color: '#ff4d4d', abCost: 20, abCd: 5.0, t1: 'Spike Barricade', t2: 'Crossbow', c1:'10W 5S', c2:'15W 10M' },
         mage: { hp: 120, mp: 150, spd: 3.5, atk: 20, range: 400, cd: 0.8, type: 'ranged', color: '#5ce1e6', abCost: 40, abCd: 6.0, t1: 'Knockback Wall', t2: 'Fireball Tower', c1:'10W 5S', c2:'15W 10M' },
-        archer: { hp: 120, mp: 90, spd: 5.5, atk: 25, range: 600, cd: 0.35, type: 'ranged', color: '#4dff4d', abCost: 25, abCd: 4.0, t1: 'Frost Trap', t2: 'Sentry Tower', c1:'10W 5S', c2:'15W 10M' },
+        archer: { hp: 120, mp: 90, spd: 5.5, atk: 25, range: 600, cd: 0.35, type: 'ranged', color: '#4dff4d', abCost: 25, abCd: 7.0,t1: 'Frost Trap', t2: 'Sentry Tower', c1:'10W 5S', c2:'15W 10M' },
         priest: { hp: 140, mp: 120, spd: 4, atk: 15, range: 350, cd: 0.6, type: 'ranged', color: '#ffe666', abCost: 35, abCd: 8.0, t1: 'Aegis Shield', t2: 'Holy Beam', c1:'10W 5S', c2:'15W 10M' }
     };
 
@@ -757,9 +789,9 @@
     }
 
     class Merchant {
-        constructor() { this.x = Math.random() > 0.5 ? -50 : 1970; this.y = 540; this.radius = 20; this.targetX = 960 + (Math.random()*400 - 200); this.targetY = 200 + Math.random()*200; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
+        constructor() { let fromLeft = Math.random() > 0.5; this.x = WORLD_CX + (fromLeft ? -1500 : 1500); this.y = WORLD_CY + (Math.random()*400 - 200); this.radius = 20; this.targetX = WORLD_CX + (Math.random()*500 - 250); this.targetY = WORLD_CY - 320 - Math.random()*160; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
         update(dt) {
-            if (gameState === 'NIGHT') { this.targetX = -100; }
+            if (gameState === 'NIGHT') { this.targetX = WORLD_CX - 2600; }
             let dx = this.targetX - this.x; let dy = this.targetY - this.y; let len = Math.hypot(dx, dy);
             this.moving = len > 5;
             if (this.moving) {
@@ -768,7 +800,7 @@
                 this.frameTimer += dt;
                 if (this.frameTimer > 0.11) { this.frameTimer = 0; this.frame = (this.frame + 1) % MERCHANT_FRAMES.length; }
             } else { this.frame = 0; this.frameTimer = 0; }
-            if (gameState === 'NIGHT' && (this.x < 0 || this.x > 1920)) this.markedForDeletion = true;
+            if (gameState === 'NIGHT' && Math.hypot(this.x - WORLD_CX, this.y - WORLD_CY) > 1800) this.markedForDeletion = true;
         }
         draw(ctx) {
             const feetY = this.y + 20;
@@ -821,8 +853,16 @@
     }
 
     class Effect {
-        constructor(x, y, radius, color, life, dmg=0, freeze=false, isScorched=false, element='none', source='player') { 
-            this.x = x; this.y = y; this.radius = radius; this.color = color; this.life = life; this.maxLife = life; this.markedForDeletion = false; this.dmg = dmg; this.freeze = freeze; this.isScorched = isScorched; this.pulseTimer = 0; this.element = element; this.source = source;
+        constructor(x, y, radius, color, life, dmg=0, freeze=false, isScorched=false, element='none', source='player', style='blob') {
+            this.x = x; this.y = y; this.radius = radius; this.color = color; this.life = life; this.maxLife = life; this.markedForDeletion = false; this.dmg = dmg; this.freeze = freeze; this.isScorched = isScorched; this.pulseTimer = 0; this.element = element; this.source = source; this.style = style;
+            if (style === 'arrowrain') {
+                // Fixed scatter so the volley doesn't jitter between frames.
+                this.shafts = [];
+                for (let i = 0; i < 26; i++) {
+                    let a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * radius;
+                    this.shafts.push({ ox: Math.cos(a) * d, oy: Math.sin(a) * d * 0.45, delay: Math.random(), dur: 0.34 + Math.random() * 0.22 });
+                }
+            }
         }
         update(dt) {
             this.life -= dt;
@@ -851,8 +891,30 @@
             if(this.life <= 0) this.markedForDeletion = true;
         }
         draw(ctx) {
+            if (this.style === 'arrowrain') {
+                let fade = Math.min(1, this.life / 0.4);
+                ctx.save();
+                ctx.globalAlpha = 0.28 * fade;
+                ctx.fillStyle = '#2f6b1f';
+                ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, Math.PI*2); ctx.fill();
+                ctx.globalAlpha = 0.8 * fade; ctx.strokeStyle = '#4dff4d'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, Math.PI*2); ctx.stroke();
+                let t = this.maxLife - this.life;
+                ctx.globalAlpha = fade;
+                this.shafts.forEach(sh => {
+                    let prog = ((t / sh.dur) + sh.delay) % 1;
+                    let gx = this.x + sh.ox, gy = this.y + sh.oy;
+                    let ty = gy - 300 * (1 - prog);
+                    ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(gx, ty - 16); ctx.lineTo(gx, ty); ctx.stroke();
+                    ctx.fillStyle = '#4dff4d';
+                    ctx.beginPath(); ctx.moveTo(gx, ty + 6); ctx.lineTo(gx - 3, ty - 1); ctx.lineTo(gx + 3, ty - 1); ctx.fill();
+                });
+                ctx.restore();
+                return;
+            }
             if (this.color === '#00ffff' && this.radius < 50 && this.maxLife < 1) { // Laser
-                ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(960, 540); ctx.lineTo(this.x, this.y); ctx.stroke();
+                ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(this.x, this.y); ctx.stroke();
             } else {
                 ctx.globalAlpha = this.life / this.maxLife; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0;
             }
@@ -948,7 +1010,7 @@
     }
 
     class Base extends Entity {
-        constructor() { super(960, 540, 50, 500); this.regenTimer = 0; this.hasSpire = false; this.hasGates = false; this.spireCd = 0; this.overchargeCd = 0; this.overchargeActive = 0; }
+        constructor() { super(WORLD_CX, WORLD_CY, 50, 500); this.regenTimer = 0; this.hasSpire = false; this.hasGates = false; this.spireCd = 0; this.overchargeCd = 0; this.overchargeActive = 0; }
         update(dt) {
             if (this.overchargeCd > 0) this.overchargeCd -= dt;
             if (this.overchargeActive > 0) this.overchargeActive -= dt;
@@ -994,8 +1056,10 @@
 
     class Player extends Entity {
         constructor(cls) {
-            super(960, 650, 20, classDataInfo[cls].hp);
-            this.cls = cls; this.data = classDataInfo[cls];
+            super(WORLD_CX, WORLD_CY + 110, 20, classDataInfo[cls].hp);
+            // Copy, don't alias: talents write to data.abCd / data.abCost, and with a shared
+            // reference those edits leaked into every later run of that class.
+            this.cls = cls; this.data = Object.assign({}, classDataInfo[cls]);
             this.maxMp = this.data.mp; this.mp = this.maxMp;
             this.spd = this.data.spd; this.atk = this.data.atk; this.attackCd = this.data.cd;
             this.lastAttack = 0; this.angle = 0; this.buildSelection = 1; this.abTimer = 0; this.abilityCooldownTimer = 0; this.whirlTick = 0;
@@ -1018,7 +1082,7 @@
             this.talents = []; this.paragonPoints = 0; this.chosenPath = null;
             this.whirlMod = 1.0; this.talentDmgReduc = 1.0; this.reflectMod = 1.0; this.towerSpeedMod = 1.0; this.towerDmgMult = 1.0; this.buildCostMod = 1.0;
             this.meteorMod = 1.0; this.attackSlows = false; this.wallSlows = false; this.meteorFreezes = false; this.mpRegenMod = 1.0;
-            this.projSpeedMod = 1.0; this.chainBounces = 0; this.trapSizeMod = 1.0; this.trapSlowMod = 0.5; this.dashArrowCount = 3;
+            this.projSpeedMod = 1.0; this.chainBounces = 0; this.trapSizeMod = 1.0; this.trapSlowMod = 0.5; this.rainMod = 1.0;
             this.novaInvincibility = false; this.novaHealMod = 1.0; this.baseRegen = false; this.novaHealsTowers = false; this.novaBeams = false;
             this.globalSlow = false; this.towerRegen = false;
             
@@ -1027,7 +1091,7 @@
             // Capstone Flags
             this.leapSlam = false; this.tauntingWalls = false; this.shrapnelTowers = false;
             this.scorchedEarth = false; this.shatter = false; this.manaShield = false;
-            this.piercingArrows = 0; this.volatileIce = false; this.partingGift = false;
+            this.piercingArrows = 0; this.volatileIce = false; this.rainSplinters = false;
             this.smite = false; this.overheal = false; this.prismaticBeams = false;
 
             this.recalcStats(); entities.towers.forEach(t => t.recalcHp());
@@ -1077,7 +1141,7 @@
                 }
             }
 
-            this.x = Math.max(this.radius, Math.min(1920-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(1080-this.radius, this.y));
+            this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, this.y));
             if (this.abTimer <= 0) this.angle = Math.atan2(mouse.y - this.y, mouse.x - this.x); else this.abTimer -= dt;
             if (this.abilityCooldownTimer > 0) this.abilityCooldownTimer -= dt;
             this.lastAttack -= dt;
@@ -1101,7 +1165,7 @@
                             this.x += stepX; this.y += stepY;
                         } else break;
                     }
-                    this.x = Math.max(this.radius, Math.min(1920-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(1080-this.radius, this.y));
+                    this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, this.y));
                     spawnParticles(this.x, this.y, this.data.color, 15);
                 } else {
                     this.dashTimer = 0.2;
@@ -1167,8 +1231,8 @@
             this.mp -= this.data.abCost; playSound('shoot');
             if (this.cls === 'warrior') { 
                 if (this.leapSlam) { 
-                    this.x = Math.max(this.radius, Math.min(1920-this.radius, mouse.x)); 
-                    this.y = Math.max(this.radius, Math.min(1080-this.radius, mouse.y)); 
+                    this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, mouse.x));
+                    this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, mouse.y));
                     entities.effects.push(new Effect(this.x, this.y, 100, '#ff4d4d', 0.2, 0, false, false, 'none', 'player')); 
                     addShake(10); 
                     this.invincibleTimer = 0.5;
@@ -1181,14 +1245,17 @@
                 addShake(15); 
             } 
             else if (this.cls === 'archer') {
-                this.x += Math.cos(this.angle) * 150; this.y += Math.sin(this.angle) * 150; spawnParticles(this.x, this.y, '#fff', 10);
-                if (this.partingGift) { for(let i=1; i<=3; i++) { entities.projectiles.push(new Projectile(this.x - Math.cos(this.angle)*(i*40), this.y - Math.sin(this.angle)*(i*40), 0, 0, this.atk*2, true, '#ffaa00', 0, false, 0, true, 'fire', 'player')); } }
-                let count = this.dashArrowCount; let spreadSize = 0.2;
-                for(let i = -Math.floor(count/2); i <= Math.floor(count/2); i++) {
-                    let spread = this.angle + (i * spreadSize);
-                    entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(spread)*15*this.projSpeedMod, Math.sin(spread)*15*this.projSpeedMod, this.atk*1.5, true, this.data.color, this.chainBounces, this.attackSlows, this.piercingArrows, false, 'none', 'player'));
+                // Rain of Arrows: a volley that keeps falling on the marked ground.
+                let r = RAIN_RADIUS * this.rainMod;
+                entities.effects.push(new Effect(mouse.x, mouse.y, r, '#4dff4d', RAIN_DURATION, this.atk * RAIN_TICK_DMG, false, true, 'none', 'player', 'arrowrain'));
+                if (this.rainSplinters) {
+                    for (let i = 0; i < RAIN_SPLINTERS; i++) {
+                        let a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
+                        entities.projectiles.push(new Projectile(mouse.x + Math.cos(a)*d, mouse.y + Math.sin(a)*d, 0, 0, this.atk * 1.5, true, '#ffaa00', 0, false, 0, true, 'fire', 'player'));
+                    }
                 }
-            } else if (this.cls === 'priest') {
+                addShake(6);
+            }else if (this.cls === 'priest') {
                 let healAmt = 50 * this.novaHealMod; entities.effects.push(new Effect(this.x, this.y, 250, '#ffffcc', 0.5, 50, false, false, 'none', 'player'));
                 
                 let applyHeal = (ent, amt) => {
@@ -1457,16 +1524,26 @@
                         if (this.isExplosive) {
                             entities.effects.push(new Effect(this.x, this.y, 80, '#ffaa00', 0.2, this.dmg, false, false, 'fire', this.source)); playSound('explosion'); addShake(3);
                             this.markedForDeletion = true;
-                        } else if (this.pierce > 0) {
-                            this.pierce--;
-                        } else if (this.chain > 0) {
-                            let nearest = null; let minDist = 250;
-                            entities.enemies.forEach(ne => { 
-                                if (ne.isAsleep || (ne.type === 'assassin' && ne.isInvisible)) return;
-                                if (!this.hitList.includes(ne)) { let d = Math.hypot(ne.x - this.x, ne.y - this.y); if (d < minDist) { minDist = d; nearest = ne; } } 
-                            });
-                            if (nearest) { this.chain--; let angle = Math.atan2(nearest.y - this.y, nearest.x - this.x); let speed = Math.hypot(this.vx, this.vy); this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed; } else { this.markedForDeletion = true; }
-                        } else { this.markedForDeletion = true; }
+                        } else {
+                            // Ricochet first, pierce as the fallback. Pierce used to win outright,
+                            // which left Chain Shot doing nothing for anyone who also took the capstone.
+                            let nearest = null;
+                            if (this.chain > 0) {
+                                let minDist = 250;
+                                entities.enemies.forEach(ne => {
+                                    if (ne.isAsleep || (ne.type === 'assassin' && ne.isInvisible)) return;
+                                    if (!this.hitList.includes(ne)) { let d = Math.hypot(ne.x - this.x, ne.y - this.y); if (d < minDist) { minDist = d; nearest = ne; } }
+                                });
+                            }
+                            if (nearest) {
+                                this.chain--;
+                                let angle = Math.atan2(nearest.y - this.y, nearest.x - this.x); let speed = Math.hypot(this.vx, this.vy);
+                                this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+                                this.life = Math.max(this.life, 0.6); // don't let a bounce die in flight
+                            } else if (this.pierce > 0) {
+                                this.pierce--;
+                            } else { this.markedForDeletion = true; }
+                        }
                     }
                 });
             } else {
@@ -1917,17 +1994,20 @@
 
     function generateMap() {
         entities.obstacles = []; entities.resources = []; entities.decorations = [];
-        for(let i=0; i<150; i++) { entities.decorations.push({ x: Math.random() * 1920, y: Math.random() * 1080, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 }); }
-        
-        // Single static square pool on the left side
-        entities.obstacles.push(new Obstacle(150, 300, 450, 450, 'lake'));
+        // Counts scale with the area so the world doesn't feel emptier than it used to.
+        for(let i=0; i<900; i++) { entities.decorations.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 }); }
 
-        for(let i=0; i<35; i++) {
+        // Scattered pools, kept well clear of the nexus approach lanes
+        const lakes = [ [-2250, -1050, 520, 520], [1500, -1250, 620, 460], [-1900, 700, 470, 640],
+                        [1250, 850, 560, 500], [-350, -1400, 480, 380], [200, 1150, 500, 420] ];
+        lakes.forEach(l => entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[3], 'lake')));
+
+        for(let i=0; i<240; i++) {
             // Retry placement so resources never overlap each other, obstacles, or the base
             let placed = false;
             for (let attempt = 0; attempt < 20 && !placed; attempt++) {
-                let x = Math.random() * 1800 + 60; let y = Math.random() * 960 + 60;
-                if (Math.hypot(x-960, y-540) < 200) continue;
+                let x = Math.random() * (WORLD_W - 120) + 60; let y = Math.random() * (WORLD_H - 120) + 60;
+                if (Math.hypot(x-WORLD_CX, y-WORLD_CY) < 200) continue;
                 if (isCollidingWithObstacle(x, y, 45)) continue;
                 let overlapsResource = entities.resources.some(r => Math.hypot(r.x - x, r.y - y) < 135);
                 if (overlapsResource) continue;
@@ -1935,20 +2015,21 @@
                 placed = true;
             }
         }
-        
+
         // Spawn Mystery Caches
-        for(let i=0; i<2; i++) {
-            let cx = Math.random() * 1700 + 100; let cy = Math.random() * 880 + 100;
+        for(let i=0; i<10; i++) {
+            let cx = Math.random() * (WORLD_W - 200) + 100; let cy = Math.random() * (WORLD_H - 200) + 100;
             let overlapsResource = entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
-            if (Math.hypot(cx-960, cy-540) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
+            if (Math.hypot(cx-WORLD_CX, cy-WORLD_CY) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
                 entities.resources.push(new Resource(cx, cy, 'cache'));
             }
         }
         
         // Spawn Sleeping Predator (50% chance per day)
         if (Math.random() < 0.5) {
-            let px = Math.random() > 0.5 ? 200 : 1720;
-            let py = Math.random() > 0.5 ? 200 : 880;
+            let ba = Math.random() * Math.PI * 2, bd = 700 + Math.random() * 1500;
+            let px = clampWorld(WORLD_CX + Math.cos(ba) * bd, WORLD_W, 80);
+            let py = clampWorld(WORLD_CY + Math.sin(ba) * bd, WORLD_H, 80);
             if (!isCollidingWithObstacle(px, py, 50)) {
                 entities.enemies.push(new Enemy(px, py, 'predator'));
                 entities.decorations.push({ x: px, y: py, type: 'crystal', size: 40 });
@@ -2006,10 +2087,12 @@
         updateBuildUI(); updateTrinkets();
 
         const classIcons = { warrior: '⚔️', mage: '🔥', archer: '🏹', priest: '✨' };
-        const abilityIcons = { warrior: '🌀', mage: '☄️', archer: '💨', priest: '💫' };
+        const abilityIcons = { warrior: '🌀', mage: '☄️', archer: '🏹', priest: '💫' };
+        const abilityNames = { warrior: 'Whirlwind', mage: 'Meteor', archer: 'Rain of Arrows', priest: 'Holy Nova' };
         document.getElementById('classPortrait').className = 'cls-' + selectedClass;
         document.getElementById('classPortraitIcon').innerText = classIcons[selectedClass];
         document.getElementById('ability-e-icon').innerText = abilityIcons[selectedClass];
+        document.getElementById('ability-e-name').innerText = abilityNames[selectedClass];
         
         generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant());
         // Retrying straight from a death left the banner reading "GAME OVER" until the next phase.
@@ -2024,9 +2107,8 @@
 
     function spawnWave() {
         if (wave % 5 === 0) { 
-            let bx = waveDirection === 0 ? Math.random()*1920 : (waveDirection === 1 ? Math.random()*1920 : (waveDirection === 2 ? -50 : 1970));
-            let by = waveDirection === 0 ? -50 : (waveDirection === 1 ? 1130 : (waveDirection === 2 ? Math.random()*1080 : Math.random()*1080));
-            entities.enemies.push(new Enemy(bx, by, 'boss')); 
+            let bpos = ringSpawn(waveDirection === -1 ? Math.floor(Math.random()*4) : waveDirection);
+            entities.enemies.push(new Enemy(bpos.x, bpos.y, 'boss'));
             addShake(15); 
         }
         let count = wave * 3 + 5;
@@ -2035,8 +2117,7 @@
         
         for(let i=0; i<count; i++) {
             let side = waveDirection !== -1 ? waveDirection : Math.floor(Math.random() * 4);
-            let x, y;
-            if(side===0) { x = Math.random()*1920; y = -50; } else if(side===1) { x = Math.random()*1920; y = 1130; } else if(side===2) { x = -50; y = Math.random()*1080; } else { x = 1970; y = Math.random()*1080; }
+            let pos = ringSpawn(side); let x = pos.x, y = pos.y;
             let rand = Math.random(); let type = 'goblin';
             
             // Scaled wave spawning including new enemies
@@ -2066,6 +2147,8 @@
     }
 
     function update(dt) {
+        updateCamera();
+        mouse.x = mouse.sx + cam.x; mouse.y = mouse.sy + cam.y;
         if(gameState === 'OVER' || isPaused) return;
         if (screenShake > 0) screenShake -= dt * 30;
 
@@ -2164,7 +2247,7 @@
         entities.enemies.forEach(e => e.update(dt)); entities.projectiles.forEach(p => p.update(dt)); entities.effects.forEach(ef => ef.update(dt));
         entities.texts.forEach(txt => txt.update(dt)); entities.particles.forEach(p => p.update(dt)); entities.items.forEach(i => i.update(dt));
 
-        if (currentWeather === 'blizzard') spawnParticles(Math.random()*1920, -10, '#ffffff', 1);
+        if (currentWeather === 'blizzard') spawnParticles(cam.x + Math.random()*VIEW_W, cam.y - 10, '#ffffff', 1);
 
         entities.npcs = entities.npcs.filter(n => !n.markedForDeletion); entities.towers = entities.towers.filter(t => !t.markedForDeletion);
         entities.enemies = entities.enemies.filter(e => !e.markedForDeletion); entities.projectiles = entities.projectiles.filter(p => !p.markedForDeletion);
@@ -2227,34 +2310,42 @@
         ctx.save();
         if (screenShake > 0) { ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake); }
 
-        if (currentWeather === 'blizzard' && snowSprite.complete && snowSprite.naturalWidth !== 0) {
-            ctx.drawImage(snowSprite, 0, 0, 1920, 1080);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'; ctx.fillRect(0, 0, 1920, 1080);
-        } else if (grassSprite.complete && grassSprite.naturalWidth !== 0) {
-            ctx.drawImage(grassSprite, 0, 0, 1920, 1080);
-            
-            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; ctx.fillRect(0, 0, 1920, 1080); }
-            else if (gameState === 'NIGHT') { ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; ctx.fillRect(0, 0, 1920, 1080); }
-        } else {
+        ctx.save();
+        ctx.translate(-cam.x, -cam.y);          // ---- WORLD SPACE ----
+        // Only the ground tiles the camera can actually see get drawn.
+        let bg = (currentWeather === 'blizzard' && snowSprite.complete && snowSprite.naturalWidth !== 0) ? snowSprite
+               : (grassSprite.complete && grassSprite.naturalWidth !== 0) ? grassSprite : null;
+        if (bg) {
+            let tx0 = Math.floor(cam.x / VIEW_W), tx1 = Math.floor((cam.x + VIEW_W) / VIEW_W);
+            let ty0 = Math.floor(cam.y / VIEW_H), ty1 = Math.floor((cam.y + VIEW_H) / VIEW_H);
+            for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+                ctx.drawImage(bg, tx * VIEW_W, ty * VIEW_H, VIEW_W, VIEW_H);
+            }
+        }
+        if (!bg) {
             if (currentWeather === 'bloodmoon') ctx.fillStyle = '#4a2525';
             else if (currentWeather === 'blizzard') ctx.fillStyle = '#aaddff';
             else ctx.fillStyle = gameState === 'DAY' ? '#354a29' : '#141d0f';
-            ctx.fillRect(0, 0, 1920, 1080);
-        }
-        
+        } else if (bg === snowSprite) ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        else if (currentWeather === 'bloodmoon') ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+        else if (gameState === 'NIGHT') ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        else ctx.fillStyle = 'rgba(0,0,0,0)';
+        ctx.fillRect(cam.x, cam.y, VIEW_W, VIEW_H);
+
         entities.obstacles.forEach(o => o.draw(ctx));
 
         if (gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) { ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(mouse.x - 20, mouse.y - 20, 40, 40); }
 
         entities.decorations.forEach(d => {
-            if (d.type === 'grass') { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
+            if (!inView(d.x, d.y, 40)) return;
+            if (d.type === 'grass') {ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
             else if (d.type === 'crystal') { ctx.fillStyle = 'rgba(255, 50, 100, 0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y-d.size); ctx.lineTo(d.x+d.size, d.y); ctx.lineTo(d.x, d.y+d.size); ctx.lineTo(d.x-d.size, d.y); ctx.fill(); }
             else { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill(); }
         });
 
-        entities.npcs.forEach(n => n.draw(ctx)); entities.items.forEach(i => i.draw(ctx)); entities.resources.forEach(r => r.draw(ctx));
-        base.draw(ctx); entities.towers.forEach(t => t.draw(ctx)); entities.enemies.forEach(e => e.draw(ctx));
-        entities.projectiles.forEach(p => p.draw(ctx)); entities.effects.forEach(ef => ef.draw(ctx)); entities.particles.forEach(p => p.draw(ctx)); player.draw(ctx);
+        entities.npcs.forEach(n => { if (inView(n.x, n.y)) n.draw(ctx); }); entities.items.forEach(i => { if (inView(i.x, i.y)) i.draw(ctx); }); entities.resources.forEach(r => { if (inView(r.x, r.y, 160)) r.draw(ctx); });
+        base.draw(ctx); entities.towers.forEach(t => { if (inView(t.x, t.y)) t.draw(ctx); }); entities.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(ctx); });
+        entities.projectiles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); entities.effects.forEach(ef => { if (inView(ef.x, ef.y, ef.radius + 40)) ef.draw(ctx); }); entities.particles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); player.draw(ctx);
 
         // Re-draw tree crowns that stand in front of the player so the player appears to walk behind the foliage
         entities.resources.forEach(r => {
@@ -2263,37 +2354,103 @@
             }
         });
 
-        // Draw Threat Indicator
+        ctx.restore();                           // ---- back to SCREEN SPACE ----
+
+        if (gameState === 'NIGHT') {
+            lctx.globalCompositeOperation = 'source-over';
+            lctx.fillStyle = currentWeather === 'fog' ? 'rgba(30, 30, 30, 0.95)' : 'rgba(5, 5, 15, 0.88)';
+            lctx.fillRect(0, 0, VIEW_W, VIEW_H);
+            lctx.globalCompositeOperation = 'destination-out';
+
+            // The light canvas is viewport-sized, so world positions come in camera-relative.
+            let visMod = currentWeather === 'fog' ? 0.5 : 1.0;
+            drawLight(lctx, player.x - cam.x, player.y - cam.y, 300 * visMod, 'rgba(255,255,255,1)');
+            drawLight(lctx, base.x - cam.x, base.y - cam.y, 400 * visMod, 'rgba(255,255,255,1)');
+            entities.towers.forEach(t => drawLight(lctx, t.x - cam.x, t.y - cam.y, 150 * visMod, 'rgba(255,255,255,0.8)'));
+            entities.projectiles.forEach(p => drawLight(lctx, p.x - cam.x, p.y - cam.y, 100 * visMod, 'rgba(255,255,255,0.8)'));
+            entities.effects.forEach(ef => drawLight(lctx, ef.x - cam.x, ef.y - cam.y, ef.radius + 50, 'rgba(255,255,255,1)'));
+            entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x - cam.x, e.y - cam.y, 80, 'rgba(255,255,255,0.5)'); });
+            ctx.drawImage(lightCanvas, 0, 0);
+
+            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+        }
+
+        // Floating combat text sits above the darkness but still tracks the world.
+        ctx.save(); ctx.translate(-cam.x, -cam.y);
+        entities.texts.forEach(txt => { if (inView(txt.x, txt.y, 60)) txt.draw(ctx); });
+        ctx.restore();
+
+        // Threat arrow points at the incoming side, pinned to the screen edge.
         if (gameState === 'DAY' && waveDirection !== -1 && phaseTimer <= 3.0) {
             let flash = Math.floor(performance.now() / 250) % 2 === 0;
             if (flash) {
                 ctx.fillStyle = 'rgba(255, 50, 50, 0.6)';
                 ctx.beginPath();
-                if (waveDirection === 0) { ctx.moveTo(960, 40); ctx.lineTo(920, 100); ctx.lineTo(1000, 100); } // Top
-                else if (waveDirection === 1) { ctx.moveTo(960, 1040); ctx.lineTo(920, 980); ctx.lineTo(1000, 980); } // Bottom
-                else if (waveDirection === 2) { ctx.moveTo(40, 540); ctx.lineTo(100, 500); ctx.lineTo(100, 580); } // Left
-                else if (waveDirection === 3) { ctx.moveTo(1880, 540); ctx.lineTo(1820, 500); ctx.lineTo(1820, 580); } // Right
+                if (waveDirection === 0) { ctx.moveTo(960, 40); ctx.lineTo(920, 100); ctx.lineTo(1000, 100); }
+                else if (waveDirection === 1) { ctx.moveTo(960, 1040); ctx.lineTo(920, 980); ctx.lineTo(1000, 980); }
+                else if (waveDirection === 2) { ctx.moveTo(40, 540); ctx.lineTo(100, 500); ctx.lineTo(100, 580); }
+                else if (waveDirection === 3) { ctx.moveTo(1880, 540); ctx.lineTo(1820, 500); ctx.lineTo(1820, 580); }
                 ctx.fill();
             }
         }
 
-        if (gameState === 'NIGHT') {
-            lctx.globalCompositeOperation = 'source-over';
-            lctx.fillStyle = currentWeather === 'fog' ? 'rgba(30, 30, 30, 0.95)' : 'rgba(5, 5, 15, 0.88)';
-            lctx.fillRect(0, 0, 1920, 1080);
-            lctx.globalCompositeOperation = 'destination-out'; 
-            
-            let visMod = currentWeather === 'fog' ? 0.5 : 1.0;
-            drawLight(lctx, player.x, player.y, 300 * visMod, 'rgba(255,255,255,1)'); drawLight(lctx, base.x, base.y, 400 * visMod, 'rgba(255,255,255,1)');
-            entities.towers.forEach(t => drawLight(lctx, t.x, t.y, 150 * visMod, 'rgba(255,255,255,0.8)')); entities.projectiles.forEach(p => drawLight(lctx, p.x, p.y, 100 * visMod, 'rgba(255,255,255,0.8)'));
-            entities.effects.forEach(ef => drawLight(lctx, ef.x, ef.y, ef.radius + 50, 'rgba(255,255,255,1)'));
-            entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x, e.y, 80, 'rgba(255,255,255,0.5)'); });
-            ctx.drawImage(lightCanvas, 0, 0);
-            
-            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0,0,1920,1080); }
-        }
+        drawMinimap(ctx);
+        drawNexusCompass(ctx);
+        ctx.restore();
+    }
 
-        entities.texts.forEach(txt => txt.draw(ctx)); ctx.restore(); 
+    // A map this size is unnavigable without an overview.
+    const MM_W = 300, MM_H = MM_W * WORLD_H / WORLD_W, MM_X = VIEW_W - MM_W - 20, MM_Y = 20;
+    function drawMinimap(ctx) {
+        if (gameState !== 'DAY' && gameState !== 'NIGHT') return;
+        const sx = MM_W / WORLD_W, sy = MM_H / WORLD_H;
+        const mx = (wx) => MM_X + wx * sx, my = (wy) => MM_Y + wy * sy;
+        ctx.save();
+        ctx.globalAlpha = 0.82;
+        ctx.fillStyle = 'rgba(9,11,8,0.92)'; ctx.fillRect(MM_X, MM_Y, MM_W, MM_H);
+        ctx.globalAlpha = 1;
+        entities.obstacles.forEach(o => { ctx.fillStyle = 'rgba(60,110,170,0.55)'; ctx.fillRect(mx(o.x), my(o.y), o.w * sx, o.h * sy); });
+        ctx.fillStyle = 'rgba(120,180,90,0.6)';
+        entities.resources.forEach(r => { if (r.type !== 'cache') ctx.fillRect(mx(r.x)-1, my(r.y)-1, 2, 2); });
+        ctx.fillStyle = '#ffcc00';
+        entities.resources.forEach(r => { if (r.type === 'cache') ctx.fillRect(mx(r.x)-2, my(r.y)-2, 4, 4); });
+        entities.towers.forEach(t => { ctx.fillStyle = '#7ef7d8'; ctx.fillRect(mx(t.x)-1.5, my(t.y)-1.5, 3, 3); });
+        entities.enemies.forEach(e => {
+            ctx.fillStyle = e.type === 'predator' ? '#ff9a3c' : (e.type === 'boss' ? '#ff2b2b' : '#ff5555');
+            let sz = (e.type === 'boss' || e.type === 'predator') ? 5 : 3;
+            ctx.fillRect(mx(e.x)-sz/2, my(e.y)-sz/2, sz, sz);
+        });
+        entities.npcs.forEach(n => { ctx.fillStyle = '#5ce1e6'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
+        // nexus
+        ctx.fillStyle = '#d9b25c'; ctx.fillRect(mx(base.x)-4, my(base.y)-4, 8, 8);
+        ctx.strokeStyle = '#fff6d8'; ctx.lineWidth = 1; ctx.strokeRect(mx(base.x)-4.5, my(base.y)-4.5, 9, 9);
+        // player
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(mx(player.x), my(player.y), 3, 0, Math.PI*2); ctx.fill();
+        // camera window
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+        ctx.strokeRect(mx(cam.x), my(cam.y), VIEW_W * sx, VIEW_H * sy);
+        // frame
+        ctx.strokeStyle = 'rgba(217,178,92,0.55)'; ctx.lineWidth = 2; ctx.strokeRect(MM_X, MM_Y, MM_W, MM_H);
+        ctx.restore();
+    }
+
+    // Off-screen nexus marker, so you can always find your way home.
+    function drawNexusCompass(ctx) {
+        if (gameState !== 'DAY' && gameState !== 'NIGHT') return;
+        let bsx = base.x - cam.x, bsy = base.y - cam.y;
+        if (bsx > 60 && bsx < VIEW_W - 60 && bsy > 60 && bsy < VIEW_H - 60) return;
+        let cx = VIEW_W/2, cy = VIEW_H/2;
+        let ang = Math.atan2(bsy - cy, bsx - cx);
+        let ex = cx + Math.cos(ang) * (VIEW_W/2 - 90), ey = cy + Math.sin(ang) * (VIEW_H/2 - 90);
+        ctx.save();
+        ctx.translate(ex, ey); ctx.rotate(ang);
+        ctx.fillStyle = 'rgba(217,178,92,0.85)';
+        ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-10, -11); ctx.lineTo(-10, 11); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,246,216,0.9)'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(Math.round(Math.hypot(base.x - player.x, base.y - player.y)) + 'm', ex, ey + 30);
+        ctx.restore();
     }
 
     let loopRunning = false;
