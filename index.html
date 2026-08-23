@@ -837,23 +837,37 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // ANIMATION LOGIC FOR CLEAN SPRITE SHEET
-            if (this.cls === 'archer') {
-                let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
-                if (this.lastAttack > this.attackCd - 0.25) {
-                    this.frameY = 2; // ATTACK row
-                    this.animTimer += dt * 15; // Animation speed
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
-                } else if (isMoving) {
-                    this.frameY = 1; // RUN row
-                    this.animTimer += dt * 12;
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
-                } else {
-                    this.frameY = 0; // IDLE row
-                    this.animTimer += dt * 5;
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 4; }
-                }
-            }
+// ANIMATION LOGIC FOR CLEAN SPRITE SHEET
+if (this.cls === 'archer') {
+    let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
+    let newState = 'idle';
+
+    // 1. Determine what the player is doing right now
+    if (this.lastAttack > this.attackCd - 0.25) newState = 'attack';
+    else if (isMoving) newState = 'run';
+
+    // 2. If the action just changed, instantly reset the animation frames to 0!
+    if (this.currentState !== newState) {
+        this.currentState = newState;
+        this.frameX = 0;
+        this.animTimer = 0;
+    }
+
+    // 3. Play the correct animation loop
+    if (this.currentState === 'attack') {
+        this.frameY = 2; // ATTACK row
+        this.animTimer += dt * 15; // Faster animation
+        if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+    } else if (this.currentState === 'run') {
+        this.frameY = 1; // RUN row
+        this.animTimer += dt * 12;
+        if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+    } else {
+        this.frameY = 0; // IDLE row
+        this.animTimer += dt * 5; // Slower idle breathing
+        if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 4; }
+    }
+}
         }
         
         useAbility() {
