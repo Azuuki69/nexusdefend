@@ -838,7 +838,6 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // ANIMATION STATE MACHINE FOR UNCROPPED IMAGE
             if (this.cls === 'archer') {
                 let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
                 let newState = 'idle';
@@ -971,9 +970,9 @@
                 ctx.scale(flip, 1); // Face the mouse
                 
                 if (archerSprite.width > 0) {
-                    let sW = Math.floor(archerSprite.width / 10); // 10 columns
-                    let sH = Math.floor(archerSprite.height / 4); // 4 rows
-                    let textOffset = sH * 0.18; // Offset to ignore the text
+                    let sW = Math.floor(archerSprite.width / 10); 
+                    let sH = Math.floor(archerSprite.height / 4); 
+                    let textOffset = sH * 0.18; 
                     
                     ctx.drawImage(
                         archerSprite, 
