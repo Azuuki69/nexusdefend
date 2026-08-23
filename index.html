@@ -310,8 +310,16 @@
     
     function isCollidingWithObstacle(x, y, radius) {
         for (let obs of entities.obstacles) {
-            let closeX = Math.max(obs.x, Math.min(x, obs.x + obs.w)); let closeY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
-            let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
+            if (obs.type === 'lake') {
+                let cx = obs.x + obs.w / 2;
+                let cy = obs.y + obs.h / 2;
+                let obsRadius = (obs.w / 2) * 0.8; 
+                let dx = x - cx; let dy = y - cy; 
+                if (dx*dx + dy*dy < Math.pow(obsRadius + radius, 2)) return true;
+            } else {
+                let closeX = Math.max(obs.x, Math.min(x, obs.x + obs.w)); let closeY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
+                let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
+            }
         } return false;
     }
 
@@ -994,8 +1002,17 @@
             }
 
             // DRAW CLASS SPRITE
+            if (!isWhirling) ctx.rotate(this.angle); // Rotate to face mouse only if not whirling
+            
             let flip = (mouse.x < this.x && !isWhirling) ? -1 : 1;
-            ctx.scale(flip, 1); // Face the mouse
+            
+            // To keep the character upright and just flipped left/right when pointing
+            if (!isWhirling) {
+                ctx.rotate(-this.angle); // Undo rotation to keep sprite upright
+                ctx.scale(flip, 1);
+            } else {
+                 ctx.scale((mouse.x < this.x) ? -1 : 1, 1);
+            }
             
             // Determine which sprite to use based on chosen class
             let activeSprite = archerSprite; // fallback
