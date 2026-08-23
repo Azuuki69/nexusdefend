@@ -229,7 +229,7 @@
     const waterSprite = new Image(); waterSprite.src = 'assets/textures/water.png';
     const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin.png';
     const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
-    const bear2Sprite = new Image(); bear2Sprite.src = 'assets/textures/enemies/bear2.png';
+    const bear4Sprite = new Image(); bear4Sprite.src = 'assets/textures/enemies/bear4.png';
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
 
     // --- AUDIO SYSTEM ---
@@ -1420,10 +1420,10 @@
                 } else {
                     let flip = (target.x < this.x) ? -1 : 1;
                     ctx.scale(flip, 1);
-                    if (bear2Sprite.complete && bear2Sprite.naturalWidth !== 0) {
-                        let sW = Math.floor(bear2Sprite.width / 5);
-                        let sH = bear2Sprite.height;
-                        ctx.drawImage(bear2Sprite, this.frameX * sW, 0, sW, sH, -80, -80, 160, 160);
+                    if (bear4Sprite.complete && bear4Sprite.naturalWidth !== 0) {
+                        let sW = Math.floor(bear4Sprite.width / 5);
+                        let sH = bear4Sprite.height;
+                        ctx.drawImage(bear4Sprite, this.frameX * sW, 0, sW, sH, -80, -80, 160, 160);
                     } else {
                         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                         ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
