@@ -221,8 +221,8 @@
     const warriorSprite = new Image(); warriorSprite.src = 'assets/textures/warrior.png';
     const mageSprite = new Image(); mageSprite.src = 'assets/textures/mage.png';
     const priestSprite = new Image(); priestSprite.src = 'assets/textures/priest.png';
-    const treeSprite = new Image(); treeSprite.src = 'assets/textures/tree.png';
-    const stoneSprite = new Image(); stoneSprite.src = 'assets/textures/stone.png';
+    const treeSprite = new Image(); treeSprite.src = 'assets/textures/tree_clean.png';
+    const stoneSprite = new Image(); stoneSprite.src = 'assets/textures/stone_clean.png';
     const grassSprite = new Image(); grassSprite.src = 'assets/textures/grass.png';
     const nexusSprite = new Image(); nexusSprite.src = 'assets/textures/nexus.png';
     const snowSprite = new Image(); snowSprite.src = 'assets/textures/snow.png';
@@ -1504,23 +1504,34 @@
     }
 
     class Resource extends Entity {
-        constructor(x, y, type) { super(x, y, 60, 3); this.type = type; this.hitFlashTimer = 0; }
+        constructor(x, y, type) {
+            // Hitbox radius now matches each sprite's actual visual footprint
+            let r = type === 'wood' ? 55 : (type === 'stone' ? 45 : 30);
+            super(x, y, r, 3);
+            this.type = type; this.hitFlashTimer = 0;
+        }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
-            const imgSize = 200; 
-            const offset = -imgSize / 2;
-
             if (this.type === 'wood') {
+                // Ground shadow for grounding, then the tree drawn at its real aspect ratio (no more squish)
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 55, 40, 14, 0, 0, Math.PI*2); ctx.fill();
                 if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
-                    ctx.drawImage(treeSprite, this.x + offset, this.y + offset, imgSize, imgSize);
+                    let dh = 150; let dw = dh * (treeSprite.width / treeSprite.height);
+                    if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
+                    ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 20, dw, dh);
+                    ctx.filter = 'none';
                 } else {
                     ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
                     ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
                     ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
                 }
             } else if (this.type === 'stone') {
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 38, 32, 11, 0, 0, Math.PI*2); ctx.fill();
                 if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
-                    ctx.drawImage(stoneSprite, this.x + offset, this.y + offset, imgSize, imgSize);
+                    let dh = 105; let dw = dh * (stoneSprite.width / stoneSprite.height);
+                    if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
+                    ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 20, dw, dh);
+                    ctx.filter = 'none';
                 } else {
                     ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
                     ctx.fillStyle = '#888'; ctx.beginPath(); ctx.moveTo(this.x-10, this.y+10); ctx.lineTo(this.x, this.y-5); ctx.lineTo(this.x+10, this.y+10); ctx.fill();
@@ -1549,15 +1560,24 @@
         entities.obstacles.push(new Obstacle(150, 300, 450, 450, 'lake'));
 
         for(let i=0; i<35; i++) {
-            let x = Math.random() * 1800 + 60; let y = Math.random() * 960 + 60;
-            if(Math.hypot(x-960, y-540) < 200 || isCollidingWithObstacle(x, y, 30)) continue;
-            entities.resources.push(new Resource(x, y, Math.random() > 0.5 ? 'wood' : 'stone'));
+            // Retry placement so resources never overlap each other, obstacles, or the base
+            let placed = false;
+            for (let attempt = 0; attempt < 20 && !placed; attempt++) {
+                let x = Math.random() * 1800 + 60; let y = Math.random() * 960 + 60;
+                if (Math.hypot(x-960, y-540) < 200) continue;
+                if (isCollidingWithObstacle(x, y, 45)) continue;
+                let overlapsResource = entities.resources.some(r => Math.hypot(r.x - x, r.y - y) < 135);
+                if (overlapsResource) continue;
+                entities.resources.push(new Resource(x, y, Math.random() > 0.5 ? 'wood' : 'stone'));
+                placed = true;
+            }
         }
         
         // Spawn Mystery Caches
         for(let i=0; i<2; i++) {
             let cx = Math.random() * 1700 + 100; let cy = Math.random() * 880 + 100;
-            if(Math.hypot(cx-960, cy-540) > 400 && !isCollidingWithObstacle(cx, cy, 30)) {
+            let overlapsResource = entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
+            if (Math.hypot(cx-960, cy-540) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
                 entities.resources.push(new Resource(cx, cy, 'cache'));
             }
         }
@@ -1713,8 +1733,8 @@
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
-                    // Increased hit radius to 100 and interaction distance to 220 to match the 200px image size
-                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 60 && Math.hypot(player.x - r.x, player.y - r.y) < 180) {
+                    // Hit radius now matches each resource's real sprite size (r.radius), not a guessed constant
+                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < r.radius && Math.hypot(player.x - r.x, player.y - r.y) < r.radius + 130) {
                         
                         if (r.type === 'cache') {
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
