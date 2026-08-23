@@ -1667,8 +1667,7 @@
             ctx.fillStyle = '#aaddff';
             ctx.fillRect(0, 0, 1920, 1080);
         } else if (grassSprite.complete && grassSprite.naturalWidth !== 0) {
-            ctx.fillStyle = ctx.createPattern(grassSprite, 'repeat');
-            ctx.fillRect(0, 0, 1920, 1080);
+            ctx.drawImage(grassSprite, 0, 0, 1920, 1080);
             
             if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; ctx.fillRect(0, 0, 1920, 1080); }
             else if (gameState === 'NIGHT') { ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; ctx.fillRect(0, 0, 1920, 1080); }
