@@ -209,7 +209,7 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
 
-    // LOAD CUSTOM TEXTURES HERE (Make sure this filename matches exactly what you named the transparent file)
+    // LOAD CUSTOM TEXTURES HERE
     const archerSprite = new Image();
     archerSprite.src = 'assets/textures/archer.png';
 
@@ -961,7 +961,7 @@
                 
                 // Ensure image is loaded before attempting to slice it
                 if (archerSprite.width > 0) {
-                    let sW = archerSprite.width / 9; // 9 columns in the sheet
+                    let sW = archerSprite.width / 10; // FIXED 10 columns!
                     let sH = archerSprite.height / 4; // 4 rows
                     
                     // Draw the specific sliced frame normally
