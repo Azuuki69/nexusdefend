@@ -229,7 +229,8 @@
     const waterSprite = new Image(); waterSprite.src = 'assets/textures/water.png';
     const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin.png';
     const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
-    const bearSprite = new Image(); bearSprite.src = 'assets/textures/enemies/bear.png';
+    const bear2Sprite = new Image(); bear2Sprite.src = 'assets/textures/enemies/bear2.png';
+    const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1231,7 +1232,6 @@
             }
 
             if (this.isAsleep) {
-                this.frameX = 4;
                 return; 
             }
             
@@ -1389,7 +1389,6 @@
 
             ctx.save(); ctx.translate(this.x, this.y); 
             let target = (this.type === 'golem') ? base : (Math.hypot(base.x - this.x, base.y - this.y) < Math.hypot(player.x - this.x, player.y - this.y) ? base : player);
-            ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x));
             
             if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
             else if (this.type === 'goblin') ctx.fillStyle = '#5b9e32';
@@ -1404,36 +1403,41 @@
 
             let isCustomSprite = false;
 
-            if (this.type === 'golem') { ctx.fillRect(-15, -20, 30, 40); ctx.fillStyle = '#888'; ctx.fillRect(10, -30, 15, 20); ctx.fillRect(10, 10, 15, 20); } 
-            else if (this.type === 'predator' && bearSprite.complete && bearSprite.naturalWidth !== 0) {
+            if (this.type === 'golem') { ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x)); ctx.fillRect(-15, -20, 30, 40); ctx.fillStyle = '#888'; ctx.fillRect(10, -30, 15, 20); ctx.fillRect(10, 10, 15, 20); } 
+            else if (this.type === 'predator') { 
                 isCustomSprite = true;
-                if (!this.isAsleep) {
-                    ctx.rotate(-Math.atan2(target.y - this.y, target.x - this.x));
+                if (this.isAsleep) {
+                    if (bear3Sprite.complete && bear3Sprite.naturalWidth !== 0) {
+                        ctx.drawImage(bear3Sprite, -60, -60, 120, 120);
+                    } else {
+                        ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
+                        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
+                        ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
+                    }
+                    ctx.fillStyle = '#fff'; ctx.font = "bold 20px Arial"; ctx.fillText("Zzz...", 0, -40 + Math.sin(performance.now()/300)*5);
+                } else {
                     let flip = (target.x < this.x) ? -1 : 1;
                     ctx.scale(flip, 1);
-                } else {
-                    ctx.rotate(-Math.atan2(target.y - this.y, target.x - this.x));
+                    if (bear2Sprite.complete && bear2Sprite.naturalWidth !== 0) {
+                        let sW = Math.floor(bear2Sprite.width / 4);
+                        let sH = bear2Sprite.height;
+                        ctx.drawImage(bear2Sprite, this.frameX * sW, 0, sW, sH, -60, -60, 120, 120);
+                    } else {
+                        ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
+                        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
+                        ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
+                    }
                 }
-                let sW = Math.floor(bearSprite.width / 5);
-                let sH = bearSprite.height;
-                ctx.drawImage(bearSprite, this.frameX * sW, 0, sW, sH, -60, -60, 120, 120);
-            }
-            else if (this.type === 'predator') { 
-                ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
-                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
-                if (this.isAsleep) { ctx.fillStyle = '#fff'; ctx.font = "bold 20px Arial"; ctx.fillText("Zzz...", 0, -40 + Math.sin(performance.now()/300)*5); }
             }
             else if (this.type === 'goblin' && goblinSprite.complete && goblinSprite.naturalWidth !== 0) {
                 isCustomSprite = true;
-                ctx.rotate(-Math.atan2(target.y - this.y, target.x - this.x));
                 let flip = (target.x < this.x) ? -1 : 1;
                 ctx.scale(flip, 1);
                 let sW = Math.floor(goblinSprite.width / 3);
                 let sH = goblinSprite.height;
                 ctx.drawImage(goblinSprite, this.frameX * sW, 0, sW, sH, -40, -40, 80, 80);
             }
-            else { ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); }
+            else { ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x)); ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); }
 
             if (this.burningTimer > 0) {
                 ctx.fillStyle = 'rgba(255, 100, 0, 0.4)';
