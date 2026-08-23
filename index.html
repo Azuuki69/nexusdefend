@@ -322,7 +322,14 @@
                 let closeX = Math.max(obs.x, Math.min(x, obs.x + obs.w)); let closeY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
                 let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
             }
-        } return false;
+        }
+        for (let r of entities.resources) {
+            if (r.solid) {
+                let dx = x - r.x; let dy = y - r.y;
+                if (dx*dx + dy*dy < Math.pow(r.solidRadius + radius, 2)) return true;
+            }
+        }
+        return false;
     }
 
     function spawnParticles(x, y, color, count) {
@@ -1505,18 +1512,21 @@
 
     class Resource extends Entity {
         constructor(x, y, type) {
-            // Hitbox radius now matches each sprite's actual visual footprint
+            // Hitbox radius now matches each sprite's actual visual footprint (used for mining/interaction range)
             let r = type === 'wood' ? 55 : (type === 'stone' ? 45 : 30);
             super(x, y, r, 3);
             this.type = type; this.hitFlashTimer = 0;
+            // Solid collision radius - smaller than the interaction radius, blocks movement so you can't walk through trees/rocks
+            this.solid = (type === 'wood' || type === 'stone');
+            this.solidRadius = type === 'wood' ? 20 : (type === 'stone' ? 18 : 0);
         }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
             if (this.type === 'wood') {
                 // Ground shadow for grounding, then the tree drawn at its real aspect ratio (no more squish)
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 55, 40, 14, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 55, 48, 17, 0, 0, Math.PI*2); ctx.fill();
                 if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
-                    let dh = 150; let dw = dh * (treeSprite.width / treeSprite.height);
+                    let dh = 180; let dw = dh * (treeSprite.width / treeSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
                     ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 60, dw, dh);
                     ctx.filter = 'none';
@@ -1526,9 +1536,9 @@
                     ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
                 }
             } else if (this.type === 'stone') {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 38, 32, 11, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 40, 20, 7, 0, 0, Math.PI*2); ctx.fill();
                 if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
-                    let dh = 105; let dw = dh * (stoneSprite.width / stoneSprite.height);
+                    let dh = 65; let dw = dh * (stoneSprite.width / stoneSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
                     ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 43, dw, dh);
                     ctx.filter = 'none';
@@ -1838,6 +1848,13 @@
         entities.npcs.forEach(n => n.draw(ctx)); entities.items.forEach(i => i.draw(ctx)); entities.resources.forEach(r => r.draw(ctx));
         base.draw(ctx); entities.towers.forEach(t => t.draw(ctx)); entities.enemies.forEach(e => e.draw(ctx));
         entities.projectiles.forEach(p => p.draw(ctx)); entities.effects.forEach(ef => ef.draw(ctx)); entities.particles.forEach(p => p.draw(ctx)); player.draw(ctx);
+
+        // Re-draw tree crowns that stand in front of the player so the player appears to walk behind the foliage
+        entities.resources.forEach(r => {
+            if (r.type === 'wood' && r.y > player.y - 20 && Math.abs(r.x - player.x) < 140 && Math.abs(r.y - player.y) < 230) {
+                r.draw(ctx);
+            }
+        });
 
         // Draw Threat Indicator
         if (gameState === 'DAY' && waveDirection !== -1 && phaseTimer <= 3.0) {
