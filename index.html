@@ -1199,6 +1199,7 @@
             this.burningTimer = 0;
             this.animTimer = 0;
             this.frameX = 0;
+            this.distanceTraveled = 0;
 
             if (this.type === 'skeleton') { this.hp *= 0.6; this.baseSpd *= 0.9; } 
             if (this.type === 'golem') { this.hp *= 3; this.baseSpd *= 0.5; }
@@ -1289,6 +1290,7 @@
                 let speed = this.spd * (dt*60); 
                 if (this.isFlying) { 
                     let nextX = this.x + (dx/len) * speed; let nextY = this.y + (dy/len) * speed;
+                    this.distanceTraveled += Math.hypot(nextX - this.x, nextY - this.y);
                     this.x = nextX; this.y = nextY; 
                 } else {
                     // Improved Avoidance: Sweep multiple angles if direct path is blocked by obstacles
@@ -1300,6 +1302,7 @@
                         let testX = this.x + Math.cos(testAngle) * speed;
                         let testY = this.y + Math.sin(testAngle) * speed;
                         if (!isCollidingWithObstacle(testX, testY, this.radius)) {
+                            this.distanceTraveled += Math.hypot(testX - this.x, testY - this.y);
                             this.x = testX;
                             this.y = testY;
                             moved = true;
@@ -1373,14 +1376,14 @@
                 if (this.attackCd > 0.8) {
                     this.frameX = 2;
                 } else {
-                    this.frameX = Math.floor(this.animTimer / 0.2) % 2;
+                    this.frameX = Math.floor((this.distanceTraveled || 0) / 30) % 2;
                 }
             }
             if (this.type === 'predator') {
                 if (this.attackCd > 0.8) {
                     this.frameX = 3;
                 } else {
-                    this.frameX = Math.floor(this.animTimer / 0.2) % 2;
+                    this.frameX = Math.floor((this.distanceTraveled || 0) / 30) % 2;
                 }
             }
         }
@@ -1408,20 +1411,19 @@
                 isCustomSprite = true;
                 if (this.isAsleep) {
                     if (bear3Sprite.complete && bear3Sprite.naturalWidth !== 0) {
-                        ctx.drawImage(bear3Sprite, -60, -60, 120, 120);
+                        ctx.drawImage(bear3Sprite, -80, -80, 160, 160);
                     } else {
                         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                         ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
                         ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
                     }
-                    ctx.fillStyle = '#fff'; ctx.font = "bold 20px Arial"; ctx.fillText("Zzz...", 0, -40 + Math.sin(performance.now()/300)*5);
                 } else {
                     let flip = (target.x < this.x) ? -1 : 1;
                     ctx.scale(flip, 1);
                     if (bear2Sprite.complete && bear2Sprite.naturalWidth !== 0) {
-                        let sW = Math.floor(bear2Sprite.width / 4);
+                        let sW = Math.floor(bear2Sprite.width / 5);
                         let sH = bear2Sprite.height;
-                        ctx.drawImage(bear2Sprite, this.frameX * sW, 0, sW, sH, -60, -60, 120, 120);
+                        ctx.drawImage(bear2Sprite, this.frameX * sW, 0, sW, sH, -80, -80, 160, 160);
                     } else {
                         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                         ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
