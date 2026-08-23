@@ -195,10 +195,19 @@
 <script>
     // ==========================================
     // --- SPRITE CALIBRATION SETTINGS ---
-    // Make sure these match the number of columns and rows in your image file!
     // ==========================================
-    const SPRITE_COLS = 4; // 4 columns for the new archer3.png
+    const SPRITE_COLS = 4; 
     const SPRITE_ROWS = 1;
+
+    // ==========================================
+    // --- TERRAIN CALIBRATION SETTINGS ---
+    // Change these x/y/w/h values to point to the correct textures 
+    // inside your terrain1.png file!
+    // ==========================================
+    const T_GROUND = { x: 0, y: 0, w: 64, h: 64 };   // The repeating floor tile
+    const T_BUSH   = { x: 64, y: 0, w: 64, h: 64 };  // Used for Wood resources
+    const T_ROCK   = { x: 128, y: 0, w: 64, h: 64 }; // Used for Stone resources
+    const T_DECO   = { x: 192, y: 0, w: 32, h: 32 }; // Used for small grass/pebbles
 
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
     window.addEventListener('resize', resize); resize();
@@ -216,11 +225,12 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
 
-    // LOAD CUSTOM TEXTURES HERE - NOW USING ARCHER 3!
+    // LOAD CUSTOM TEXTURES HERE
     const archerSprite = new Image(); archerSprite.src = 'assets/textures/archer3.png';
     const warriorSprite = new Image(); warriorSprite.src = 'assets/textures/warrior.png';
     const mageSprite = new Image(); mageSprite.src = 'assets/textures/mage.png';
     const priestSprite = new Image(); priestSprite.src = 'assets/textures/priest.png';
+    const terrainSprite = new Image(); terrainSprite.src = 'assets/textures/terrain1.png'; // <--- LOAD NEW TERRAIN HERE
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -846,27 +856,21 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // STATIC & SIMPLE ANIMATION LOGIC FOR NEW 4-FRAME SPRITE
+            // SIMPLE 2-FRAME ANIMATION LOGIC FOR ALL CLASSES
             let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
-            
-            this.frameY = 0; // Only 1 row
+            this.frameY = 0; 
 
             if (this.lastAttack > this.attackCd - 0.25) {
-                this.frameX = 3; // Attack pose (4th column)
+                this.frameX = 3; // Attack pose 
             } else if (isMoving) {
-                // 2-Frame Walk Cycle (Columns 2 and 3)
-                this.animTimer += dt * 8; // Adjust this to make walking faster/slower
+                this.animTimer += dt * 8; 
                 if (this.animTimer > 1) {
                     this.animTimer -= 1;
-                    // Toggle between frame index 1 and 2
-                    this.frameX = (this.frameX === 1) ? 2 : 1; 
+                    this.frameX = (this.frameX === 1) ? 2 : 1; // Toggle walk frames
                 }
-                // Fallback to ensure we start on a valid walk frame
-                if (this.frameX !== 1 && this.frameX !== 2) {
-                    this.frameX = 1;
-                }
+                if (this.frameX !== 1 && this.frameX !== 2) this.frameX = 1; 
             } else {
-                this.frameX = 0; // Idle pose (1st column)
+                this.frameX = 0; // Idle pose 
             }
         }
         
@@ -971,28 +975,16 @@
             let flip = (mouse.x < this.x) ? -1 : 1;
             ctx.scale(flip, 1); // Face the mouse
             
-            // Determine which sprite to use based on chosen class
-            let activeSprite = archerSprite; // fallback
+            let activeSprite = archerSprite; 
             if (this.cls === 'warrior') activeSprite = warriorSprite;
             else if (this.cls === 'mage') activeSprite = mageSprite;
             else if (this.cls === 'priest') activeSprite = priestSprite;
             
             if (activeSprite.width > 0) {
-                let sW = Math.floor(activeSprite.width / SPRITE_COLS); // Cut into 4 pieces
-                let sH = Math.floor(activeSprite.height / SPRITE_ROWS); // Full height
+                let sW = Math.floor(activeSprite.width / SPRITE_COLS); 
+                let sH = Math.floor(activeSprite.height / SPRITE_ROWS); 
                 
-                // Still drawing at 110x110
-                ctx.drawImage(
-                    activeSprite, 
-                    this.frameX * sW, 
-                    0, 
-                    sW, 
-                    sH, 
-                    -55, 
-                    -55, 
-                    110, 
-                    110
-                ); 
+                ctx.drawImage(activeSprite, this.frameX * sW, 0, sW, sH, -55, -55, 110, 110); 
             }
             
             ctx.restore();
@@ -1387,6 +1379,16 @@
         constructor(x, y, type) { super(x, y, 30, 3); this.type = type; this.hitFlashTimer = 0; }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
+            if (this.type === 'wood' || this.type === 'stone') {
+                if (terrainSprite.width > 0) {
+                    let t = this.type === 'wood' ? T_BUSH : T_ROCK;
+                    ctx.drawImage(terrainSprite, t.x, t.y, t.w, t.h, this.x - this.radius, this.y - this.radius, this.radius*2, this.radius*2);
+                    if (this.hitFlashTimer > 0) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(this.x, this.y, 25, 0, Math.PI*2); ctx.fill(); }
+                    return;
+                }
+            }
+
+            // Fallbacks
             if(this.type === 'wood') {
                 ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
                 ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
@@ -1660,23 +1662,41 @@
         ctx.save();
         if (screenShake > 0) { ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake); }
 
-        if (currentWeather === 'bloodmoon') ctx.fillStyle = '#4a2525';
-        else if (currentWeather === 'blizzard') ctx.fillStyle = '#aaddff';
-        else ctx.fillStyle = gameState === 'DAY' ? '#354a29' : '#141d0f';
-        ctx.fillRect(0, 0, 1920, 1080);
-        
-        ctx.strokeStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2;
-        for(let i=0; i<1920; i+=100) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,1080); ctx.stroke(); }
-        for(let i=0; i<1080; i+=100) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(1920,i); ctx.stroke(); }
+        // --- DRAW TERRAIN FLOOR ---
+        if (terrainSprite.width > 0) {
+            for (let ix = 0; ix < 1920; ix += T_GROUND.w) {
+                for (let iy = 0; iy < 1080; iy += T_GROUND.h) {
+                    ctx.drawImage(terrainSprite, T_GROUND.x, T_GROUND.y, T_GROUND.w, T_GROUND.h, ix, iy, T_GROUND.w, T_GROUND.h);
+                }
+            }
+            // Weather Tints over the custom background
+            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; ctx.fillRect(0,0,1920,1080); }
+            else if (currentWeather === 'blizzard') { ctx.fillStyle = 'rgba(200, 230, 255, 0.3)'; ctx.fillRect(0,0,1920,1080); }
+            else if (gameState !== 'DAY') { ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; ctx.fillRect(0,0,1920,1080); }
+        } else {
+            // Fallback Solid Colors if the texture hasn't loaded yet
+            if (currentWeather === 'bloodmoon') ctx.fillStyle = '#4a2525';
+            else if (currentWeather === 'blizzard') ctx.fillStyle = '#aaddff';
+            else ctx.fillStyle = gameState === 'DAY' ? '#354a29' : '#141d0f';
+            ctx.fillRect(0, 0, 1920, 1080);
+            
+            ctx.strokeStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2;
+            for(let i=0; i<1920; i+=100) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,1080); ctx.stroke(); }
+            for(let i=0; i<1080; i+=100) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(1920,i); ctx.stroke(); }
+        }
         
         entities.obstacles.forEach(o => o.draw(ctx));
 
         if (gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) { ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(mouse.x - 20, mouse.y - 20, 40, 40); }
 
         entities.decorations.forEach(d => {
-            if (d.type === 'grass') { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
-            else if (d.type === 'crystal') { ctx.fillStyle = 'rgba(255, 50, 100, 0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y-d.size); ctx.lineTo(d.x+d.size, d.y); ctx.lineTo(d.x, d.y+d.size); ctx.lineTo(d.x-d.size, d.y); ctx.fill(); }
-            else { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill(); }
+            if (terrainSprite.width > 0 && (d.type === 'grass' || d.type === 'pebble')) {
+                ctx.drawImage(terrainSprite, T_DECO.x, T_DECO.y, T_DECO.w, T_DECO.h, d.x - d.size, d.y - d.size, d.size*2, d.size*2);
+            } else {
+                if (d.type === 'grass') { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
+                else if (d.type === 'crystal') { ctx.fillStyle = 'rgba(255, 50, 100, 0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y-d.size); ctx.lineTo(d.x+d.size, d.y); ctx.lineTo(d.x, d.y+d.size); ctx.lineTo(d.x-d.size, d.y); ctx.fill(); }
+                else { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill(); }
+            }
         });
 
         entities.npcs.forEach(n => n.draw(ctx)); entities.items.forEach(i => i.draw(ctx)); entities.resources.forEach(r => r.draw(ctx));
