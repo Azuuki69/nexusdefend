@@ -838,7 +838,7 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // ANIMATION LOGIC FOR FULL UN-CROPPED SPRITE SHEET
+            // ANIMATION STATE MACHINE FOR UNCROPPED IMAGE
             if (this.cls === 'archer') {
                 let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
                 let newState = 'idle';
@@ -855,14 +855,14 @@
                 if (this.currentState === 'attack') {
                     this.frameY = 2; // ATTACK row
                     this.animTimer += dt * 15; 
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 10; } // 10 frames
+                    if (this.animTimer > 1) { this.animTimer -= 1; this.frameX = (this.frameX + 1) % 10; } // 10 frames
                 } else if (this.currentState === 'run') {
                     this.frameY = 1; // RUN row
                     this.animTimer += dt * 12;
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; } // 8 frames
+                    if (this.animTimer > 1) { this.animTimer -= 1; this.frameX = (this.frameX + 1) % 8; } // 8 frames
                 } else {
                     this.frameY = 0; // IDLE row
-                    this.frameX = 0; // Lock to first frame
+                    this.frameX = 0; // Lock to first frame to stop jittering
                 }
             }
         }
@@ -971,16 +971,16 @@
                 ctx.scale(flip, 1); // Face the mouse
                 
                 if (archerSprite.width > 0) {
-                    // Used Math.floor so bad edge pixels don't bleed into the next frame!
-                    let sW = Math.floor(archerSprite.width / 10); 
-                    let sH = Math.floor(archerSprite.height / 4); 
+                    let sW = Math.floor(archerSprite.width / 10); // 10 columns
+                    let sH = Math.floor(archerSprite.height / 4); // 4 rows
+                    let textOffset = sH * 0.18; // Offset to ignore the text
                     
                     ctx.drawImage(
                         archerSprite, 
                         this.frameX * sW, 
-                        this.frameY * sH, 
+                        (this.frameY * sH) + textOffset, 
                         sW, 
-                        sH, 
+                        sH - textOffset, 
                         -35, 
                         -35, 
                         70, 
