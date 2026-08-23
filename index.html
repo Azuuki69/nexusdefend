@@ -967,11 +967,20 @@
                 else if (this.chosenPath === 'p2') { ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)'; ctx.lineWidth = 2; ctx.rotate(performance.now() / 500); ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI); ctx.stroke(); ctx.rotate(-performance.now() / 500); } 
                 else if (this.chosenPath === 'p3') { ctx.strokeStyle = 'rgba(255, 200, 0, 0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, -25, 15, 5, 0, 0, Math.PI*2); ctx.stroke(); }
             }
+
+            let isWhirling = this.cls === 'warrior' && this.abTimer > 0;
+
             ctx.rotate(this.angle); if (this.invincible) ctx.globalAlpha = 0.5;
             
+            if (isWhirling) {
+                ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
+                ctx.beginPath(); ctx.arc(0, 0, 100 * this.whirlMod, 0, Math.PI*2); ctx.fill();
+            }
+
             // DRAW CLASS SPRITE
-            ctx.rotate(-this.angle); // Keep character upright
-            let flip = (mouse.x < this.x) ? -1 : 1;
+            if (!isWhirling) ctx.rotate(-this.angle); // Keep character upright normally
+            
+            let flip = (mouse.x < this.x && !isWhirling) ? -1 : 1;
             ctx.scale(flip, 1); // Face the mouse
             
             // Determine which sprite to use based on chosen class
@@ -1427,12 +1436,10 @@
     function generateMap() {
         entities.obstacles = []; entities.resources = []; entities.decorations = [];
         for(let i=0; i<150; i++) { entities.decorations.push({ x: Math.random() * 1920, y: Math.random() * 1080, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 }); }
-        for(let i=0; i<5; i++) {
-            let w = 150 + Math.random()*150; let h = 150 + Math.random()*150;
-            let x = 300 + Math.random()*(1920 - 600 - w); let y = 300 + Math.random()*(1080 - 600 - h);
-            if (Math.hypot((x+w/2)-960, (y+h/2)-540) < 400) continue; 
-            entities.obstacles.push(new Obstacle(x, y, w, h, Math.random()>0.5?'lake':'lava'));
-        }
+        
+        // Single static pool on the left side
+        entities.obstacles.push(new Obstacle(150, 250, 200, 580, 'lake'));
+
         for(let i=0; i<35; i++) {
             let x = Math.random() * 1800 + 60; let y = Math.random() * 960 + 60;
             if(Math.hypot(x-960, y-540) < 200 || isCollidingWithObstacle(x, y, 30)) continue;
