@@ -1376,10 +1376,10 @@
     }
 
     class Resource extends Entity {
-        constructor(x, y, type) { super(x, y, 70, 3); this.type = type; this.hitFlashTimer = 0; }
+        constructor(x, y, type) { super(x, y, 100, 3); this.type = type; this.hitFlashTimer = 0; }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
-            const imgSize = 140; 
+            const imgSize = 200; 
             const offset = -imgSize / 2;
 
             if (this.type === 'wood') {
@@ -1586,7 +1586,8 @@
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
-                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 70 && Math.hypot(player.x - r.x, player.y - r.y) < 160) {
+                    // Increased hit radius to 100 and interaction distance to 220 to match the 200px image size
+                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 100 && Math.hypot(player.x - r.x, player.y - r.y) < 220) {
                         
                         if (r.type === 'cache') {
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
