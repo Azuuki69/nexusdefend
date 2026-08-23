@@ -871,6 +871,7 @@
             this.maxMp = this.data.mp; this.mp = this.maxMp;
             this.spd = this.data.spd; this.atk = this.data.atk; this.attackCd = this.data.cd;
             this.lastAttack = 0; this.angle = 0; this.buildSelection = 1; this.abTimer = 0; this.abilityCooldownTimer = 0; this.whirlTick = 0;
+            this.abMaxTimer = 1.5; this.whirlSpin = 0; this.whirlPulse = 0;
             this.level = 1; this.xp = 0; this.maxXp = 150; 
             this.tp = 0; this.chosenPath = null; this.talents = []; this.paragonPoints = 0;
             this.hasDaySpeed = false;
@@ -1006,15 +1007,16 @@
             
             if (this.abTimer > 0 && this.cls === 'warrior') {
                 this.angle += dt * 15; this.whirlTick -= dt;
+                this.whirlSpin += dt * 15; this.whirlPulse = Math.max(0, this.whirlPulse - dt * 5);
                 if (this.whirlTick <= 0) {
-                    entities.enemies.forEach(e => { 
+                    entities.enemies.forEach(e => {
                         if (e.type === 'assassin' && e.isInvisible) return;
                         if (Math.hypot(e.x - this.x, e.y - this.y) < 100 * this.whirlMod) {
                             let dmgDealt = this.atk * 0.5;
-                            e.takeDamage(dmgDealt, true, 'none', 'player'); 
+                            e.takeDamage(dmgDealt, true, 'none', 'player');
                         }
                     });
-                    this.whirlTick = 0.25; 
+                    this.whirlTick = 0.25; this.whirlPulse = 1;
                 }
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
@@ -1043,7 +1045,7 @@
                     addShake(10); 
                     this.invincibleTimer = 0.5;
                 }
-                this.abTimer = 1.5; this.whirlTick = 0; 
+                this.abTimer = 1.5; this.abMaxTimer = 1.5; this.whirlTick = 0; this.whirlSpin = 0; this.whirlPulse = 0;
             } 
             else if (this.cls === 'mage') { 
                 entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player')); 
@@ -1134,13 +1136,35 @@
             
             if (isWhirling) {
                 ctx.save();
-                ctx.rotate(performance.now() / 100); 
-                let whirlRadius = 150 * this.whirlMod; 
+                // Progress through the ability, 0 at cast -> 1 at the end. Drives the ramps below
+                // so the effect grows and dissipates instead of popping in and out at full size.
+                let wp = 1 - Math.max(0, Math.min(1, this.abTimer / this.abMaxTimer));
+                let ramp = Math.min(1, wp / 0.12);                       // quick spin-up
+                let fade = Math.min(1, (1 - wp) / 0.25);                 // dissipate at the end
+                let pulse = 1 + this.whirlPulse * 0.06;                  // small kick on each damage tick
+                let scale = (0.55 + 0.45 * ramp) * (1 + 0.12 * (1 - fade)) * pulse;
+                let alpha = ramp * fade;
+
+                // Damage reaches 100 * whirlMod. The sprite carries ~8% padding and its outer
+                // spiral is sparse, so a 200 box only reads solid to ~78. 240 puts the solid
+                // edge on the actual hitbox - what you see is what you hit.
+                let whirlDia = 240 * this.whirlMod * scale;
+                ctx.globalAlpha = (this.invincible ? 0.5 : 1) * alpha;
+
                 if (whirlwindSprite.complete && whirlwindSprite.naturalWidth !== 0) {
-                    ctx.drawImage(whirlwindSprite, -whirlRadius/2, -whirlRadius/2, whirlRadius, whirlRadius);
+                    // Three trailing copies at decreasing alpha read as motion blur, which smooths
+                    // the spin far more than raising the rotation rate would.
+                    for (let i = 2; i >= 0; i--) {
+                        ctx.save();
+                        ctx.rotate(this.whirlSpin - i * 0.22);
+                        ctx.globalAlpha = ctx.globalAlpha * (i === 0 ? 1 : (i === 1 ? 0.45 : 0.2));
+                        ctx.drawImage(whirlwindSprite, -whirlDia/2, -whirlDia/2, whirlDia, whirlDia);
+                        ctx.restore();
+                    }
                 } else {
+                    ctx.rotate(this.whirlSpin);
                     ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
-                    ctx.beginPath(); ctx.arc(0, 0, 100 * this.whirlMod, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(0, 0, whirlDia/2, 0, Math.PI*2); ctx.fill();
                 }
                 ctx.restore();
             }
