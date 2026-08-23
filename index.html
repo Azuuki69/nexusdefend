@@ -229,6 +229,7 @@
     const waterSprite = new Image(); waterSprite.src = 'assets/textures/water.png';
     const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin.png';
     const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
+    const bearSprite = new Image(); bearSprite.src = 'assets/textures/enemies/bear.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -993,7 +994,7 @@
             }
 
             // DRAW CLASS SPRITE
-            let flip = (mouse.x < this.x) ? -1 : 1;
+            let flip = (mouse.x < this.x && !isWhirling) ? -1 : 1;
             ctx.scale(flip, 1); // Face the mouse
             
             // Determine which sprite to use based on chosen class
@@ -1213,13 +1214,8 @@
             }
 
             if (this.isAsleep) {
-                if (gameState === 'NIGHT') { 
-                    this.isAsleep = false; 
-                    entities.texts.push(new FloatingText(this.x, this.y - 50, "AWAKENED!", '#ff0000')); 
-                    addShake(10); 
-                } else {
-                    return; 
-                }
+                this.frameX = 3;
+                return; 
             }
             
             let distPlayer = Math.hypot(player.x - this.x, player.y - this.y);
@@ -1363,6 +1359,13 @@
                     this.frameX = Math.floor(this.animTimer / 0.2) % 2;
                 }
             }
+            if (this.type === 'predator') {
+                if (this.attackCd > 0.8) {
+                    this.frameX = 2;
+                } else {
+                    this.frameX = Math.floor(this.animTimer / 0.2) % 2;
+                }
+            }
         }
         draw(ctx) { 
             if (this.type === 'assassin' && this.isInvisible) return;
@@ -1385,6 +1388,17 @@
             let isCustomSprite = false;
 
             if (this.type === 'golem') { ctx.fillRect(-15, -20, 30, 40); ctx.fillStyle = '#888'; ctx.fillRect(10, -30, 15, 20); ctx.fillRect(10, 10, 15, 20); } 
+            else if (this.type === 'predator' && bearSprite.complete && bearSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                if (!this.isAsleep) {
+                    ctx.rotate(-Math.atan2(target.y - this.y, target.x - this.x));
+                    let flip = (target.x < this.x) ? -1 : 1;
+                    ctx.scale(flip, 1);
+                }
+                let sW = Math.floor(bearSprite.width / 4);
+                let sH = bearSprite.height;
+                ctx.drawImage(bearSprite, this.frameX * sW, 0, sW, sH, -60, -60, 120, 120);
+            }
             else if (this.type === 'predator') { 
                 ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                 ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
@@ -1642,7 +1656,7 @@
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
-                    // Interaction check
+                    // Increased hit radius to 100 and interaction distance to 220 to match the 200px image size
                     if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 60 && Math.hypot(player.x - r.x, player.y - r.y) < 180) {
                         
                         if (r.type === 'cache') {
