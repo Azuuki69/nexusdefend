@@ -843,7 +843,7 @@
                 if (this.lastAttack > this.attackCd - 0.25) {
                     this.frameY = 2; // ATTACK row
                     this.animTimer += dt * 15; // Animation speed
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 9; }
                 } else if (isMoving) {
                     this.frameY = 1; // RUN row
                     this.animTimer += dt * 12;
@@ -959,11 +959,14 @@
                 let flip = (mouse.x < this.x) ? -1 : 1;
                 ctx.scale(flip, 1); // Face the mouse
                 
-                let sW = archerSprite.width / 9; // 9 columns in the sheet
-                let sH = archerSprite.height / 4; // 4 rows
-                
-                // Draw the specific frame!
-                ctx.drawImage(archerSprite, this.frameX * sW, this.frameY * sH, sW, sH, -35, -35, 70, 70); 
+                // Ensure image is loaded before attempting to slice it
+                if (archerSprite.width > 0) {
+                    let sW = archerSprite.width / 9; // 9 columns in the sheet
+                    let sH = archerSprite.height / 4; // 4 rows
+                    
+                    // Draw the specific sliced frame!
+                    ctx.drawImage(archerSprite, this.frameX * sW, this.frameY * sH, sW, sH, -35, -35, 70, 70); 
+                }
             } 
             else if (this.cls === 'priest') { ctx.fillStyle = '#e6e6e6'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffcc00'; ctx.fillRect(10, 12, 30, 4); ctx.fillRect(32, 6, 4, 16); }
             ctx.restore();
