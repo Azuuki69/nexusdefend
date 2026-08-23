@@ -162,9 +162,22 @@
         #achievementToast h3 { font-family: var(--font-head); letter-spacing: 1px; }
         .toast-visible { right: 20px !important; }
         
-        /* Pause Screen */
+        /* Pause Screen / Settings */
         #pauseOverlay { z-index: 200; }
         #pauseOverlay h1 { font-size: 56px; }
+        #settingsModal { width: 580px; }
+        .set-ctl { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+        .vol-slider { -webkit-appearance: none; appearance: none; width: 170px; height: 6px; border-radius: 3px; outline: none; cursor: pointer; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8); background: linear-gradient(90deg, var(--gold) 0 var(--fill, 50%), #2c2c26 var(--fill, 50%) 100%); }
+        .vol-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 17px; height: 17px; border-radius: 50%; background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); border: 2px solid #241c05; box-shadow: 0 2px 5px rgba(0,0,0,0.7); cursor: pointer; }
+        .vol-slider::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); border: 2px solid #241c05; cursor: pointer; }
+        .vol-read { font-family: var(--font-head); font-size: 13px; font-weight: 700; color: var(--gold-bright); min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+        .settings-actions { display: flex; justify-content: center; gap: 12px; margin-top: 24px; }
+        .settings-actions .action-btn { margin-bottom: 0; }
+        .danger-btn { background: linear-gradient(180deg, #ff8a8a, #b30000); color: #fff; border-color: #7a0000; }
+        .danger-btn:hover { background: linear-gradient(180deg, #ffa5a5, #d40000); }
+        .danger-btn.confirming { background: linear-gradient(180deg, #ffd27a, #c46a00); border-color: #8a4a00; color: #2a1500; }
+        #muteBtn.is-muted { background: linear-gradient(180deg, #ff8a8a, #b30000); color: #fff; border-color: #7a0000; }
+        .gameover-actions { display: flex; gap: 12px; justify-content: center; }
 
         /* Talent Tree Specifics */
         #talentMenu { width: 1040px; max-width: 90%; max-height: 84%; display: flex; flex-direction: column; padding: 26px 30px; }
@@ -210,8 +223,40 @@
 
     <!-- Pause Overlay -->
     <div id="pauseOverlay" class="overlay hidden">
-        <h1 style="color: #fff; text-shadow: 0 0 20px #fff;">⏸ Paused</h1>
-        <p style="color: #aaa; font-size: 18px; letter-spacing: 0.5px;">Press <b style="color:#ffe9a8;">[ESC]</b> to resume</p>
+        <div class="hud-panel menu-modal" id="settingsModal">
+            <h2 class="modal-title" style="color: var(--gold-bright);">Settings</h2>
+            <p class="modal-sub">Press <b style="color:#ffe9a8;">[ESC]</b> to resume</p>
+
+            <div class="upgrade-row">
+                <span class="row-icon">&#127925;</span>
+                <div class="row-body"><strong>Music</strong><br><span style="font-size:13px; color:#aaa;">Background theme volume</span></div>
+                <div class="set-ctl">
+                    <input id="musicVol" class="vol-slider" type="range" min="0" max="100" value="35" oninput="setVolume('music', this.value)">
+                    <span class="vol-read" id="musicVolRead">35%</span>
+                </div>
+            </div>
+
+            <div class="upgrade-row">
+                <span class="row-icon">&#128266;</span>
+                <div class="row-body"><strong>Sound Effects</strong><br><span style="font-size:13px; color:#aaa;">Combat, gathering and UI sounds</span></div>
+                <div class="set-ctl">
+                    <input id="sfxVol" class="vol-slider" type="range" min="0" max="100" value="60" oninput="setVolume('sfx', this.value)">
+                    <span class="vol-read" id="sfxVolRead">60%</span>
+                </div>
+            </div>
+
+            <div class="upgrade-row">
+                <span class="row-icon">&#128263;</span>
+                <div class="row-body"><strong>Mute All</strong><br><span style="font-size:13px; color:#aaa;">Silence music and effects</span></div>
+                <button id="muteBtn" class="upgrade-btn" onclick="toggleMute()">Off</button>
+            </div>
+
+            <div class="settings-actions">
+                <button class="action-btn" onclick="closeSettings()">Resume</button>
+                <button class="action-btn danger-btn" id="retryBtn" onclick="retryRun()">Retry Run</button>
+                <button class="action-btn danger-btn" id="quitBtn" onclick="quitToMenu()">Main Menu</button>
+            </div>
+        </div>
     </div>
 
         <div id="hud" class="hidden">
@@ -338,7 +383,10 @@
             🪨 Stone Gathered: <span id="go-stone">0</span><br>
             🗼 Towers Built: <span id="go-towers">0</span>
         </div>
-        <button class="action-btn" style="font-size: 18px; padding: 12px 35px;" onclick="resetGameToMenu()">Return to Menu</button>
+        <div class="gameover-actions">
+            <button class="action-btn" style="font-size: 18px; padding: 12px 35px;" onclick="restartRun()">Retry Run</button>
+            <button class="action-btn" style="font-size: 18px; padding: 12px 35px;" onclick="resetGameToMenu()">Return to Menu</button>
+        </div>
     </div>
 </div>
 
@@ -387,14 +435,52 @@
     const MERCHANT_FRAMES = [15, 95, 174, 254, 333, 413];
     const MERCHANT_CELL = { y: 396, w: 68, h: 92 };
     const MERCHANT_VISIT_DAYS = 4;
+    // Character sprite cells are 225x276 (a third of the sheet, cropped at 75%).
+    // Drawing them into a 110x110 square squashed them ~18% vertically and left the
+    // classes a head shorter than the merchant; these keep the cell's real aspect.
+    const HERO_DRAW_W = 130, HERO_DRAW_H = 160, HERO_DRAW_X = -65, HERO_DRAW_Y = -100;
+    // bear4.png cells are all 216 tall with the paws 14px above the cell bottom, so
+    // anchoring on the cell bottom keeps every frame standing on the same ground line.
+    const BEAR_SCALE = 1.0, BEAR_GROUND = 81;
+    const BEAR_SLEEP_SCALE = 0.55, BEAR_SLEEP_GROUND = 67;
+    const PREDATOR_BASE_HP = 1000, PREDATOR_HP_GROWTH = 1.15;
     function merchantVisits(day) { return (day - 1) % MERCHANT_VISIT_DAYS === 0; }
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // --- AUDIO SETTINGS ---
+    // Every oscillator sound goes through sfxBus, so one gain controls the lot.
+    const sfxBus = audioCtx.createGain(); sfxBus.connect(audioCtx.destination);
+    const bgMusic = new Audio('assets/sounds/background.mp3'); bgMusic.loop = true;
+    let audioSettings = { music: 35, sfx: 60, muted: false };
+    try { let saved = JSON.parse(localStorage.getItem('nexusAudio')); if (saved) audioSettings = Object.assign(audioSettings, saved); } catch (e) {}
+
+    function applyAudioSettings() {
+        bgMusic.volume = audioSettings.muted ? 0 : audioSettings.music / 100;
+        sfxBus.gain.value = audioSettings.muted ? 0 : audioSettings.sfx / 100;
+        let mv = document.getElementById('musicVol'), sv = document.getElementById('sfxVol');
+        if (mv) { mv.value = audioSettings.music; mv.style.setProperty('--fill', audioSettings.music + '%'); }
+        if (sv) { sv.value = audioSettings.sfx; sv.style.setProperty('--fill', audioSettings.sfx + '%'); }
+        let mr = document.getElementById('musicVolRead'), sr = document.getElementById('sfxVolRead');
+        if (mr) mr.innerText = audioSettings.music + '%';
+        if (sr) sr.innerText = audioSettings.sfx + '%';
+        let mb = document.getElementById('muteBtn');
+        if (mb) { mb.innerText = audioSettings.muted ? 'On' : 'Off'; mb.classList.toggle('is-muted', audioSettings.muted); }
+        try { localStorage.setItem('nexusAudio', JSON.stringify(audioSettings)); } catch (e) {}
+    }
+    function setVolume(kind, val) {
+        audioSettings[kind] = parseInt(val, 10);
+        if (audioSettings.muted && audioSettings[kind] > 0) audioSettings.muted = false;
+        applyAudioSettings();
+    }
+    function toggleMute() { audioSettings.muted = !audioSettings.muted; applyAudioSettings(); playSound('pickup'); }
+    // Browsers block audio until a gesture, so this is called from the class pick.
+    function startMusic() { if (audioCtx.state === 'suspended') audioCtx.resume(); bgMusic.play().catch(() => {}); }
     function playSound(type) {
         if(audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination); let now = audioCtx.currentTime;
+        osc.connect(gain); gain.connect(sfxBus); let now = audioCtx.currentTime;
         if (type === 'shoot') { osc.type = 'triangle'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.1); gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(); osc.stop(now + 0.1); } 
         else if (type === 'hit') { osc.type = 'square'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(40, now + 0.1); gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(); osc.stop(now + 0.1); } 
         else if (type === 'mine') { osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(800, now + 0.05); gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05); osc.start(); osc.stop(now + 0.05); } 
@@ -431,9 +517,10 @@
     window.addEventListener('keydown', e => {
         keys[e.key.toLowerCase()] = true;
         if (e.key === 'Escape' && gameState !== 'MENU' && gameState !== 'OVER') {
-            isPaused = !isPaused;
-            if (isPaused) document.getElementById('pauseOverlay').classList.remove('hidden');
-            else document.getElementById('pauseOverlay').classList.add('hidden');
+            // If a shop/forge/talent window is up, ESC backs out of that first.
+            let openModal = MODAL_IDS.find(id => !document.getElementById(id).classList.contains('hidden'));
+            if (openModal) { closeModal(openModal); return; }
+            if (isPaused) closeSettings(); else openSettings();
         }
     });
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -1233,18 +1320,19 @@
                 let sW = Math.floor(activeSprite.width / 3); // 3 columns per image
                 let sH = Math.floor(activeSprite.height * 0.75); // Crop text at bottom
                 
-                // Increased size from 70x70 to 110x110 (and offset from -35 to -55 to keep it centered)
+                // Drawn at the cell's true aspect ratio so the class stands as tall as the
+                // merchant; HERO_DRAW_Y keeps the feet on the same spot as the old 110x110 box.
                 ctx.drawImage(
-                    activeSprite, 
-                    this.frameX * sW, 
-                    0, 
-                    sW, 
-                    sH, 
-                    -55, 
-                    -55, 
-                    110, 
-                    110
-                ); 
+                    activeSprite,
+                    this.frameX * sW,
+                    0,
+                    sW,
+                    sH,
+                    HERO_DRAW_X,
+                    HERO_DRAW_Y,
+                    HERO_DRAW_W,
+                    HERO_DRAW_H
+                );
             }
             
             ctx.restore();
@@ -1414,7 +1502,7 @@
             if (this.type === 'boss') { this.hp *= 10; this.baseSpd *= 0.8; } 
             if (this.type === 'bat') { this.hp *= 0.5; this.baseSpd *= 1.5; }
             if (this.type === 'bomber') { this.hp *= 0.8; this.baseSpd *= 1.2; }
-            if (this.type === 'predator') { this.hp = Math.floor(1000 * Math.pow(1.15, wave - 1)); this.baseSpd = 4; this.isAsleep = true; }
+            if (this.type === 'predator') { this.hp = Math.floor(PREDATOR_BASE_HP * Math.pow(PREDATOR_HP_GROWTH, wave - 1)); this.baseSpd = 4 + Math.min(wave - 1, 10) * 0.06; this.isAsleep = true; }
             if (this.type === 'assassin') { this.hp *= 0.5; this.baseSpd *= 1.8; this.isInvisible = true; }
             if (this.type === 'necromancer') { this.hp *= 0.8; this.baseSpd *= 0.7; this.healCd = 2.0; }
             if (this.type === 'wolf') { this.hp *= 0.7; this.baseSpd *= 1.4; }
@@ -1621,7 +1709,10 @@
                 isCustomSprite = true;
                 if (this.isAsleep) {
                     if (bear3Sprite.complete && bear3Sprite.naturalWidth !== 0) {
-                        ctx.drawImage(bear3Sprite, -80, -80, 160, 160);
+                        let sw = bear3Sprite.naturalWidth * BEAR_SLEEP_SCALE;
+                        let sh = bear3Sprite.naturalHeight * BEAR_SLEEP_SCALE;
+                        // content sits in the lower ~70% of this sheet, so anchor on that
+                        ctx.drawImage(bear3Sprite, -sw/2, BEAR_SLEEP_GROUND - sh * 0.698, sw, sh);
                     } else {
                         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                         ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
@@ -1640,7 +1731,11 @@
                         ];
                         let f = bearFrames[this.frameX] || bearFrames[0];
                         let sH = bear4Sprite.height;
-                        ctx.drawImage(bear4Sprite, f.sx, 0, f.sw, sH, -80, -80, 160, 160);
+                        // Scale every cell by the same factor instead of forcing them all into
+                        // one square - the cells differ in width, so a fixed box made the bear
+                        // change size as it walked.
+                        let dw = f.sw * BEAR_SCALE, dh = sH * BEAR_SCALE;
+                        ctx.drawImage(bear4Sprite, f.sx, 0, f.sw, sH, -dw/2, BEAR_GROUND - dh, dw, dh);
                     } else {
                         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
                         ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
@@ -1774,7 +1869,51 @@
         lastResVals[id] = val;
     }
 
-    function resetGameToMenu() { document.getElementById('gameOverOverlay').classList.add('hidden'); document.getElementById('hud').classList.add('hidden'); document.getElementById('mainMenu').classList.remove('hidden'); }
+    const MODAL_IDS = ['forgeOverlay', 'talentOverlay', 'merchantOverlay'];
+
+    function resetGameToMenu() {
+        // Stop the run properly - without this the loop kept simulating behind the menu.
+        gameState = 'MENU'; isPaused = false;
+        closeSettings();
+        MODAL_IDS.forEach(id => closeModal(id));
+        document.getElementById('gameOverOverlay').classList.add('hidden');
+        document.getElementById('hud').classList.add('hidden');
+        document.getElementById('mainMenu').classList.remove('hidden');
+    }
+
+    function openSettings() { isPaused = true; resetDangerBtns(); applyAudioSettings(); document.getElementById('pauseOverlay').classList.remove('hidden'); }
+    function closeSettings() { isPaused = false; resetDangerBtns(); document.getElementById('pauseOverlay').classList.add('hidden'); }
+
+    // Retry and Main Menu both throw the run away, so they ask twice.
+    let pendingConfirm = null, confirmTimer = null;
+    function resetDangerBtns() {
+        pendingConfirm = null;
+        if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
+        let r = document.getElementById('retryBtn'), q = document.getElementById('quitBtn');
+        if (r) { r.innerText = 'Retry Run'; r.classList.remove('confirming'); }
+        if (q) { q.innerText = 'Main Menu'; q.classList.remove('confirming'); }
+    }
+    function confirmed(btnId) {
+        if (pendingConfirm === btnId) return true;
+        resetDangerBtns();
+        pendingConfirm = btnId;
+        let b = document.getElementById(btnId);
+        b.innerText = 'Sure?'; b.classList.add('confirming');
+        confirmTimer = setTimeout(resetDangerBtns, 4000);
+        playSound('error');
+        return false;
+    }
+    function retryRun() { if (confirmed('retryBtn')) restartRun(); }
+    function quitToMenu() { if (confirmed('quitBtn')) resetGameToMenu(); }
+
+    function restartRun() {
+        let cls = player ? player.cls : 'warrior';
+        closeSettings();
+        MODAL_IDS.forEach(id => closeModal(id));
+        document.getElementById('gameOverOverlay').classList.add('hidden');
+        startGame(cls);
+    }
+
 
     function generateMap() {
         entities.obstacles = []; entities.resources = []; entities.decorations = [];
@@ -1872,7 +2011,15 @@
         document.getElementById('classPortraitIcon').innerText = classIcons[selectedClass];
         document.getElementById('ability-e-icon').innerText = abilityIcons[selectedClass];
         
-        generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant()); lastTime = performance.now(); requestAnimationFrame(gameLoop);
+        generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant());
+        // Retrying straight from a death left the banner reading "GAME OVER" until the next phase.
+        document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
+        document.getElementById('phaseText').style.color = '#fff';
+        document.getElementById('earlyNightBtn').classList.remove('hidden');
+        startMusic();
+        lastTime = performance.now();
+        // Retrying mid-run leaves the old loop alive; starting a second one would double-step time.
+        if (!loopRunning) { loopRunning = true; requestAnimationFrame(gameLoop); }
     }
 
     function spawnWave() {
@@ -1946,6 +2093,15 @@
                 
                 // Clear day buffs
                 if (player.hasDaySpeed) { playerBuffs.speedMult -= 1.0; player.hasDaySpeed = false; }
+
+                // The bear only prowls by day - it retreats to the forest at nightfall.
+                entities.enemies.forEach(e => {
+                    if (e.type === 'predator') {
+                        spawnParticles(e.x, e.y, '#8a6a4a', 12);
+                        entities.texts.push(new FloatingText(e.x, e.y - 40, "RETREATS", '#c8a06a'));
+                        e.markedForDeletion = true;
+                    }
+                });
                 
                 closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('talentOverlay'); spawnWave();
             } else {
@@ -2140,11 +2296,14 @@
         entities.texts.forEach(txt => txt.draw(ctx)); ctx.restore(); 
     }
 
+    let loopRunning = false;
     function gameLoop(timestamp) {
         let dt = (timestamp - lastTime) / 1000; if(dt > 0.1) dt = 0.1; lastTime = timestamp;
         if (!isPaused) { update(dt); draw(); }
-        if (gameState !== 'OVER') requestAnimationFrame(gameLoop);
+        if (gameState !== 'OVER' && gameState !== 'MENU') requestAnimationFrame(gameLoop);
+        else loopRunning = false;
     }
+    applyAudioSettings();
 </script>
 </body>
 </html>
