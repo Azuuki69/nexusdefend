@@ -227,7 +227,7 @@
     const nexusSprite = new Image(); nexusSprite.src = 'assets/textures/nexus.png';
     const snowSprite = new Image(); snowSprite.src = 'assets/textures/snow.png';
     const waterSprite = new Image(); waterSprite.src = 'assets/textures/water.png';
-    const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin.png';
+    const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin_clean.png';
     const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
     const bear4Sprite = new Image(); bear4Sprite.src = 'assets/textures/enemies/bear4.png';
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
@@ -1445,9 +1445,15 @@
                 isCustomSprite = true;
                 let flip = (target.x < this.x) ? -1 : 1;
                 ctx.scale(flip, 1);
-                let sW = Math.floor(goblinSprite.width / 3);
+                // goblin_clean.png frames are NOT equal width, so slice at the real boundaries.
+                const goblinFrames = [
+                    { sx: 0,   sw: 174 },
+                    { sx: 174, sw: 140 },
+                    { sx: 314, sw: 186 }
+                ];
+                let f = goblinFrames[this.frameX] || goblinFrames[0];
                 let sH = goblinSprite.height;
-                ctx.drawImage(goblinSprite, this.frameX * sW, 0, sW, sH, -40, -40, 80, 80);
+                ctx.drawImage(goblinSprite, f.sx, 0, f.sw, sH, -40, -40, 80, 80);
             }
             else if (this.type === 'wolf' && wolfSprite.complete && wolfSprite.naturalWidth !== 0) {
                 isCustomSprite = true;
