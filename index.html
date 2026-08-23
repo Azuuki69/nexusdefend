@@ -493,15 +493,15 @@
     const SCENERY = [
         // --- tufts and pebbles (very common, tiny) ---
         { sheet:'trees', w:9, h:15, boxes:[[33,28,22,20],[76,26,23,22],[121,20,27,30],[172,28,23,22],[230,25,26,26],[295,33,24,18],[386,30,22,18],[446,25,36,26],[529,26,37,24],[604,26,40,25]] },
-        { sheet:'rocks', w:8, h:16, boxes:[[31,31,44,34],[103,22,57,51],[185,22,55,51]] },
+        { sheet:'rocks', w:8, h:12, solid:0, boxes:[[31,31,44,34],[103,22,57,51],[185,22,55,51]] },
         // --- bushes and small rocks (common, medium) ---
         { sheet:'trees', w:5, h:38, boxes:[[33,63,38,49],[96,60,42,52],[156,74,49,38],[221,73,45,39],[282,69,51,43],[351,68,60,44],[424,73,74,38],[509,73,77,38],[597,77,62,35]] },
-        { sheet:'rocks', w:5, h:32, boxes:[[276,29,44,36],[351,26,56,41],[433,22,61,49],[518,19,54,54],[596,18,56,56],[22,107,60,48],[103,105,57,52],[181,107,65,48],[267,104,61,54],[350,101,60,59],[431,99,63,62],[517,104,56,53],[595,104,57,54]] },
+        { sheet:'rocks', w:5, h:24, solid:0, boxes:[[276,29,44,36],[351,26,56,41],[433,22,61,49],[518,19,54,54],[596,18,56,56],[22,107,60,48],[103,105,57,52],[181,107,65,48],[267,104,61,54],[350,101,60,59],[431,99,63,62],[517,104,56,53],[595,104,57,54]] },
         // --- small trees and boulders (uncommon, large) ---
-        { sheet:'trees', w:3, h:206, boxes:[[31,138,47,65],[91,134,46,69],[158,140,45,63],[221,138,46,65],[279,125,56,80],[350,122,62,83],[425,122,72,84],[510,119,70,87],[589,119,68,90]] },
-        { sheet:'rocks', w:2, h:58, boxes:[[19,188,93,77],[131,187,86,78],[237,188,92,77],[347,190,93,72],[485,205,78,46],[582,194,75,64],[22,294,88,51],[133,287,76,63],[236,293,89,54],[347,287,91,63],[482,291,83,56],[599,287,62,65]] },
+        { sheet:'trees', w:3, h:144, solid:0.15, boxes:[[31,138,47,65],[91,134,46,69],[158,140,45,63],[221,138,46,65],[279,125,56,80],[350,122,62,83],[425,122,72,84],[510,119,70,87],[589,119,68,90]] },
+        { sheet:'rocks', w:2, h:42, solid:0.36, boxes:[[19,188,93,77],[131,187,86,78],[237,188,92,77],[347,190,93,72],[485,205,78,46],[582,194,75,64],[22,294,88,51],[133,287,76,63],[236,293,89,54],[347,287,91,63],[482,291,83,56],[599,287,62,65]] },
         // --- landmark trees (rare, big) ---
-        { sheet:'trees', w:1, h:240, boxes:[[21,212,209,145],[241,220,95,132],[352,231,144,124],[516,214,139,143]] }
+        { sheet:'trees', w:1, h:168, solid:0.12, boxes:[[21,212,209,145],[241,220,95,132],[352,231,144,124],[516,214,139,143]] }
     ];
     const SCENERY_WEIGHT_TOTAL = SCENERY.reduce((a, g) => a + g.w, 0);
     function rollScenery() {
@@ -649,7 +649,7 @@
 
     // --- GAME STATE ---
     let gameState = 'MENU', lastTime = 0, player, base;
-    let entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], decorations: [] };
+    let entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], decorations: [], solids: [] };
     let inventory = { wood: 50, stone: 50, mana: 20 }, wave = 1, phaseTimer = 60, totalKills = 0;
     let screenShake = 0; 
     let currentWeather = 'clear'; 
@@ -726,6 +726,10 @@
                 let closeX = Math.max(obs.x, Math.min(x, obs.x + obs.w)); let closeY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
                 let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
             }
+        }
+        for (let sp of entities.solids) {
+            let dx = x - sp.x; let dy = y - sp.y;
+            if (dx*dx + dy*dy < Math.pow(sp.r + radius, 2)) return true;
         }
         for (let r of entities.resources) {
             if (r.solid) {
@@ -2170,37 +2174,37 @@
     class Resource extends Entity {
         constructor(x, y, type) {
             // Hitbox radius now matches each sprite's actual visual footprint (used for mining/interaction range)
-            let r = type === 'wood' ? 55 : (type === 'stone' ? 45 : (type === 'cache' ? 38 : 30));
+            let r = type === 'wood' ? 40 : (type === 'stone' ? 33 : (type === 'cache' ? 38 : 30));
             super(x, y, r, 3);
             this.type = type; this.hitFlashTimer = 0;
             // Solid collision radius - smaller than the interaction radius, blocks movement so you can't walk through trees/rocks
             this.solid = (type === 'wood' || type === 'stone');
-            this.solidRadius = type === 'wood' ? 20 : (type === 'stone' ? 18 : 0);
+            this.solidRadius = type === 'wood' ? 14 : (type === 'stone' ? 13 : 0);
         }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
             if (this.type === 'wood') {
                 // Ground shadow for grounding, then the tree drawn at its real aspect ratio (no more squish)
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 55, 48, 17, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 39, 34, 12, 0, 0, Math.PI*2); ctx.fill();
                 if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
-                    let dh = 180; let dw = dh * (treeSprite.width / treeSprite.height);
+                    let dh = 126; let dw = dh * (treeSprite.width / treeSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 60, dw, dh);
+                    ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 42, dw, dh);
                     ctx.filter = 'none';
-                    drawGatherMark(ctx, this.x, this.y - 128);
+                    drawGatherMark(ctx, this.x, this.y - 92);
                 } else {
                     ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
                     ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
                     ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
                 }
             } else if (this.type === 'stone') {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 40, 20, 7, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 28, 14, 5, 0, 0, Math.PI*2); ctx.fill();
                 if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
-                    let dh = 65; let dw = dh * (stoneSprite.width / stoneSprite.height);
+                    let dh = 46; let dw = dh * (stoneSprite.width / stoneSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 43, dw, dh);
+                    ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 30, dw, dh);
                     ctx.filter = 'none';
-                    drawGatherMark(ctx, this.x, this.y - 38);
+                    drawGatherMark(ctx, this.x, this.y - 26);
                     ctx.filter = 'none';
                 } else {
                     ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
@@ -2298,7 +2302,7 @@
 
 
     function generateMap() {
-        entities.obstacles = []; entities.resources = []; entities.decorations = [];
+        entities.obstacles = []; entities.resources = []; entities.decorations = []; entities.solids = [];
 
         // A few ponds, well clear of the nexus. Kept square so the sprite is never
         // stretched out of shape - the pond's own art supplies the oval.
@@ -2356,6 +2360,7 @@
             entities.decorations.push({ x: dx, y: dy, type: 'scenery', sheet: g.sheet,
                 sx: b[0], sy: b[1], sw: b[2], sh: b[3], h: dh,
                 flip: Math.random() < 0.5 });
+            if (g.solid) entities.solids.push({ x: dx, y: dy, r: dwid * g.solid });
         }
         // Draw back-to-front so nearer scenery overlaps what is behind it.
         entities.decorations.sort((a, b) => a.y - b.y);
@@ -2414,7 +2419,7 @@
         playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, forgeTowerHpMult: 1.0, hasteMod: 1.0, vampirism: false,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
         forgeUpgrades = { weapon: { level: 0 }, towerHp: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
-        entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], decorations: [] };
+        entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], decorations: [], solids: [] };
         globalTowerHpMult = 1.0; currentWeather = 'clear'; currentModifier = 'none'; setWeather();
         
         player = new Player(selectedClass); base = new Base();
@@ -2827,7 +2832,7 @@
 
         // Re-draw tree crowns that stand in front of the player so the player appears to walk behind the foliage
         entities.resources.forEach(r => {
-            if (r.type === 'wood' && r.y > player.y - 20 && Math.abs(r.x - player.x) < 140 && Math.abs(r.y - player.y) < 230) {
+            if (r.type === 'wood' && r.y > player.y - 20 && Math.abs(r.x - player.x) < 100 && Math.abs(r.y - player.y) < 165) {
                 r.draw(ctx);
             }
         });
