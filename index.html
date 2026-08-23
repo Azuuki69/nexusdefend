@@ -695,10 +695,11 @@
             this.dashTimer = 0;
             this.dashAngle = 0;
             
-            // Animation variables
+            // Animation variables added here!
             this.frameX = 0; 
             this.frameY = 0; 
             this.animTimer = 0;
+            this.currentState = 'idle';
             
             this.resetTalents(true);
         }
@@ -837,37 +838,37 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-// ANIMATION LOGIC FOR CLEAN SPRITE SHEET
-if (this.cls === 'archer') {
-    let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
-    let newState = 'idle';
+            // ANIMATION LOGIC FOR CLEAN SPRITE SHEET
+            if (this.cls === 'archer') {
+                let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
+                let newState = 'idle';
 
-    // 1. Determine what the player is doing right now
-    if (this.lastAttack > this.attackCd - 0.25) newState = 'attack';
-    else if (isMoving) newState = 'run';
+                // Determine what the player is doing right now
+                if (this.lastAttack > this.attackCd - 0.25) newState = 'attack';
+                else if (isMoving) newState = 'run';
 
-    // 2. If the action just changed, instantly reset the animation frames to 0!
-    if (this.currentState !== newState) {
-        this.currentState = newState;
-        this.frameX = 0;
-        this.animTimer = 0;
-    }
+                // If the action just changed, instantly reset the animation frames to 0
+                if (this.currentState !== newState) {
+                    this.currentState = newState;
+                    this.frameX = 0;
+                    this.animTimer = 0;
+                }
 
-    // 3. Play the correct animation loop
-    if (this.currentState === 'attack') {
-        this.frameY = 2; // ATTACK row
-        this.animTimer += dt * 15; // Faster animation
-        if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
-    } else if (this.currentState === 'run') {
-        this.frameY = 1; // RUN row
-        this.animTimer += dt * 12;
-        if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
-    } else {
-        this.frameY = 0; // IDLE row
-        this.animTimer += dt * 5; // Slower idle breathing
-        if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 4; }
-    }
-}
+                // Play the correct animation loop
+                if (this.currentState === 'attack') {
+                    this.frameY = 2; // ATTACK row
+                    this.animTimer += dt * 15; 
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                } else if (this.currentState === 'run') {
+                    this.frameY = 1; // RUN row
+                    this.animTimer += dt * 12;
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                } else {
+                    this.frameY = 0; // IDLE row
+                    this.animTimer += dt * 5; 
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 4; }
+                }
+            }
         }
         
         useAbility() {
@@ -975,11 +976,22 @@ if (this.cls === 'archer') {
                 
                 // Ensure image is loaded before attempting to slice it
                 if (archerSprite.width > 0) {
-                    let sW = archerSprite.width / 10; // FIXED 10 columns!
+                    let sW = archerSprite.width / 10; // 10 columns in the sheet
                     let sH = archerSprite.height / 4; // 4 rows
+                    let textOffset = sH * 0.18; // Offset to ignore the text at the top of the row
                     
-                    // Draw the specific sliced frame normally
-                    ctx.drawImage(archerSprite, this.frameX * sW, this.frameY * sH, sW, sH, -35, -35, 70, 70); 
+                    // Draw the specific sliced frame
+                    ctx.drawImage(
+                        archerSprite, 
+                        this.frameX * sW, 
+                        (this.frameY * sH) + textOffset, 
+                        sW, 
+                        sH - textOffset, 
+                        -35, 
+                        -35, 
+                        70, 
+                        70
+                    ); 
                 }
             } 
             else if (this.cls === 'priest') { ctx.fillStyle = '#e6e6e6'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffcc00'; ctx.fillRect(10, 12, 30, 4); ctx.fillRect(32, 6, 4, 16); }
