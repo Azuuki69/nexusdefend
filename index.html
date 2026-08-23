@@ -221,6 +221,8 @@
     const warriorSprite = new Image(); warriorSprite.src = 'assets/textures/warrior.png';
     const mageSprite = new Image(); mageSprite.src = 'assets/textures/mage.png';
     const priestSprite = new Image(); priestSprite.src = 'assets/textures/priest.png';
+    const treeSprite = new Image(); treeSprite.src = 'assets/textures/tree.png';
+    const stoneSprite = new Image(); stoneSprite.src = 'assets/textures/stone.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1376,13 +1378,24 @@
         constructor(x, y, type) { super(x, y, 30, 3); this.type = type; this.hitFlashTimer = 0; }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
-            if(this.type === 'wood') {
-                ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
-                ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
-                ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
+            const imgSize = 140; 
+            const offset = -imgSize / 2;
+
+            if (this.type === 'wood') {
+                if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
+                    ctx.drawImage(treeSprite, this.x + offset, this.y + offset, imgSize, imgSize);
+                } else {
+                    ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
+                    ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
+                    ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
+                }
             } else if (this.type === 'stone') {
-                ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
-                ctx.fillStyle = '#888'; ctx.beginPath(); ctx.moveTo(this.x-10, this.y+10); ctx.lineTo(this.x, this.y-5); ctx.lineTo(this.x+10, this.y+10); ctx.fill();
+                if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
+                    ctx.drawImage(stoneSprite, this.x + offset, this.y + offset, imgSize, imgSize);
+                } else {
+                    ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
+                    ctx.fillStyle = '#888'; ctx.beginPath(); ctx.moveTo(this.x-10, this.y+10); ctx.lineTo(this.x, this.y-5); ctx.lineTo(this.x+10, this.y+10); ctx.fill();
+                }
             } else if (this.type === 'mana') {
                 ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-20); ctx.lineTo(this.x+15, this.y); ctx.lineTo(this.x, this.y+20); ctx.lineTo(this.x-15, this.y); ctx.fill();
                 ctx.fillStyle = '#ccffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-10); ctx.lineTo(this.x+5, this.y); ctx.lineTo(this.x, this.y+10); ctx.lineTo(this.x-5, this.y); ctx.fill();
@@ -1394,7 +1407,7 @@
                 ctx.strokeStyle = 'rgba(255, 200, 0, 0.5)'; ctx.lineWidth = 2; ctx.strokeRect(this.x-17, this.y-12, 34, 24);
                 ctx.shadowBlur = 0;
             }
-            if (this.hitFlashTimer > 0) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(this.x, this.y, 25, 0, Math.PI*2); ctx.fill(); }
+            if (this.hitFlashTimer > 0) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(this.x, this.y, imgSize / 2.5, 0, Math.PI*2); ctx.fill(); }
         }
     }
 
