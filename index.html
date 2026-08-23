@@ -1171,9 +1171,9 @@
     class Enemy extends Entity {
         constructor(x, y, type) {
             let baseHPMult = Math.pow(1.15, wave - 1);
-            let startHp = Math.floor(50 * baseHPMult);
+            let startHp = Math.floor(35 * baseHPMult);
             super(x, y, type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15)), startHp);
-            this.type = type; this.baseSpd = 2 + (wave * 0.1); this.isFlying = (type === 'bat');
+            this.type = type; this.baseSpd = 1.5 + (wave * 0.1); this.isFlying = (type === 'bat');
             this.isAsleep = false;
             this.isInvisible = false;
             this.bossPhaseTriggered = false;
@@ -1200,7 +1200,7 @@
             if (currentWeather === 'bloodmoon') { this.baseSpd *= 1.5; }
 
             this.spd = this.baseSpd; 
-            let baseDmg = this.type === 'boss' ? 30 : (this.type === 'predator' ? 50 : 10);
+            let baseDmg = this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 : 5);
             this.dmg = Math.floor(baseDmg * Math.pow(1.1, wave - 1)); 
             this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0;
             this.maxHp = this.hp;
@@ -1434,7 +1434,7 @@
     }
 
     class Resource extends Entity {
-        constructor(x, y, type) { super(x, y, 100, 3); this.type = type; this.hitFlashTimer = 0; }
+        constructor(x, y, type) { super(x, y, 60, 3); this.type = type; this.hitFlashTimer = 0; }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
             const imgSize = 200; 
@@ -1562,7 +1562,7 @@
             entities.enemies.push(new Enemy(bx, by, 'boss')); 
             addShake(15); 
         }
-        let count = wave * 5 + 10;
+        let count = wave * 3 + 5;
         if (currentWeather === 'bloodmoon') count = Math.floor(count * 1.5);
         if (currentModifier === 'swarm') count *= 2;
         
@@ -1642,8 +1642,8 @@
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
-                    // Increased hit radius to 100 and interaction distance to 220 to match the 200px image size
-                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 100 && Math.hypot(player.x - r.x, player.y - r.y) < 220) {
+                    // Interaction check
+                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 60 && Math.hypot(player.x - r.x, player.y - r.y) < 180) {
                         
                         if (r.type === 'cache') {
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
