@@ -50,14 +50,17 @@
         .hud-panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 10px; padding: 15px; box-shadow: 0 8px 20px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.03); backdrop-filter: blur(4px); position: relative; }
         .hud-panel::before { content: ''; position: absolute; top: 6px; left: 6px; right: 6px; bottom: 6px; border: 1px solid rgba(217,178,92,0.15); border-radius: 6px; pointer-events: none; }
 
+        /* ============ LEFT HUD COLUMN ============ */
+        #leftHud { position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; pointer-events: none; }
+
         /* ============ RESOURCE TRAY ============ */
-        #resourcePanel { position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 8px; min-width: 172px; pointer-events: none; padding: 12px 14px; }
-        .res-wood, .res-stone, .res-mana { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; font-family: var(--font-head); letter-spacing: 0.3px; }
-        .res-wood::before, .res-stone::before, .res-mana::before { content: attr(data-icon); display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.18), rgba(0,0,0,0.35)); border: 1px solid var(--panel-border-dim); flex-shrink: 0; }
-        .res-wood { color: #e8a86a; text-shadow: 1px 1px 3px #000; } .res-wood::before { box-shadow: 0 0 10px rgba(232,168,106,0.35); }
-        .res-stone { color: #dcdcdc; text-shadow: 1px 1px 3px #000; } .res-stone::before { box-shadow: 0 0 10px rgba(220,220,220,0.25); }
-        .res-mana { color: #6fe8ee; text-shadow: 1px 1px 3px #000; } .res-mana::before { box-shadow: 0 0 10px rgba(111,232,238,0.4); }
-        .res-wood span, .res-stone span, .res-mana span { margin-left: auto; color: #fff; }
+        #resourcePanel { display: flex; gap: 5px; pointer-events: none; }
+        .res-pill { display: flex; align-items: center; gap: 5px; padding: 3px 9px 3px 6px; border-radius: 5px; font-family: var(--font-head); font-size: 12.5px; font-weight: 700; letter-spacing: 0.3px; background: linear-gradient(180deg, rgba(24,28,20,0.92), rgba(9,11,8,0.95)); border: 1px solid var(--panel-border-dim); box-shadow: 0 2px 6px rgba(0,0,0,0.55); text-shadow: 0 1px 2px #000; }
+        .res-pill::before { content: attr(data-icon); font-size: 11px; line-height: 1; filter: drop-shadow(0 0 5px currentColor); }
+        .res-pill span { color: #fff; font-variant-numeric: tabular-nums; min-width: 18px; text-align: right; }
+        .res-wood { color: #e8a86a; } .res-stone { color: #cfd3d6; } .res-mana { color: #6fe8ee; }
+        .res-pill.gained { animation: resPop 0.35s ease-out; }
+        @keyframes resPop { 0% { transform: scale(1); } 40% { transform: scale(1.13); border-color: var(--panel-border); } 100% { transform: scale(1); } }
         
         /* ============ WAVE / PHASE BANNER ============ */
         #wavePanel { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--gold-bright); text-align: center; background: linear-gradient(180deg, rgba(24,20,10,0.92), rgba(8,7,4,0.94)); padding: 8px 34px; border-radius: 4px; border: 1px solid var(--panel-border); border-top-color: rgba(255,238,190,0.5); text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 6px 16px rgba(0,0,0,0.6); pointer-events: none; clip-path: polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%); }
@@ -72,37 +75,45 @@
         .action-btn:hover { background: linear-gradient(180deg, #fff3c9, var(--gold)); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 14px rgba(255,230,150,0.5); }
 
         /* ============ UNIT FRAME (PLAYER) ============ */
-        #playerStats { position: absolute; bottom: 20px; left: 20px; width: 460px; pointer-events: none; padding: 14px 18px 16px 90px; }
-        #classPortrait { position: absolute; left: -32px; top: 50%; transform: translateY(-50%); width: 84px; height: 84px; border-radius: 50%; border: 3px solid var(--gold); background: radial-gradient(circle at 35% 30%, #3a3a3a, #0a0a0a); display: flex; align-items: center; justify-content: center; font-size: 38px; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(217,178,92,0.5), inset 0 0 14px rgba(0,0,0,0.7); z-index: 2; }
-        #classPortrait.cls-warrior { background: radial-gradient(circle at 35% 25%, #6b1f1f, #1a0505); border-color: #ff4d4d; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(255,77,77,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
-        #classPortrait.cls-mage { background: radial-gradient(circle at 35% 25%, #1f4a6b, #050f1a); border-color: #5ce1e6; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(92,225,230,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
-        #classPortrait.cls-archer { background: radial-gradient(circle at 35% 25%, #1f6b2c, #051a08); border-color: #4dff4d; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(77,255,77,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
-        #classPortrait.cls-priest { background: radial-gradient(circle at 35% 25%, #6b5c1f, #1a1605); border-color: #ffe666; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(255,230,102,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
-        #levelBadge { position: absolute; right: -6px; bottom: -6px; min-width: 28px; height: 28px; padding: 0 4px; border-radius: 50%; background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); border: 2px solid #241c05; color: #1a1200; font-family: var(--font-head); font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; z-index: 3; box-shadow: 0 2px 6px rgba(0,0,0,0.6); }
-        
-        .unit-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-        #ui-class { font-family: var(--font-head); color: var(--gold-bright); font-weight: 700; font-size: 19px; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 0 10px rgba(217,178,92,0.4); }
-        .stat-pill-row { display: flex; gap: 6px; }
-        .stat-pill { background: rgba(0,0,0,0.4); border: 1px solid var(--panel-border-dim); border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 700; color: #ccc; }
-        .stat-pill b { color: var(--gold-bright); font-weight: 700; }
+        #playerStats { width: 262px; pointer-events: none; padding: 9px 11px; display: flex; align-items: center; gap: 10px; }
+        #playerStats::before { top: 4px; left: 4px; right: 4px; bottom: 4px; border-radius: 7px; }
+        #classPortrait { position: relative; width: 52px; height: 52px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--gold); background: radial-gradient(circle at 35% 30%, #3a3a3a, #0a0a0a); display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 12px rgba(217,178,92,0.45), inset 0 0 10px rgba(0,0,0,0.75); }
+        #classPortrait.cls-warrior { background: radial-gradient(circle at 35% 25%, #6b1f1f, #1a0505); border-color: #ff4d4d; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 12px rgba(255,77,77,0.5), inset 0 0 10px rgba(0,0,0,0.75); }
+        #classPortrait.cls-mage { background: radial-gradient(circle at 35% 25%, #1f4a6b, #050f1a); border-color: #5ce1e6; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 12px rgba(92,225,230,0.5), inset 0 0 10px rgba(0,0,0,0.75); }
+        #classPortrait.cls-archer { background: radial-gradient(circle at 35% 25%, #1f6b2c, #051a08); border-color: #4dff4d; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 12px rgba(77,255,77,0.5), inset 0 0 10px rgba(0,0,0,0.75); }
+        #classPortrait.cls-priest { background: radial-gradient(circle at 35% 25%, #6b5c1f, #1a1605); border-color: #ffe666; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 12px rgba(255,230,102,0.5), inset 0 0 10px rgba(0,0,0,0.75); }
+        #levelBadge { position: absolute; right: -5px; bottom: -5px; min-width: 21px; height: 21px; padding: 0 3px; border-radius: 11px; background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); border: 2px solid #241c05; color: #1a1200; font-family: var(--font-head); font-weight: 800; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center; z-index: 3; box-shadow: 0 2px 5px rgba(0,0,0,0.8); }
 
-        .bar-container { width: 100%; height: 20px; background: #0a0a0a; border-radius: 5px; margin-top: 6px; overflow: hidden; position: relative; border: 1px solid #000; box-shadow: inset 0 3px 8px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05); }
+        .frame-body { flex: 1; min-width: 0; }
+        .unit-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+        #ui-class { font-family: var(--font-head); color: var(--gold-bright); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 0 8px rgba(217,178,92,0.4); white-space: nowrap; }
+        .stat-pill-row { display: flex; gap: 4px; }
+        .stat-pill { background: rgba(0,0,0,0.45); border: 1px solid var(--panel-border-dim); border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700; color: #a9a9a0; letter-spacing: 0.3px; }
+        .stat-pill b { color: var(--gold-bright); font-weight: 800; }
+        #tpPill.has-points { border-color: #00ffcc; color: #7ef7d8; animation: tpGlow 1.4s ease-in-out infinite; }
+        #tpPill.has-points b { color: #00ffcc; }
+        @keyframes tpGlow { 0%,100% { box-shadow: 0 0 6px rgba(0,255,204,0.25); } 50% { box-shadow: 0 0 13px rgba(0,255,204,0.6); } }
+
+        .bar-container { width: 100%; height: 12px; background: #090909; border-radius: 3px; margin-top: 3px; overflow: hidden; position: relative; border: 1px solid #000; box-shadow: inset 0 2px 5px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.05); }
+        .bar-mp { height: 9px; }
+        .bar-xp { height: 4px; border-radius: 2px; margin-top: 5px; background: #100d05; box-shadow: inset 0 1px 3px rgba(0,0,0,0.9), 0 0 0 1px rgba(217,178,92,0.14); }
         .bar-fill { height: 100%; transition: width 0.2s ease-out; position: relative; }
         .bar-fill::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0)); }
-        #hpBar { background: linear-gradient(90deg, var(--hp-a), var(--hp-b)); box-shadow: 0 0 12px var(--hp-glow); }
-        #mpBar { background: linear-gradient(90deg, var(--mp-a), var(--mp-b)); box-shadow: 0 0 12px var(--mp-glow); }
-        #xpBar { background: linear-gradient(90deg, var(--xp-a), var(--xp-b)); box-shadow: 0 0 10px var(--xp-glow); }
-        .bar-container.tick25::before, .bar-container.tick25::after { content: ''; position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,0.5); z-index: 2; }
-        .bar-container.tick25::before { left: 25%; } .bar-container.tick25::after { left: 75%; }
-        .bar-container.tick25 .tick-mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,0.5); z-index: 2; }
-        .bar-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 1px 1px 2px #000, 0 0 4px #000; z-index: 3; letter-spacing: 0.5px; }
-        .bar-label { position: absolute; left: 6px; top: 0; height: 100%; display: flex; align-items: center; font-size: 9px; font-weight: 800; color: rgba(255,255,255,0.55); z-index: 3; letter-spacing: 1px; }
+        #hpBar { background: linear-gradient(90deg, var(--hp-a), var(--hp-b)); box-shadow: 0 0 10px var(--hp-glow); }
+        #mpBar { background: linear-gradient(90deg, var(--mp-a), var(--mp-b)); box-shadow: 0 0 10px var(--mp-glow); }
+        #xpBar { background: linear-gradient(90deg, var(--xp-a), var(--xp-b)); box-shadow: 0 0 8px var(--xp-glow); }
+        .bar-container.tick25::after { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(0,0,0,0.5) calc(25% - 1px) 25%); }
+        .bar-text { position: absolute; top: 0; right: 5px; height: 100%; display: flex; align-items: center; font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.92); text-shadow: 1px 1px 2px #000, 0 0 4px #000; z-index: 3; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
 
-        #trinketList { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; min-height: 0; }
-        .trinket-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,153,255,0.4); border-radius: 20px; padding: 3px 10px 3px 6px; font-size: 11px; font-weight: 700; color: #ff99ff; box-shadow: 0 0 8px rgba(255,153,255,0.15); }
+        #playerStats.low-hp #hpBar { animation: hpPulse 0.85s ease-in-out infinite; }
+        @keyframes hpPulse { 0%,100% { box-shadow: 0 0 10px var(--hp-glow); } 50% { box-shadow: 0 0 20px #ff5252, 0 0 34px rgba(255,60,60,0.55); } }
+        #playerStats.low-hp { border-color: rgba(255,70,70,0.7); box-shadow: 0 8px 20px rgba(0,0,0,0.65), 0 0 22px rgba(255,50,50,0.28); }
 
-        .footer-hint { margin-top: 10px; font-size: 11px; color: #999; line-height: 1.5; letter-spacing: 0.2px; }
-        .footer-hint b { color: #ddd; }
+        #trinketList { display: flex; gap: 5px; flex-wrap: wrap; max-width: 284px; }
+        .trinket-badge { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(180deg, rgba(24,18,26,0.92), rgba(9,7,11,0.95)); border: 1px solid rgba(255,153,255,0.38); border-radius: 5px; padding: 2px 8px 2px 6px; font-size: 10px; font-weight: 700; color: #ff99ff; box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 8px rgba(255,153,255,0.12); }
+
+        #controlHint { position: absolute; bottom: 18px; left: 18px; pointer-events: none; font-size: 11px; color: #8d8d84; letter-spacing: 0.2px; line-height: 1.7; text-shadow: 0 1px 3px #000; }
+        #controlHint b { color: var(--gold); font-weight: 700; }
 
         /* ============ ABILITY BAR ============ */
         #actionBar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; pointer-events: none; }
@@ -204,10 +215,30 @@
     </div>
 
         <div id="hud" class="hidden">
-        <div id="resourcePanel" class="hud-panel">
-            <div class="res-wood" data-icon="🪵">Wood <span id="ui-wood">0</span></div>
-            <div class="res-stone" data-icon="🪨">Stone <span id="ui-stone">0</span></div>
-            <div class="res-mana" data-icon="🔮">Mana <span id="ui-mana">0</span></div>
+        <div id="leftHud">
+            <div id="playerStats" class="hud-panel">
+                <div id="classPortrait"><span id="classPortraitIcon"></span><div id="levelBadge"><span id="ui-level">1</span></div></div>
+                <div class="frame-body">
+                    <div class="unit-header">
+                        <span id="ui-class"></span>
+                        <div class="stat-pill-row">
+                            <div class="stat-pill">ATK <b id="ui-atk"></b></div>
+                            <div class="stat-pill" id="tpPill">TP <b id="ui-tp">0</b></div>
+                        </div>
+                    </div>
+                    <div class="bar-container bar-hp tick25"><div id="hpBar" class="bar-fill"></div><span class="bar-text" id="hp-text"></span></div>
+                    <div class="bar-container bar-mp tick25"><div id="mpBar" class="bar-fill"></div><span class="bar-text" id="mp-text"></span></div>
+                    <div class="bar-container bar-xp"><div id="xpBar" class="bar-fill"></div></div>
+                </div>
+            </div>
+
+            <div id="resourcePanel">
+                <div class="res-pill res-wood" data-icon="🪵" title="Wood"><span id="ui-wood">0</span></div>
+                <div class="res-pill res-stone" data-icon="🪨" title="Stone"><span id="ui-stone">0</span></div>
+                <div class="res-pill res-mana" data-icon="🔮" title="Mana Crystals"><span id="ui-mana">0</span></div>
+            </div>
+
+            <div id="trinketList"></div>
         </div>
 
         <div id="wavePanel">WAVE <span id="ui-wave">1</span></div>
@@ -219,22 +250,8 @@
             <div id="forgePrompt">[F] Forge &nbsp;•&nbsp; [T] Talents <span id="ui-tp-hint" style="color:#00ffcc;"></span></div>
         </div>
         
-        <div id="playerStats" class="hud-panel">
-            <div id="classPortrait"><span id="classPortraitIcon"></span><div id="levelBadge"><span id="ui-level">1</span></div></div>
-            <div class="unit-header">
-                <div><span id="ui-class"></span></div>
-                <div class="stat-pill-row">
-                    <div class="stat-pill">ATK <b id="ui-atk"></b></div>
-                    <div class="stat-pill">TP <b id="ui-tp">0</b></div>
-                </div>
-            </div>
-            <div class="bar-container tick25"><div id="hpBar" class="bar-fill"></div><span class="bar-label">HP</span><span class="bar-text" id="hp-text"></span></div>
-            <div class="bar-container tick25"><div id="mpBar" class="bar-fill"></div><span class="bar-label">MP</span><span class="bar-text" id="mp-text"></span></div>
-            <div class="bar-container" style="height:9px;"><div id="xpBar" class="bar-fill"></div></div>
-            <div id="trinketList"></div>
-            <div class="footer-hint">
-                <b>[WASD]</b> Move &nbsp; <b>[L-Click]</b> Attack/Mine &nbsp; <b>[R-Click]</b> Build
-            </div>
+        <div id="controlHint">
+            <b>[WASD]</b> Move &nbsp;&nbsp; <b>[L-Click]</b> Attack / Mine &nbsp;&nbsp; <b>[R-Click]</b> Build
         </div>
 
         <div id="actionBar">
@@ -365,6 +382,12 @@
     const bear4Sprite = new Image(); bear4Sprite.src = 'assets/textures/enemies/bear4.png';
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
     const wolfSprite = new Image(); wolfSprite.src = 'assets/textures/enemies/wolf_walk.png';
+    const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
+    // Walk strip on the bottom row of merchant.png; 6 evenly spaced 68x92 cells.
+    const MERCHANT_FRAMES = [15, 95, 174, 254, 333, 413];
+    const MERCHANT_CELL = { y: 396, w: 68, h: 92 };
+    const MERCHANT_VISIT_DAYS = 4;
+    function merchantVisits(day) { return (day - 1) % MERCHANT_VISIT_DAYS === 0; }
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -647,21 +670,39 @@
     }
 
     class Merchant {
-        constructor() { this.x = Math.random() > 0.5 ? -50 : 1970; this.y = 540; this.radius = 20; this.targetX = 960 + (Math.random()*400 - 200); this.targetY = 200 + Math.random()*200; this.markedForDeletion = false; }
+        constructor() { this.x = Math.random() > 0.5 ? -50 : 1970; this.y = 540; this.radius = 20; this.targetX = 960 + (Math.random()*400 - 200); this.targetY = 200 + Math.random()*200; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
         update(dt) {
-            if (gameState === 'NIGHT') { this.targetX = -100; } 
+            if (gameState === 'NIGHT') { this.targetX = -100; }
             let dx = this.targetX - this.x; let dy = this.targetY - this.y; let len = Math.hypot(dx, dy);
-            if (len > 5) { this.x += (dx/len) * 2 * (dt*60); this.y += (dy/len) * 2 * (dt*60); }
+            this.moving = len > 5;
+            if (this.moving) {
+                this.x += (dx/len) * 2 * (dt*60); this.y += (dy/len) * 2 * (dt*60);
+                if (Math.abs(dx) > 1) this.facing = dx < 0 ? -1 : 1;
+                this.frameTimer += dt;
+                if (this.frameTimer > 0.11) { this.frameTimer = 0; this.frame = (this.frame + 1) % MERCHANT_FRAMES.length; }
+            } else { this.frame = 0; this.frameTimer = 0; }
             if (gameState === 'NIGHT' && (this.x < 0 || this.x > 1920)) this.markedForDeletion = true;
         }
         draw(ctx) {
-            ctx.fillStyle = '#0066cc'; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill(); 
-            ctx.fillStyle = '#7a3e14'; ctx.fillRect(this.x-10, this.y-25, 20, 15); 
-            ctx.fillStyle = '#f5d0b5'; ctx.beginPath(); ctx.arc(this.x, this.y-5, 8, 0, Math.PI*2); ctx.fill(); 
+            const feetY = this.y + 20;
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, feetY - 2, 24, 7, 0, 0, Math.PI*2); ctx.fill();
+            if (merchantSprite.complete && merchantSprite.naturalWidth !== 0) {
+                const dh = 96, dw = dh * MERCHANT_CELL.w / MERCHANT_CELL.h;
+                const bob = this.moving ? 0 : Math.sin(performance.now() / 500) * 1.5;
+                ctx.save();
+                ctx.translate(this.x, feetY + bob);
+                ctx.scale(this.facing, 1);
+                ctx.drawImage(merchantSprite, MERCHANT_FRAMES[this.frame], MERCHANT_CELL.y, MERCHANT_CELL.w, MERCHANT_CELL.h, -dw/2, -dh, dw, dh);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#0066cc'; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#7a3e14'; ctx.fillRect(this.x-10, this.y-25, 20, 15);
+                ctx.fillStyle = '#f5d0b5'; ctx.beginPath(); ctx.arc(this.x, this.y-5, 8, 0, Math.PI*2); ctx.fill();
+            }
             if (gameState === 'DAY' && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
                 ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke();
                 ctx.fillStyle = '#00ffcc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("Press [R] to Shop", this.x, this.y + 55);
-            } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y-30); }
+            } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y - 82); }
         }
     }
 
@@ -1719,6 +1760,20 @@
         }
     }
 
+    let lastResVals = {};
+    function flashResource(id, val) {
+        let el = document.getElementById(id);
+        if (el.innerText == val) return;
+        el.innerText = val;
+        if (lastResVals[id] !== undefined && val > lastResVals[id]) {
+            let pill = el.parentElement;
+            pill.classList.remove('gained');
+            void pill.offsetWidth;
+            pill.classList.add('gained');
+        }
+        lastResVals[id] = val;
+    }
+
     function resetGameToMenu() { document.getElementById('gameOverOverlay').classList.add('hidden'); document.getElementById('hud').classList.add('hidden'); document.getElementById('mainMenu').classList.remove('hidden'); }
 
     function generateMap() {
@@ -1817,7 +1872,7 @@
         document.getElementById('classPortraitIcon').innerText = classIcons[selectedClass];
         document.getElementById('ability-e-icon').innerText = abilityIcons[selectedClass];
         
-        generateMap(); gameState = 'DAY'; entities.npcs.push(new Merchant()); lastTime = performance.now(); requestAnimationFrame(gameLoop);
+        generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant()); lastTime = performance.now(); requestAnimationFrame(gameLoop);
     }
 
     function spawnWave() {
@@ -1895,9 +1950,10 @@
                 closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('talentOverlay'); spawnWave();
             } else {
                 gameState = 'DAY'; wave++; phaseTimer = 60; setWeather();
-                document.getElementById('phaseText').innerText = "DAY PHASE - GATHER";
+                document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
                 document.getElementById('phaseText').style.color = '#fff'; document.getElementById('earlyNightBtn').classList.remove('hidden');
-                document.getElementById('ui-wave').innerText = wave; generateMap(); entities.npcs.push(new Merchant()); 
+                document.getElementById('ui-wave').innerText = wave; generateMap();
+                if (merchantVisits(wave)) entities.npcs.push(new Merchant());
             }
         }
 
@@ -1962,11 +2018,13 @@
 
         if (player.hp <= 0 || base.hp <= 0) { triggerGameOver(); }
 
-        document.getElementById('ui-wood').innerText = inventory.wood; document.getElementById('ui-stone').innerText = inventory.stone;
-        document.getElementById('ui-mana').innerText = inventory.mana; document.getElementById('ui-atk').innerText = player.atk; 
+        flashResource('ui-wood', inventory.wood); flashResource('ui-stone', inventory.stone); flashResource('ui-mana', inventory.mana);
+        document.getElementById('ui-atk').innerText = player.atk;
         document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`; document.getElementById('mpBar').style.width = `${(player.mp/player.maxMp)*100}%`;
         document.getElementById('xpBar').style.width = `${(player.xp/player.maxXp)*100}%`; document.getElementById('ui-level').innerText = player.level;
         document.getElementById('ui-tp').innerText = player.tp; document.getElementById('ui-tp-hint').innerText = player.tp > 0 ? `(${player.tp} Point!)` : '';
+        document.getElementById('tpPill').classList.toggle('has-points', player.tp > 0);
+        document.getElementById('playerStats').classList.toggle('low-hp', player.hp / player.maxHp <= 0.3);
         document.getElementById('hp-text').innerText = `${Math.max(0,Math.ceil(player.hp))} / ${player.maxHp}`;
         document.getElementById('mp-text').innerText = `${Math.max(0,Math.ceil(player.mp))} / ${player.maxMp}`;
 
