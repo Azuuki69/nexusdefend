@@ -4,75 +4,172 @@
     <meta charset="UTF-8">
     <title>Defend The Nexus - Ultimate Survival RPG</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cinzel+Decorative:wght@700;900&display=swap');
+
+        :root {
+            --gold: #d9b25c;
+            --gold-bright: #ffe9a8;
+            --gold-dim: #6b5624;
+            --panel-bg: linear-gradient(180deg, rgba(22,26,18,0.95), rgba(9,11,8,0.97));
+            --panel-border: rgba(217,178,92,0.55);
+            --panel-border-dim: rgba(217,178,92,0.22);
+            --hp-a: #4a0000; --hp-b: #ff3b3b; --hp-glow: rgba(255,59,59,0.65);
+            --mp-a: #001a4d; --mp-b: #3ea5ff; --mp-glow: rgba(62,165,255,0.65);
+            --xp-a: #5c4400; --xp-b: #ffd700; --xp-glow: rgba(255,215,0,0.6);
+            --font-head: 'Cinzel', 'Segoe UI', serif;
+        }
+
         body { margin: 0; padding: 0; background-color: #0d110f; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
         
         #gameContainer { position: relative; width: 1920px; height: 1080px; transform-origin: center center; box-shadow: 0 0 50px rgba(0,0,0,1); }
         canvas { display: block; background-color: #273622; }
-        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, rgba(0,0,0,0) 40%, rgba(0,0,0,0.8) 100%); z-index: 5; }
+        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, rgba(0,0,0,0) 40%, rgba(0,0,0,0.85) 100%); z-index: 5; }
 
-        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; backdrop-filter: blur(5px); }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle at center, rgba(20,24,18,0.88) 0%, rgba(2,3,2,0.95) 100%); z-index: 100; flex-direction: column; backdrop-filter: blur(6px); }
         .hidden { display: none !important; }
         
-        h1 { font-size: 72px; margin-bottom: 10px; text-shadow: 0 0 20px #00ffcc; letter-spacing: 2px; }
-        .class-container { display: flex; gap: 20px; margin-top: 30px; }
-        .class-card { background: rgba(20, 25, 30, 0.9); border: 2px solid #555; border-radius: 12px; padding: 20px; width: 260px; cursor: pointer; transition: 0.3s; text-align: center; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
-        .class-card:hover { border-color: #00ffcc; transform: translateY(-10px); box-shadow: 0 15px 30px rgba(0, 255, 204, 0.3); }
-        .class-card h2 { color: #00ffcc; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
-        .class-card ul { text-align: left; font-size: 15px; padding-left: 20px; color: #ddd; line-height: 1.6; }
+        h1 { font-family: var(--font-head); font-size: 68px; font-weight: 900; margin-bottom: 6px; letter-spacing: 4px; background: linear-gradient(180deg, #fff6d8 0%, var(--gold-bright) 35%, var(--gold) 65%, #a9822f 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 35px rgba(255,220,140,0.35); text-transform: uppercase; }
+        h1::after { content: ''; display: block; width: 260px; height: 3px; margin: 14px auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+        .class-container { display: flex; gap: 22px; margin-top: 34px; }
+        .class-card { position: relative; background: linear-gradient(180deg, rgba(28,32,26,0.95), rgba(12,14,11,0.96)); border: 2px solid #4a4a42; border-radius: 12px; padding: 22px 20px; width: 250px; cursor: pointer; transition: 0.25s ease; text-align: center; box-shadow: 0 10px 24px rgba(0,0,0,0.6); }
+        .class-card:hover { border-color: var(--gold); transform: translateY(-8px); box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(217,178,92,0.35); }
+        .class-card h2 { font-family: var(--font-head); color: var(--gold-bright); margin-top: 0; border-bottom: 1px solid var(--panel-border-dim); padding-bottom: 12px; letter-spacing: 1px; font-size: 21px; }
+        .class-card h2::before { display: block; font-size: 30px; margin-bottom: 8px; filter: drop-shadow(0 0 6px rgba(255,255,255,0.25)); }
+        .class-container .class-card:nth-child(1) h2::before { content: '⚔️'; }
+        .class-container .class-card:nth-child(2) h2::before { content: '🔥'; }
+        .class-container .class-card:nth-child(3) h2::before { content: '🏹'; }
+        .class-container .class-card:nth-child(4) h2::before { content: '✨'; }
+        .class-container .class-card:nth-child(1):hover { border-color: #ff4d4d; box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(255,77,77,0.35); }
+        .class-container .class-card:nth-child(2):hover { border-color: #5ce1e6; box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(92,225,230,0.35); }
+        .class-container .class-card:nth-child(3):hover { border-color: #4dff4d; box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(77,255,77,0.35); }
+        .class-container .class-card:nth-child(4):hover { border-color: #ffe666; box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(255,230,102,0.35); }
+        .class-card ul { text-align: left; font-size: 14px; padding-left: 20px; color: #ccc; line-height: 1.7; }
+        .class-card ul li::marker { color: var(--gold); }
         
         #hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-        .hud-panel { background: rgba(15, 20, 15, 0.85); border: 1px solid rgba(255,255,255,0.1); border-top: 1px solid rgba(255,255,255,0.3); border-radius: 10px; padding: 15px; box-shadow: 0 8px 16px rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
-        
-        #resourcePanel { position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 12px; font-size: 24px; font-weight: bold; min-width: 160px; pointer-events: none; }
-        .res-wood { color: #ffbc7a; text-shadow: 1px 1px 2px #000; } .res-stone { color: #e0e0e0; text-shadow: 1px 1px 2px #000; } .res-mana { color: #5ce1e6; text-shadow: 1px 1px 2px #000; }
-        
-        #wavePanel { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: bold; color: #fff; text-align: center; background: rgba(0,0,0,0.7); padding: 8px 25px; border-radius: 8px; border: 1px solid #555; text-transform: uppercase; box-shadow: 0 4px 10px rgba(0,0,0,0.5); pointer-events: none; }
+        .hud-panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 10px; padding: 15px; box-shadow: 0 8px 20px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.03); backdrop-filter: blur(4px); position: relative; }
+        .hud-panel::before { content: ''; position: absolute; top: 6px; left: 6px; right: 6px; bottom: 6px; border: 1px solid rgba(217,178,92,0.15); border-radius: 6px; pointer-events: none; }
 
-        #playerStats { position: absolute; bottom: 20px; left: 20px; width: 440px; pointer-events: none; }
-        .bar-container { width: 100%; height: 18px; background: #111; border-radius: 6px; margin-top: 6px; overflow: hidden; position: relative; border: 1px solid #444; box-shadow: inset 0 3px 6px rgba(0,0,0,0.6); }
-        .bar-fill { height: 100%; transition: width 0.2s ease-out; }
-        #hpBar { background: linear-gradient(90deg, #b30000, #ff4d4d); } #mpBar { background: linear-gradient(90deg, #003399, #4d94ff); } #xpBar { background: linear-gradient(90deg, #b38f00, #ffcc00); }
+        /* ============ RESOURCE TRAY ============ */
+        #resourcePanel { position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 8px; min-width: 172px; pointer-events: none; padding: 12px 14px; }
+        .res-wood, .res-stone, .res-mana { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; font-family: var(--font-head); letter-spacing: 0.3px; }
+        .res-wood::before, .res-stone::before, .res-mana::before { content: attr(data-icon); display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.18), rgba(0,0,0,0.35)); border: 1px solid var(--panel-border-dim); flex-shrink: 0; }
+        .res-wood { color: #e8a86a; text-shadow: 1px 1px 3px #000; } .res-wood::before { box-shadow: 0 0 10px rgba(232,168,106,0.35); }
+        .res-stone { color: #dcdcdc; text-shadow: 1px 1px 3px #000; } .res-stone::before { box-shadow: 0 0 10px rgba(220,220,220,0.25); }
+        .res-mana { color: #6fe8ee; text-shadow: 1px 1px 3px #000; } .res-mana::before { box-shadow: 0 0 10px rgba(111,232,238,0.4); }
+        .res-wood span, .res-stone span, .res-mana span { margin-left: auto; color: #fff; }
         
-        #buildMenu { position: absolute; bottom: 20px; right: 20px; display: flex; gap: 12px; pointer-events: auto; }
-        .build-item { width: 90px; height: 85px; background: rgba(30, 35, 30, 0.9); border: 2px solid #444; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 13px; font-weight: bold; text-align: center; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
-        .build-item:hover { background: rgba(50, 55, 50, 0.9); } .build-item span { color: #bbb; margin-top: 4px; font-size: 11px; }
-        .selected-build { border-color: #00ffcc; background: rgba(20, 50, 40, 0.9); box-shadow: 0 0 15px rgba(0,255,204,0.4); }
+        /* ============ WAVE / PHASE BANNER ============ */
+        #wavePanel { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--gold-bright); text-align: center; background: linear-gradient(180deg, rgba(24,20,10,0.92), rgba(8,7,4,0.94)); padding: 8px 34px; border-radius: 4px; border: 1px solid var(--panel-border); border-top-color: rgba(255,238,190,0.5); text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 6px 16px rgba(0,0,0,0.6); pointer-events: none; clip-path: polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%); }
+        #wavePanel::before { content: '⚔'; margin-right: 8px; color: var(--gold); }
+
+        #phaseAnnouncer { position: absolute; top: 68px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+        #phaseText { font-family: var(--font-head); font-size: 30px; font-weight: 700; text-shadow: 0 2px 8px rgba(0,0,0,0.9), 0 0 18px rgba(255,255,255,0.15); color: #fff; margin-bottom: 6px; letter-spacing: 1px; }
+        #weatherText { font-size: 18px; color: #ff99ff; font-weight: 700; margin-bottom: 8px; text-shadow: 1px 1px 3px #000; }
+        #forgePrompt { font-size: 15px; color: var(--gold-bright); text-shadow: 1px 1px 3px #000; font-weight: 700; background: rgba(0,0,0,0.45); padding: 5px 14px; border-radius: 20px; border: 1px solid var(--panel-border-dim); letter-spacing: 0.5px; }
         
-        #phaseAnnouncer { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; }
-        #phaseText { font-size: 32px; font-weight: bold; text-shadow: 2px 2px 4px #000; color: #fff; margin-bottom: 8px; }
-        #weatherText { font-size: 20px; color: #ff99ff; font-weight: bold; margin-bottom: 8px; text-shadow: 1px 1px 3px #000; }
-        #forgePrompt { font-size: 18px; color: #ffcc00; text-shadow: 1px 1px 3px #000; font-weight: bold; }
+        .action-btn { font-family: var(--font-head); background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); color: #1a1200; border: 1px solid #a9822f; padding: 8px 22px; font-size: 15px; font-weight: 700; border-radius: 6px; cursor: pointer; transition: 0.2s; pointer-events: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .action-btn:hover { background: linear-gradient(180deg, #fff3c9, var(--gold)); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 14px rgba(255,230,150,0.5); }
+
+        /* ============ UNIT FRAME (PLAYER) ============ */
+        #playerStats { position: absolute; bottom: 20px; left: 20px; width: 460px; pointer-events: none; padding: 14px 18px 16px 90px; }
+        #classPortrait { position: absolute; left: -32px; top: 50%; transform: translateY(-50%); width: 84px; height: 84px; border-radius: 50%; border: 3px solid var(--gold); background: radial-gradient(circle at 35% 30%, #3a3a3a, #0a0a0a); display: flex; align-items: center; justify-content: center; font-size: 38px; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(217,178,92,0.5), inset 0 0 14px rgba(0,0,0,0.7); z-index: 2; }
+        #classPortrait.cls-warrior { background: radial-gradient(circle at 35% 25%, #6b1f1f, #1a0505); border-color: #ff4d4d; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(255,77,77,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
+        #classPortrait.cls-mage { background: radial-gradient(circle at 35% 25%, #1f4a6b, #050f1a); border-color: #5ce1e6; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(92,225,230,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
+        #classPortrait.cls-archer { background: radial-gradient(circle at 35% 25%, #1f6b2c, #051a08); border-color: #4dff4d; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(77,255,77,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
+        #classPortrait.cls-priest { background: radial-gradient(circle at 35% 25%, #6b5c1f, #1a1605); border-color: #ffe666; box-shadow: 0 0 0 4px rgba(0,0,0,0.6), 0 0 18px rgba(255,230,102,0.55), inset 0 0 14px rgba(0,0,0,0.7); }
+        #levelBadge { position: absolute; right: -6px; bottom: -6px; min-width: 28px; height: 28px; padding: 0 4px; border-radius: 50%; background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); border: 2px solid #241c05; color: #1a1200; font-family: var(--font-head); font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; z-index: 3; box-shadow: 0 2px 6px rgba(0,0,0,0.6); }
         
-        .action-btn { background: linear-gradient(180deg, #ffcc00, #e6b800); color: #111; border: 1px solid #cca300; padding: 8px 20px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; pointer-events: auto; box-shadow: 0 4px 8px rgba(0,0,0,0.4); text-transform: uppercase; }
-        .action-btn:hover { background: linear-gradient(180deg, #ffe033, #ffcc00); transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.5); }
-        
-        /* Modals */
-        .menu-modal { width: 600px; padding: 30px; pointer-events: auto; }
-        .upgrade-row { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.4); margin: 12px 0; padding: 12px 18px; border-radius: 6px; border: 1px solid #444; }
-        .upgrade-btn { padding: 8px 16px; background: linear-gradient(180deg, #00ffcc, #00cca3); color: #000; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; text-transform: uppercase; font-size: 14px; }
-        .upgrade-btn:hover { background: linear-gradient(180deg, #33ffdb, #00ffcc); }
-        .upgrade-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
-        .close-btn { margin-top: 25px; padding: 10px 30px; background: linear-gradient(180deg, #ff4d4d, #cc0000); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; text-transform: uppercase; }
-        
+        .unit-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+        #ui-class { font-family: var(--font-head); color: var(--gold-bright); font-weight: 700; font-size: 19px; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 0 10px rgba(217,178,92,0.4); }
+        .stat-pill-row { display: flex; gap: 6px; }
+        .stat-pill { background: rgba(0,0,0,0.4); border: 1px solid var(--panel-border-dim); border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 700; color: #ccc; }
+        .stat-pill b { color: var(--gold-bright); font-weight: 700; }
+
+        .bar-container { width: 100%; height: 20px; background: #0a0a0a; border-radius: 5px; margin-top: 6px; overflow: hidden; position: relative; border: 1px solid #000; box-shadow: inset 0 3px 8px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05); }
+        .bar-fill { height: 100%; transition: width 0.2s ease-out; position: relative; }
+        .bar-fill::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0)); }
+        #hpBar { background: linear-gradient(90deg, var(--hp-a), var(--hp-b)); box-shadow: 0 0 12px var(--hp-glow); }
+        #mpBar { background: linear-gradient(90deg, var(--mp-a), var(--mp-b)); box-shadow: 0 0 12px var(--mp-glow); }
+        #xpBar { background: linear-gradient(90deg, var(--xp-a), var(--xp-b)); box-shadow: 0 0 10px var(--xp-glow); }
+        .bar-container.tick25::before, .bar-container.tick25::after { content: ''; position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,0.5); z-index: 2; }
+        .bar-container.tick25::before { left: 25%; } .bar-container.tick25::after { left: 75%; }
+        .bar-container.tick25 .tick-mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,0.5); z-index: 2; }
+        .bar-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 1px 1px 2px #000, 0 0 4px #000; z-index: 3; letter-spacing: 0.5px; }
+        .bar-label { position: absolute; left: 6px; top: 0; height: 100%; display: flex; align-items: center; font-size: 9px; font-weight: 800; color: rgba(255,255,255,0.55); z-index: 3; letter-spacing: 1px; }
+
+        #trinketList { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; min-height: 0; }
+        .trinket-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,153,255,0.4); border-radius: 20px; padding: 3px 10px 3px 6px; font-size: 11px; font-weight: 700; color: #ff99ff; box-shadow: 0 0 8px rgba(255,153,255,0.15); }
+
+        .footer-hint { margin-top: 10px; font-size: 11px; color: #999; line-height: 1.5; letter-spacing: 0.2px; }
+        .footer-hint b { color: #ddd; }
+
+        /* ============ ABILITY BAR ============ */
+        #actionBar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; pointer-events: none; }
+        .ability-slot { position: relative; width: 68px; height: 68px; border-radius: 10px; background: linear-gradient(180deg, #232823, #0c0f0c); border: 2px solid #4a4a42; box-shadow: 0 6px 14px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .ability-slot .ability-icon { font-size: 30px; filter: drop-shadow(0 0 6px rgba(0,0,0,0.8)); z-index: 1; }
+        .ability-slot .ability-cd-overlay { position: absolute; inset: 0; background: conic-gradient(rgba(0,0,0,0.82) calc(var(--p, 0) * 1%), transparent 0); z-index: 2; }
+        .ability-slot .ability-cd-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: #fff; text-shadow: 1px 1px 3px #000; z-index: 3; }
+        .ability-slot .ability-key { position: absolute; top: 2px; left: 5px; font-size: 11px; font-weight: 800; color: var(--gold-bright); text-shadow: 1px 1px 2px #000; z-index: 3; background: rgba(0,0,0,0.5); padding: 0 4px; border-radius: 3px; }
+        .ability-slot .ability-name { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; color: #bbb; white-space: nowrap; letter-spacing: 0.5px; text-transform: uppercase; }
+        .ability-slot.ready { border-color: var(--gold); box-shadow: 0 6px 14px rgba(0,0,0,0.6), 0 0 16px rgba(217,178,92,0.55); }
+        .ability-slot.no-mana { border-color: #7a2020; }
+        .ability-slot.no-mana .ability-icon { filter: grayscale(1) drop-shadow(0 0 6px rgba(0,0,0,0.8)); opacity: 0.6; }
+        #ability-q-slot.ready { border-color: #4dd9ff; box-shadow: 0 6px 14px rgba(0,0,0,0.6), 0 0 16px rgba(77,217,255,0.6); }
+
+        /* ============ BUILD MENU ============ */
+        #buildMenu { position: absolute; bottom: 20px; right: 20px; display: flex; gap: 10px; pointer-events: auto; }
+        .build-item { position: relative; width: 84px; height: 92px; background: linear-gradient(180deg, #232823, #0c0f0c); border: 2px solid #4a4a42; border-radius: 8px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; transition: 0.15s; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding-bottom: 6px; }
+        .build-item::before { content: attr(data-icon); font-size: 26px; margin-bottom: 4px; }
+        .build-item .build-key { position: absolute; top: 4px; left: 6px; font-size: 10px; font-weight: 800; color: var(--gold-bright); background: rgba(0,0,0,0.5); padding: 0 4px; border-radius: 3px; }
+        .build-item:hover { background: linear-gradient(180deg, #333a33, #161915); transform: translateY(-2px); }
+        .build-item span { color: #aaa; margin-top: 2px; font-size: 10px; }
+        .selected-build { border-color: var(--gold); background: linear-gradient(180deg, #2f2a12, #14110a); box-shadow: 0 0 16px rgba(217,178,92,0.5); }
+
+        /* ============ MODALS ============ */
+        .menu-modal { width: 640px; padding: 26px 30px 28px; pointer-events: auto; border-width: 2px; }
+        .modal-title { font-family: var(--font-head); text-align: center; text-transform: uppercase; letter-spacing: 2px; font-size: 24px; margin: 0 0 4px; text-shadow: 0 0 14px rgba(255,255,255,0.15); }
+        .modal-title::before, .modal-title::after { content: '❖'; color: var(--gold); font-size: 14px; margin: 0 12px; vertical-align: middle; }
+        .modal-sub { text-align: center; color: #999; font-size: 13px; margin: 0 0 18px; letter-spacing: 0.3px; }
+
+        .upgrade-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.35)); margin: 10px 0; padding: 12px 16px; border-radius: 8px; border: 1px solid #3a3a34; transition: 0.15s; }
+        .upgrade-row:hover { border-color: var(--panel-border); background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(0,0,0,0.35)); }
+        .upgrade-row .row-icon { font-size: 24px; width: 40px; text-align: center; flex-shrink: 0; filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); }
+        .upgrade-row .row-body { flex: 1; }
+        .upgrade-btn { font-family: var(--font-head); padding: 9px 18px; background: linear-gradient(180deg, #7ef7d8, #00cca3); color: #002620; font-weight: 700; border: 1px solid #007a5e; border-radius: 5px; cursor: pointer; text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px; box-shadow: 0 3px 8px rgba(0,0,0,0.4); flex-shrink: 0; }
+        .upgrade-btn:hover { background: linear-gradient(180deg, #a8fce7, #00ffcc); transform: translateY(-1px); }
+        .upgrade-btn:disabled { background: #444; color: #888; cursor: not-allowed; border-color: #333; box-shadow: none; }
+        .close-btn { font-family: var(--font-head); margin-top: 22px; padding: 10px 34px; background: linear-gradient(180deg, #ff6b6b, #b30000); color: #fff; border: 1px solid #7a0000; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .close-btn:hover { background: linear-gradient(180deg, #ff8a8a, #d40000); }
+        .lvl-pips { display: inline-flex; gap: 3px; margin-left: 8px; vertical-align: middle; }
+        .lvl-pips span { width: 6px; height: 6px; border-radius: 50%; background: #444; display: inline-block; }
+        .lvl-pips span.filled { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
+
         /* Achievements */
-        #achievementToast { position: absolute; top: 20px; right: -400px; background: rgba(0, 50, 20, 0.9); border: 2px solid #00ffcc; border-radius: 10px; padding: 15px 20px; box-shadow: 0 0 20px rgba(0,255,204,0.5); transition: right 0.5s ease-out; z-index: 150; }
+        #achievementToast { position: absolute; top: 20px; right: -420px; display: flex; align-items: center; gap: 12px; background: linear-gradient(135deg, rgba(0,40,25,0.95), rgba(0,10,8,0.97)); border: 2px solid var(--gold); border-radius: 10px; padding: 14px 20px; box-shadow: 0 0 28px rgba(217,178,92,0.5), 0 10px 24px rgba(0,0,0,0.6); transition: right 0.5s cubic-bezier(.2,1.3,.4,1); z-index: 150; }
+        #achievementToast .achv-icon { font-size: 34px; filter: drop-shadow(0 0 8px rgba(255,220,140,0.6)); flex-shrink: 0; }
+        #achievementToast h3 { font-family: var(--font-head); letter-spacing: 1px; }
         .toast-visible { right: 20px !important; }
         
         /* Pause Screen */
         #pauseOverlay { z-index: 200; }
+        #pauseOverlay h1 { font-size: 56px; }
 
         /* Talent Tree Specifics */
-        #talentMenu { width: 1000px; max-width: 90%; max-height: 80%; display: flex; flex-direction: column; }
-        .talent-columns { display: flex; justify-content: space-between; gap: 15px; margin-top: 15px; }
-        .talent-path { flex: 1; background: rgba(0,0,0,0.5); border: 2px solid #555; border-radius: 10px; padding: 15px; text-align: center; transition: 0.3s; }
-        .path-locked { opacity: 0.4; pointer-events: none; filter: grayscale(100%); }
-        .path-active { border-color: #00ffcc; box-shadow: 0 0 20px rgba(0,255,204,0.2); }
-        .talent-node { background: #222; border: 1px solid #666; border-radius: 6px; padding: 10px; margin: 8px 0; font-size: 12px; text-align: left; position: relative; }
-        .talent-node.bought { border-color: #00ffcc; background: rgba(0, 255, 204, 0.1); }
-        .talent-node button { position: absolute; right: 10px; top: 12px; }
+        #talentMenu { width: 1040px; max-width: 90%; max-height: 84%; display: flex; flex-direction: column; padding: 26px 30px; }
+        .talent-columns { display: flex; justify-content: space-between; gap: 16px; margin-top: 15px; overflow-y: auto; padding-right: 4px; }
+        .talent-path { flex: 1; background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.55)); border: 2px solid #4a4a42; border-radius: 12px; padding: 16px; text-align: center; transition: 0.3s; }
+        .path-locked { opacity: 0.35; pointer-events: none; filter: grayscale(100%); }
+        .path-active { border-color: var(--gold); box-shadow: 0 0 22px rgba(217,178,92,0.3), inset 0 0 20px rgba(217,178,92,0.06); }
+        .talent-path h3 { font-family: var(--font-head); letter-spacing: 0.5px; }
+        .talent-node { background: linear-gradient(180deg, #222, #161616); border: 1px solid #555; border-radius: 7px; padding: 10px 12px; margin: 9px 0; font-size: 12px; text-align: left; position: relative; transition: 0.15s; }
+        .talent-node strong { color: var(--gold-bright); }
+        .talent-node.bought { border-color: #00ffcc; background: linear-gradient(180deg, rgba(0,255,204,0.12), rgba(0,255,204,0.03)); box-shadow: 0 0 10px rgba(0,255,204,0.25); }
+        .talent-node button { position: absolute; right: 8px; top: 9px; padding: 5px 10px; font-size: 11px; }
 
-        #gameOverStats { font-size: 18px; color: #ccc; margin-bottom: 30px; text-align: left; line-height: 1.8; background: rgba(0,0,0,0.5); padding: 20px 40px; border-radius: 10px; border: 1px solid #444; width: 400px; margin-left: auto; margin-right: auto;}
-        #gameOverStats span { color: #00ffcc; font-weight: bold; float: right;}
+        #gameOverOverlay h1 { font-family: var(--font-head); font-size: 74px; text-shadow: 0 0 30px rgba(255,60,60,0.5); }
+        #gameOverStats { font-size: 17px; color: #ccc; margin-bottom: 26px; text-align: left; line-height: 2; background: linear-gradient(180deg, rgba(0,0,0,0.5), rgba(0,0,0,0.65)); padding: 22px 42px; border-radius: 10px; border: 1px solid var(--panel-border-dim); width: 400px; margin-left: auto; margin-right: auto; box-shadow: 0 10px 24px rgba(0,0,0,0.6);}
+        #gameOverStats span { color: var(--gold-bright); font-weight: 700; float: right;}
     </style>
 </head>
 <body>
@@ -82,9 +179,12 @@
     <div id="vignette"></div>
     
     <div id="achievementToast">
-        <h3 style="margin:0; color:#00ffcc; font-size:16px;">🏆 ACHIEVEMENT UNLOCKED!</h3>
-        <p id="toastName" style="margin:5px 0 0 0; font-weight:bold; font-size:20px;"></p>
-        <p id="toastDesc" style="margin:5px 0 0 0; font-size:14px; color:#ccc;"></p>
+        <span class="achv-icon">🏆</span>
+        <div>
+            <h3 style="margin:0; color:#00ffcc; font-size:14px;">ACHIEVEMENT UNLOCKED</h3>
+            <p id="toastName" style="margin:4px 0 0 0; font-weight:bold; font-size:19px; color:#fff;"></p>
+            <p id="toastDesc" style="margin:3px 0 0 0; font-size:13px; color:#bbb;"></p>
+        </div>
     </div>
 
     <div id="mainMenu" class="overlay">
@@ -99,61 +199,94 @@
 
     <!-- Pause Overlay -->
     <div id="pauseOverlay" class="overlay hidden">
-        <h1 style="color: #fff; text-shadow: 0 0 20px #fff;">GAME PAUSED</h1>
-        <p style="color: #aaa; font-size: 20px;">Press [ESC] to resume</p>
+        <h1 style="color: #fff; text-shadow: 0 0 20px #fff;">⏸ Paused</h1>
+        <p style="color: #aaa; font-size: 18px; letter-spacing: 0.5px;">Press <b style="color:#ffe9a8;">[ESC]</b> to resume</p>
     </div>
 
-    <div id="hud" class="hidden">
+        <div id="hud" class="hidden">
         <div id="resourcePanel" class="hud-panel">
-            <div class="res-wood">🪵 Wood: <span id="ui-wood">0</span></div>
-            <div class="res-stone">🪨 Stone: <span id="ui-stone">0</span></div>
-            <div class="res-mana">🔮 Mana: <span id="ui-mana">0</span></div>
+            <div class="res-wood" data-icon="🪵">Wood <span id="ui-wood">0</span></div>
+            <div class="res-stone" data-icon="🪨">Stone <span id="ui-stone">0</span></div>
+            <div class="res-mana" data-icon="🔮">Mana <span id="ui-mana">0</span></div>
         </div>
 
-        <div id="wavePanel">WAVE: <span id="ui-wave">1</span></div>
+        <div id="wavePanel">WAVE <span id="ui-wave">1</span></div>
         
         <div id="phaseAnnouncer">
             <div id="phaseText">DAY PHASE (60s)</div>
             <div id="weatherText"></div>
             <button id="earlyNightBtn" class="action-btn" onclick="startNightEarly()">Start Night Early</button>
-            <div id="forgePrompt">[F] Forge | [T] Talents <span id="ui-tp-hint" style="color:#00ffcc;"></span></div>
+            <div id="forgePrompt">[F] Forge &nbsp;•&nbsp; [T] Talents <span id="ui-tp-hint" style="color:#00ffcc;"></span></div>
         </div>
         
         <div id="playerStats" class="hud-panel">
-            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <div><span id="ui-class" style="color:#00ffcc; font-weight:bold; font-size:20px; text-transform: uppercase;"></span><br><span style="color:#ffcc00; font-size:14px; font-weight:bold;">LVL <span id="ui-level">1</span></span></div>
-                <div style="color:#aaa; font-size:14px; font-weight:bold;">ATK: <span id="ui-atk"></span> | TP: <span id="ui-tp" style="color:#00ffcc;">0</span></div>
+            <div id="classPortrait"><span id="classPortraitIcon"></span><div id="levelBadge"><span id="ui-level">1</span></div></div>
+            <div class="unit-header">
+                <div><span id="ui-class"></span></div>
+                <div class="stat-pill-row">
+                    <div class="stat-pill">ATK <b id="ui-atk"></b></div>
+                    <div class="stat-pill">TP <b id="ui-tp">0</b></div>
+                </div>
             </div>
-            <div class="bar-container"><div id="hpBar" class="bar-fill"></div></div>
-            <div class="bar-container"><div id="mpBar" class="bar-fill"></div></div>
-            <div class="bar-container" style="height:10px;"><div id="xpBar" class="bar-fill"></div></div>
-            <div id="trinketList" style="margin-top: 10px; font-size: 12px; color: #ff99ff; font-weight: bold;"></div>
-            <div style="margin-top:10px; font-size:12px; color:#ccc; line-height: 1.4;">
-                [WASD] Move | [L-Click] Attack/Mine | [R-Click] Build<br>
-                <span id="ui-ability" style="color: #ffcc00; font-weight: bold;">[E] Ability</span> | <span id="ui-shift" style="color: #00ffcc; font-weight: bold;">[Shift] Dash</span> | <span id="ui-overcharge" style="color: #00ffff; font-weight: bold;">[Q] Overcharge</span>
+            <div class="bar-container tick25"><div id="hpBar" class="bar-fill"></div><span class="bar-label">HP</span><span class="bar-text" id="hp-text"></span></div>
+            <div class="bar-container tick25"><div id="mpBar" class="bar-fill"></div><span class="bar-label">MP</span><span class="bar-text" id="mp-text"></span></div>
+            <div class="bar-container" style="height:9px;"><div id="xpBar" class="bar-fill"></div></div>
+            <div id="trinketList"></div>
+            <div class="footer-hint">
+                <b>[WASD]</b> Move &nbsp; <b>[L-Click]</b> Attack/Mine &nbsp; <b>[R-Click]</b> Build
+            </div>
+        </div>
+
+        <div id="actionBar">
+            <div id="ability-e-slot" class="ability-slot">
+                <span class="ability-key">E</span>
+                <span class="ability-icon" id="ability-e-icon">✨</span>
+                <div class="ability-cd-overlay" id="ability-e-cd" style="--p:0;"></div>
+                <span class="ability-cd-text" id="ability-e-text"></span>
+                <span class="ability-name">Ability</span>
+            </div>
+            <div id="ability-shift-slot" class="ability-slot">
+                <span class="ability-key">SHIFT</span>
+                <span class="ability-icon">💨</span>
+                <div class="ability-cd-overlay" id="ability-shift-cd" style="--p:0;"></div>
+                <span class="ability-cd-text" id="ability-shift-text"></span>
+                <span class="ability-name">Dash</span>
+            </div>
+            <div id="ability-q-slot" class="ability-slot">
+                <span class="ability-key">Q</span>
+                <span class="ability-icon">⚡</span>
+                <div class="ability-cd-overlay" id="ability-q-cd" style="--p:0;"></div>
+                <span class="ability-cd-text" id="ability-q-text"></span>
+                <span class="ability-name">Overcharge</span>
             </div>
         </div>
 
         <div id="buildMenu">
-            <div id="build-1" class="build-item selected-build" onclick="player.buildSelection = 1; updateBuildUI();">
-                <strong id="ui-t1-name">Barricade</strong><span>[1]<br><span id="ui-t1-cost"></span></span>
+            <div id="build-1" class="build-item selected-build" data-icon="🧱" onclick="player.buildSelection = 1; updateBuildUI();">
+                <span class="build-key">1</span>
+                <strong id="ui-t1-name">Barricade</strong><span id="ui-t1-cost"></span>
             </div>
-            <div id="build-2" class="build-item" onclick="player.buildSelection = 2; updateBuildUI();">
-                <strong id="ui-t2-name">Turret</strong><span>[2]<br><span id="ui-t2-cost"></span></span>
+            <div id="build-2" class="build-item" data-icon="🗼" onclick="player.buildSelection = 2; updateBuildUI();">
+                <span class="build-key">2</span>
+                <strong id="ui-t2-name">Turret</strong><span id="ui-t2-cost"></span>
             </div>
-            <div id="build-3" class="build-item" onclick="player.buildSelection = 3; updateBuildUI();">
-                <strong style="color:#ffcc00;">Extractor</strong><span>[3]<br>30W 30S</span>
+            <div id="build-3" class="build-item" data-icon="⛏️" onclick="player.buildSelection = 3; updateBuildUI();">
+                <span class="build-key">3</span>
+                <strong style="color:#ffcc00;">Extractor</strong><span>30W 30S</span>
             </div>
-            <div id="build-4" class="build-item" onclick="player.buildSelection = 4; updateBuildUI();">
-                <strong style="color:#ff4d4d;">Mana Bomb</strong><span>[4]<br>10W 15M</span>
+            <div id="build-4" class="build-item" data-icon="💣" onclick="player.buildSelection = 4; updateBuildUI();">
+                <span class="build-key">4</span>
+                <strong style="color:#ff4d4d;">Mana Bomb</strong><span>10W 15M</span>
             </div>
         </div>
     </div>
 
     <!-- Crafting Forge -->
+
     <div id="forgeOverlay" class="overlay hidden">
         <div class="hud-panel menu-modal">
-            <h2 style="margin-top:0; color:#ffcc00; text-align:center;">CRAFTING FORGE</h2>
+            <h2 class="modal-title" style="color:#ffcc00;">Crafting Forge</h2>
+            <p class="modal-sub">Spend gathered resources to permanently upgrade your gear and base.</p>
             <div id="forgeContent"></div>
             <div style="text-align: center;"><button class="close-btn" onclick="closeModal('forgeOverlay')">Close Forge</button></div>
         </div>
@@ -162,12 +295,12 @@
     <!-- Merchant Shop -->
     <div id="merchantOverlay" class="overlay hidden">
         <div class="hud-panel menu-modal">
-            <h2 style="margin-top:0; color:#5ce1e6; text-align:center;">WANDERING MERCHANT</h2>
-            <p style="text-align:center; color:#ccc; font-style: italic; margin-bottom: 20px;">"Got some spare mana? I got the goods."</p>
-            <div class="upgrade-row"><div><strong>Heart Container (+25 Max HP)</strong><br><span style="font-size:13px; color:#aaa;">Cost: 15 Mana</span></div><button class="upgrade-btn" onclick="buyMerchant('hp')">Trade</button></div>
-            <div class="upgrade-row" style="border-color:#ff99ff;"><div><strong style="color:#ff99ff;">Ring of Vampirism</strong><br><span style="font-size:13px; color:#aaa;">Heal 5% of dmg dealt. Cost: 30 Mana</span></div><button class="upgrade-btn" id="btn-ring" onclick="buyMerchant('ring')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#ff99ff;"><div><strong style="color:#ff99ff;">Amulet of Haste</strong><br><span style="font-size:13px; color:#aaa;">20% faster attacks/CDs. Cost: 30 Mana</span></div><button class="upgrade-btn" id="btn-amulet" onclick="buyMerchant('amulet')">Buy</button></div>
-            <div class="upgrade-row" style="border-color: #ff00ff; background: rgba(255,0,255,0.1);"><div><strong style="color:#ff00ff;">Amnesia Potion (Reset Talents)</strong><br><span style="font-size:13px; color:#aaa;">Cost: 100 Mana</span></div><button class="upgrade-btn" style="background: linear-gradient(180deg, #ff66ff, #cc00cc);" onclick="buyMerchant('amnesia')">Drink</button></div>
+            <h2 class="modal-title" style="color:#5ce1e6;">Wandering Merchant</h2>
+            <p class="modal-sub" style="font-style: italic;">"Got some spare mana? I got the goods."</p>
+            <div class="upgrade-row"><span class="row-icon">❤️</span><div class="row-body"><strong>Heart Container (+25 Max HP)</strong><br><span style="font-size:13px; color:#aaa;">Cost: 15 Mana</span></div><button class="upgrade-btn" onclick="buyMerchant('hp')">Trade</button></div>
+            <div class="upgrade-row" style="border-color:#ff99ff;"><span class="row-icon">💍</span><div class="row-body"><strong style="color:#ff99ff;">Ring of Vampirism</strong><br><span style="font-size:13px; color:#aaa;">Heal 5% of dmg dealt. Cost: 30 Mana</span></div><button class="upgrade-btn" id="btn-ring" onclick="buyMerchant('ring')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#ff99ff;"><span class="row-icon">🧿</span><div class="row-body"><strong style="color:#ff99ff;">Amulet of Haste</strong><br><span style="font-size:13px; color:#aaa;">20% faster attacks/CDs. Cost: 30 Mana</span></div><button class="upgrade-btn" id="btn-amulet" onclick="buyMerchant('amulet')">Buy</button></div>
+            <div class="upgrade-row" style="border-color: #ff00ff; background: rgba(255,0,255,0.1);"><span class="row-icon">🧪</span><div class="row-body"><strong style="color:#ff00ff;">Amnesia Potion (Reset Talents)</strong><br><span style="font-size:13px; color:#aaa;">Cost: 100 Mana</span></div><button class="upgrade-btn" style="background: linear-gradient(180deg, #ff66ff, #cc00cc); color:#2a002a;" onclick="buyMerchant('amnesia')">Drink</button></div>
             <div style="text-align: center;"><button class="close-btn" onclick="closeModal('merchantOverlay')">Leave Shop</button></div>
         </div>
     </div>
@@ -179,16 +312,16 @@
 
     <!-- Game Over Screen -->
     <div id="gameOverOverlay" class="overlay hidden">
-        <h1 style="color: #ff4d4d; font-size: 80px;">THE NEXUS HAS FALLEN</h1>
+        <h1 style="color: #ff4d4d;">The Nexus Has Fallen</h1>
         <div id="gameOverStats">
-            Waves Survived: <span id="go-waves">0</span><br>
-            Total Kills: <span id="go-kills">0</span><br>
-            Damage Dealt: <span id="go-dmg">0</span><br>
-            Wood Gathered: <span id="go-wood">0</span><br>
-            Stone Gathered: <span id="go-stone">0</span><br>
-            Towers Built: <span id="go-towers">0</span>
+            🌊 Waves Survived: <span id="go-waves">0</span><br>
+            💀 Total Kills: <span id="go-kills">0</span><br>
+            ⚔️ Damage Dealt: <span id="go-dmg">0</span><br>
+            🪵 Wood Gathered: <span id="go-wood">0</span><br>
+            🪨 Stone Gathered: <span id="go-stone">0</span><br>
+            🗼 Towers Built: <span id="go-towers">0</span>
         </div>
-        <button class="action-btn" style="font-size: 20px; padding: 12px 35px;" onclick="resetGameToMenu()">Return to Menu</button>
+        <button class="action-btn" style="font-size: 18px; padding: 12px 35px;" onclick="resetGameToMenu()">Return to Menu</button>
     </div>
 </div>
 
@@ -375,30 +508,32 @@
         let mCostW = getCost(30, forgeUpgrades.mining.level); let mCostM = getCost(10, forgeUpgrades.mining.level);
         let sCostW = getCost(15, forgeUpgrades.speed.level); let sCostM = getCost(15, forgeUpgrades.speed.level);
 
+        const pips = (lvl, max=5) => { let h = '<span class="lvl-pips">'; for(let i=0;i<max;i++){ h += `<span class="${i<lvl?'filled':''}"></span>`; } return h + '</span>'; };
         let html = `
-            <div class="upgrade-row"><div><strong>Weapon Fortification (+10% Dmg)</strong> <span style="color:#00ffcc;">[Lvl ${forgeUpgrades.weapon.level}]</span><br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')">Upgrade</button></div>
-            <div class="upgrade-row"><div><strong>Tower Reinforcement (+15% HP)</strong> <span style="color:#00ffcc;">[Lvl ${forgeUpgrades.towerHp.level}]</span><br><span style="font-size:13px; color:#aaa;">Cost: ${tCostS} Stone, ${tCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('towerHp')">Upgrade</button></div>
-            <div class="upgrade-row"><div><strong>Pickaxe Refinement (+1 Gather Yield)</strong> <span style="color:#00ffcc;">[Lvl ${forgeUpgrades.mining.level}]</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')">Upgrade</button></div>
-            <div class="upgrade-row"><div><strong>Lightweight Gear (+5% Speed)</strong> <span style="color:#00ffcc;">[Lvl ${forgeUpgrades.speed.level}]</span><br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')">Upgrade</button></div>
+            <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(forgeUpgrades.weapon.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')">Upgrade</button></div>
+            <div class="upgrade-row"><span class="row-icon">🛡️</span><div class="row-body"><strong>Tower Reinforcement (+15% HP)</strong> ${pips(forgeUpgrades.towerHp.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${tCostS} Stone, ${tCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('towerHp')">Upgrade</button></div>
+            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+1 Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')">Upgrade</button></div>
+            <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(forgeUpgrades.speed.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')">Upgrade</button></div>
             
-            <hr style="border-color: #444; margin: 20px 0;">
+            <hr style="border-color: #3a3a34; margin: 20px 0;">
             
-            <div class="upgrade-row" style="border-color:#5ce1e6;"><div><strong style="color:#5ce1e6;">Base: The Magic Spire</strong><br><span style="font-size:13px; color:#aaa;">Fires auto-lasers. Cost: 50 Wood, 50 Stone, 20 Mana</span></div><button class="upgrade-btn" id="btn-spire" onclick="buyForge('spire')" ${base && base.hasSpire ? 'disabled' : ''}>${base && base.hasSpire ? 'Built' : 'Build'}</button></div>
-            <div class="upgrade-row" style="border-color:#5ce1e6;"><div><strong style="color:#5ce1e6;">Base: Iron Gates</strong><br><span style="font-size:13px; color:#aaa;">Spawns 4 Huge Walls. Cost: 60 Wood, 60 Stone</span></div><button class="upgrade-btn" id="btn-gates" onclick="buyForge('gates')" ${base && base.hasGates ? 'disabled' : ''}>${base && base.hasGates ? 'Built' : 'Build'}</button></div>
+            <div class="upgrade-row" style="border-color:#5ce1e6;"><span class="row-icon">🗼</span><div class="row-body"><strong style="color:#5ce1e6;">Base: The Magic Spire</strong><br><span style="font-size:13px; color:#aaa;">Fires auto-lasers. Cost: 50 Wood, 50 Stone, 20 Mana</span></div><button class="upgrade-btn" id="btn-spire" onclick="buyForge('spire')" ${base && base.hasSpire ? 'disabled' : ''}>${base && base.hasSpire ? 'Built' : 'Build'}</button></div>
+            <div class="upgrade-row" style="border-color:#5ce1e6;"><span class="row-icon">🚧</span><div class="row-body"><strong style="color:#5ce1e6;">Base: Iron Gates</strong><br><span style="font-size:13px; color:#aaa;">Spawns 4 Huge Walls. Cost: 60 Wood, 60 Stone</span></div><button class="upgrade-btn" id="btn-gates" onclick="buyForge('gates')" ${base && base.hasGates ? 'disabled' : ''}>${base && base.hasGates ? 'Built' : 'Build'}</button></div>
         `;
         document.getElementById('forgeContent').innerHTML = html;
     }
 
     function renderTalentMenu() {
-        let html = `<h2 style="margin-top:0; color:#00ffcc; text-align:center;">CLASS TALENTS (TP: <span style="color:#ffcc00">${player.tp}</span>)</h2>
-                    <p style="text-align:center; color:#ccc; font-size:14px; margin-bottom:0;">Choose 1 Specialization path. You cannot change this later without Amnesia.</p>
+        const pathIcons = { p1: '⚔️', p2: '🛡️', p3: '🏰' };
+        let html = `<h2 class="modal-title" style="color:#00ffcc; margin-top:0;">Class Talents</h2>
+                    <p class="modal-sub" style="margin-top:-4px;">Talent Points Available: <span style="color:#ffcc00; font-weight:bold;">${player.tp}</span> &nbsp;•&nbsp; Choose 1 specialization path (Amnesia Potion required to change)</p>
                     <div class="talent-columns">`;
         let paths = talentData[player.cls];
         paths.forEach((path, pathIdx) => {
             let isActive = player.chosenPath === path.id; let isLocked = player.chosenPath !== null && player.chosenPath !== path.id;
             let pathClass = isActive ? 'path-active' : (isLocked ? 'path-locked' : '');
             
-            html += `<div class="talent-path ${pathClass}"><h3 style="color:#ffcc00; margin:0;">${path.name}</h3><p style="font-size:12px; color:#aaa; margin-top:5px;">${path.desc}</p>`;
+            html += `<div class="talent-path ${pathClass}"><h3 style="color:#ffcc00; margin:0;">${pathIcons[path.id] || '⭐'} ${path.name}</h3><p style="font-size:12px; color:#aaa; margin-top:5px;">${path.desc}</p>`;
             if (!player.chosenPath) { html += `<button class="upgrade-btn" style="margin-bottom:15px; width:100%;" onclick="selectTalentPath('${path.id}')">Select Path</button>`; }
 
             let allBought = true;
@@ -485,8 +620,8 @@
     
     function updateTrinkets() {
         let t = "";
-        if (playerBuffs.vampirism) t += "💍 Ring of Vampirism<br>";
-        if (playerBuffs.hasteMod < 1.0) t += "🧿 Amulet of Haste";
+        if (playerBuffs.vampirism) t += `<span class="trinket-badge">💍 Vampirism</span>`;
+        if (playerBuffs.hasteMod < 1.0) t += `<span class="trinket-badge">🧿 Haste</span>`;
         document.getElementById('trinketList').innerHTML = t;
     }
 
@@ -1650,7 +1785,13 @@
         document.getElementById('ui-class').innerText = selectedClass;
         document.getElementById('ui-t1-name').innerText = classDataInfo[selectedClass].t1; document.getElementById('ui-t1-cost').innerText = classDataInfo[selectedClass].c1;
         document.getElementById('ui-t2-name').innerText = classDataInfo[selectedClass].t2; document.getElementById('ui-t2-cost').innerText = classDataInfo[selectedClass].c2;
-        updateBuildUI(); document.getElementById('trinketList').innerHTML = "";
+        updateBuildUI(); updateTrinkets();
+
+        const classIcons = { warrior: '⚔️', mage: '🔥', archer: '🏹', priest: '✨' };
+        const abilityIcons = { warrior: '🌀', mage: '☄️', archer: '💨', priest: '💫' };
+        document.getElementById('classPortrait').className = 'cls-' + selectedClass;
+        document.getElementById('classPortraitIcon').innerText = classIcons[selectedClass];
+        document.getElementById('ability-e-icon').innerText = abilityIcons[selectedClass];
         
         generateMap(); gameState = 'DAY'; entities.npcs.push(new Merchant()); lastTime = performance.now(); requestAnimationFrame(gameLoop);
     }
@@ -1802,16 +1943,44 @@
         document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`; document.getElementById('mpBar').style.width = `${(player.mp/player.maxMp)*100}%`;
         document.getElementById('xpBar').style.width = `${(player.xp/player.maxXp)*100}%`; document.getElementById('ui-level').innerText = player.level;
         document.getElementById('ui-tp').innerText = player.tp; document.getElementById('ui-tp-hint').innerText = player.tp > 0 ? `(${player.tp} Point!)` : '';
-        
-        if (player.abilityCooldownTimer > 0) { document.getElementById('ui-ability').innerText = `[E] Ability (CD: ${player.abilityCooldownTimer.toFixed(1)}s)`; document.getElementById('ui-ability').style.color = '#888'; } 
-        else if (player.mp < player.data.abCost) { document.getElementById('ui-ability').innerText = `[E] Ability (Need Mana)`; document.getElementById('ui-ability').style.color = '#ff4d4d'; } 
-        else { document.getElementById('ui-ability').innerText = `[E] Ability (Ready!)`; document.getElementById('ui-ability').style.color = '#00ffcc'; }
-        
-        if (player.shiftCd > 0) { document.getElementById('ui-shift').innerText = `[Shift] Dash (${player.shiftCd.toFixed(1)}s)`; document.getElementById('ui-shift').style.color = '#888'; }
-        else { document.getElementById('ui-shift').innerText = `[Shift] Dash (Ready!)`; document.getElementById('ui-shift').style.color = '#00ffcc'; }
-        
-        if (base.overchargeCd > 0) { document.getElementById('ui-overcharge').innerText = `[Q] Overcharge (${base.overchargeCd.toFixed(1)}s)`; document.getElementById('ui-overcharge').style.color = '#888'; }
-        else { document.getElementById('ui-overcharge').innerText = `[Q] Overcharge (Ready!)`; document.getElementById('ui-overcharge').style.color = '#00ffff'; }
+        document.getElementById('hp-text').innerText = `${Math.max(0,Math.ceil(player.hp))} / ${player.maxHp}`;
+        document.getElementById('mp-text').innerText = `${Math.max(0,Math.ceil(player.mp))} / ${player.maxMp}`;
+
+        // --- Ability action bar (radial cooldown sweep) ---
+        let eTotal = player.data.abCd * playerBuffs.hasteMod;
+        let eSlot = document.getElementById('ability-e-slot'), eCd = document.getElementById('ability-e-cd'), eTxt = document.getElementById('ability-e-text');
+        if (player.abilityCooldownTimer > 0) {
+            eCd.style.setProperty('--p', Math.min(100, (player.abilityCooldownTimer / eTotal) * 100));
+            eTxt.innerText = player.abilityCooldownTimer.toFixed(1);
+            eSlot.classList.remove('ready', 'no-mana');
+        } else if (player.mp < player.data.abCost) {
+            eCd.style.setProperty('--p', 0); eTxt.innerText = '';
+            eSlot.classList.remove('ready'); eSlot.classList.add('no-mana');
+        } else {
+            eCd.style.setProperty('--p', 0); eTxt.innerText = '';
+            eSlot.classList.add('ready'); eSlot.classList.remove('no-mana');
+        }
+
+        let shiftTotal = 3.0 * playerBuffs.hasteMod;
+        let shiftSlot = document.getElementById('ability-shift-slot'), shiftCdEl = document.getElementById('ability-shift-cd'), shiftTxt = document.getElementById('ability-shift-text');
+        if (player.shiftCd > 0) {
+            shiftCdEl.style.setProperty('--p', Math.min(100, (player.shiftCd / shiftTotal) * 100));
+            shiftTxt.innerText = player.shiftCd.toFixed(1);
+            shiftSlot.classList.remove('ready');
+        } else {
+            shiftCdEl.style.setProperty('--p', 0); shiftTxt.innerText = '';
+            shiftSlot.classList.add('ready');
+        }
+
+        let qSlot = document.getElementById('ability-q-slot'), qCdEl = document.getElementById('ability-q-cd'), qTxt = document.getElementById('ability-q-text');
+        if (base.overchargeCd > 0) {
+            qCdEl.style.setProperty('--p', Math.min(100, (base.overchargeCd / 45.0) * 100));
+            qTxt.innerText = base.overchargeCd.toFixed(0);
+            qSlot.classList.remove('ready');
+        } else {
+            qCdEl.style.setProperty('--p', 0); qTxt.innerText = '';
+            qSlot.classList.add('ready');
+        }
     }
 
     function drawLight(ctx, x, y, radius, color) { let grad = ctx.createRadialGradient(x, y, 0, x, y, radius); grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI*2); ctx.fill(); }
