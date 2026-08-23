@@ -1518,7 +1518,7 @@
                 if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
                     let dh = 150; let dw = dh * (treeSprite.width / treeSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 20, dw, dh);
+                    ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 60, dw, dh);
                     ctx.filter = 'none';
                 } else {
                     ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
@@ -1530,7 +1530,7 @@
                 if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
                     let dh = 105; let dw = dh * (stoneSprite.width / stoneSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 20, dw, dh);
+                    ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 43, dw, dh);
                     ctx.filter = 'none';
                 } else {
                     ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
