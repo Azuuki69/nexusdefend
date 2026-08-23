@@ -858,14 +858,14 @@
                 if (this.currentState === 'attack') {
                     this.frameY = 2; // ATTACK row
                     this.animTimer += dt * 15; 
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 10; } // FIXED: Attack has 10 frames
                 } else if (this.currentState === 'run') {
                     this.frameY = 1; // RUN row
                     this.animTimer += dt * 12;
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; } // Run has 8 frames
                 } else {
                     this.frameY = 0; // IDLE row
-                    this.frameX = 0; // FIXED: Locks to frame 0 so it stops sliding when you stand still!
+                    this.frameX = 0; // Locks idle so it doesn't slide
                 }
             }
         }
@@ -1070,8 +1070,29 @@
             if (this.type === 1) { 
                 if (this.pClass === 'warrior') { ctx.fillStyle = '#664422'; ctx.fillRect(-20, -10, 40, 20); ctx.fillStyle = '#aaa'; for(let i=-1; i<=1; i++) { ctx.beginPath(); ctx.moveTo(i*10, -10); ctx.lineTo(i*10, -25); ctx.lineTo(i*10+5, -10); ctx.fill(); } } 
                 else if (this.pClass === 'mage') { ctx.fillStyle = '#333'; ctx.fillRect(-15, -15, 30, 30); ctx.fillStyle = 'rgba(255, 100, 255, 0.4)'; ctx.beginPath(); ctx.arc(0,0, 25, 0, Math.PI*2); ctx.fill(); } 
-                else if (this.pClass === 'archer') { ctx.fillStyle = 'rgba(100, 200, 255, 0.2)'; ctx.beginPath(); ctx.arc(0,0, 80 * player.trapSizeMod, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-15,-15); ctx.lineTo(15,15); ctx.moveTo(15,-15); ctx.lineTo(-15,15); ctx.stroke(); } 
-                else if (this.pClass === 'priest') { ctx.fillStyle = '#e6e600'; ctx.fillRect(-20, -5, 40, 10); ctx.fillStyle = 'rgba(255, 255, 100, 0.3)'; ctx.beginPath(); ctx.arc(0,0, 30, Math.PI, 0); ctx.fill(); }
+else if (this.cls === 'archer') { 
+                ctx.rotate(-this.angle); // Keep character upright
+                let flip = (mouse.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1); // Face the mouse
+                
+                if (archerSprite.width > 0) {
+                    // Standard RPG sprite sizes. If it STILL slides, change 64 to 48 or 96 depending on your image resolution!
+                    let sW = Math.round(archerSprite.width / 10); 
+                    let sH = Math.round(archerSprite.height / 4); 
+                    
+                    ctx.drawImage(
+                        archerSprite, 
+                        this.frameX * sW, 
+                        this.frameY * sH, 
+                        sW, 
+                        sH, 
+                        -35, 
+                        -35, 
+                        70, 
+                        70
+                    ); 
+                }
+            }                else if (this.pClass === 'priest') { ctx.fillStyle = '#e6e600'; ctx.fillRect(-20, -5, 40, 10); ctx.fillStyle = 'rgba(255, 255, 100, 0.3)'; ctx.beginPath(); ctx.arc(0,0, 30, Math.PI, 0); ctx.fill(); }
             } else if (this.type === 2) { 
                 ctx.fillStyle = '#444'; ctx.beginPath(); ctx.arc(0,0, 15, 0, Math.PI*2); ctx.fill(); 
                 let angle = 0; let nearest = null; let minDist = 400;
