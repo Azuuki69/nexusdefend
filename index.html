@@ -1231,7 +1231,7 @@
             }
 
             if (this.isAsleep) {
-                this.frameX = 3;
+                this.frameX = 4;
                 return; 
             }
             
@@ -1378,7 +1378,7 @@
             }
             if (this.type === 'predator') {
                 if (this.attackCd > 0.8) {
-                    this.frameX = 2;
+                    this.frameX = 3;
                 } else {
                     this.frameX = Math.floor(this.animTimer / 0.2) % 2;
                 }
@@ -1411,8 +1411,10 @@
                     ctx.rotate(-Math.atan2(target.y - this.y, target.x - this.x));
                     let flip = (target.x < this.x) ? -1 : 1;
                     ctx.scale(flip, 1);
+                } else {
+                    ctx.rotate(-Math.atan2(target.y - this.y, target.x - this.x));
                 }
-                let sW = Math.floor(bearSprite.width / 4);
+                let sW = Math.floor(bearSprite.width / 5);
                 let sH = bearSprite.height;
                 ctx.drawImage(bearSprite, this.frameX * sW, 0, sW, sH, -60, -60, 120, 120);
             }
