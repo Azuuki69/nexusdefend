@@ -193,6 +193,13 @@
 </div>
 
 <script>
+    // ==========================================
+    // --- SPRITE CALIBRATION SETTINGS ---
+    // Make sure these match the number of columns and rows in your image file!
+    // ==========================================
+    const SPRITE_COLS = 10; 
+    const SPRITE_ROWS = 4;
+
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
     window.addEventListener('resize', resize); resize();
 
@@ -209,10 +216,7 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
 
-    // ==========================================
-    // --- LOAD ALL CLASS TEXTURES ---
-    // Make sure these names match the files in your GitHub perfectly!
-    // ==========================================
+    // LOAD CUSTOM TEXTURES HERE
     const archerSprite = new Image(); archerSprite.src = 'assets/textures/archer2.png';
     const warriorSprite = new Image(); warriorSprite.src = 'assets/textures/warrior.png';
     const mageSprite = new Image(); mageSprite.src = 'assets/textures/mage.png';
@@ -966,16 +970,17 @@
                 let sW = Math.floor(activeSprite.width / 3); // 3 columns per image
                 let sH = Math.floor(activeSprite.height * 0.75); // Crop text at bottom
                 
+                // Increased size from 70x70 to 110x110 (and offset from -35 to -55 to keep it centered)
                 ctx.drawImage(
                     activeSprite, 
                     this.frameX * sW, 
                     0, 
                     sW, 
                     sH, 
-                    -35, 
-                    -35, 
-                    70, 
-                    70
+                    -55, 
+                    -55, 
+                    110, 
+                    110
                 ); 
             }
             
