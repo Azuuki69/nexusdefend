@@ -465,6 +465,10 @@
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
     const wolfSprite = new Image(); wolfSprite.src = 'assets/textures/enemies/wolf_walk.png';
     const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
+    const chestSprite = new Image(); chestSprite.src = 'assets/textures/chest.png';
+    // The chest sits in the middle of its 677x369 sheet; crop to the art itself.
+    const CHEST_SX = 0.2777, CHEST_SY = 0.1707, CHEST_SW = 0.4431, CHEST_SH = 0.6450;
+    const CACHES_PER_MAP = 3;
     // Walk strip on the bottom row of merchant.png; 6 evenly spaced 68x92 cells.
     const MERCHANT_FRAMES = [15, 95, 174, 254, 333, 413];
     const MERCHANT_CELL = { y: 396, w: 68, h: 92 };
@@ -1897,7 +1901,7 @@
     class Resource extends Entity {
         constructor(x, y, type) {
             // Hitbox radius now matches each sprite's actual visual footprint (used for mining/interaction range)
-            let r = type === 'wood' ? 55 : (type === 'stone' ? 45 : 30);
+            let r = type === 'wood' ? 55 : (type === 'stone' ? 45 : (type === 'cache' ? 38 : 30));
             super(x, y, r, 3);
             this.type = type; this.hitFlashTimer = 0;
             // Solid collision radius - smaller than the interaction radius, blocks movement so you can't walk through trees/rocks
@@ -1934,12 +1938,29 @@
                 ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-20); ctx.lineTo(this.x+15, this.y); ctx.lineTo(this.x, this.y+20); ctx.lineTo(this.x-15, this.y); ctx.fill();
                 ctx.fillStyle = '#ccffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-10); ctx.lineTo(this.x+5, this.y); ctx.lineTo(this.x, this.y+10); ctx.lineTo(this.x-5, this.y); ctx.fill();
             } else if (this.type === 'cache') {
-                ctx.fillStyle = '#ffd700'; ctx.fillRect(this.x-15, this.y-10, 30, 20);
-                ctx.fillStyle = '#ccaa00'; ctx.fillRect(this.x-15, this.y-5, 30, 5);
-                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(this.x, this.y, 4, 0, Math.PI*2); ctx.fill();
-                ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 15;
-                ctx.strokeStyle = 'rgba(255, 200, 0, 0.5)'; ctx.lineWidth = 2; ctx.strokeRect(this.x-17, this.y-12, 34, 24);
-                ctx.shadowBlur = 0;
+                let bob = Math.sin(performance.now() / 420 + this.x) * 3;
+                ctx.fillStyle = 'rgba(0,0,0,0.28)';
+                ctx.beginPath(); ctx.ellipse(this.x, this.y + 26, 30, 10, 0, 0, Math.PI*2); ctx.fill();
+                // Keep a golden glow so a chest still reads as loot from across the map.
+                let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 600)) * 0.35;
+                ctx.save();
+                ctx.globalAlpha = pulse;
+                let grad = ctx.createRadialGradient(this.x, this.y + 2, 4, this.x, this.y + 2, 62);
+                grad.addColorStop(0, 'rgba(255, 214, 92, 0.55)'); grad.addColorStop(1, 'rgba(255, 190, 40, 0)');
+                ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(this.x, this.y + 2, 62, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+                if (chestSprite.complete && chestSprite.naturalWidth !== 0) {
+                    let nw = chestSprite.naturalWidth, nh = chestSprite.naturalHeight;
+                    let sx = nw * CHEST_SX, sy = nh * CHEST_SY, sw = nw * CHEST_SW, sh = nh * CHEST_SH;
+                    let dh = 64, dw = dh * (sw / sh);
+                    if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
+                    ctx.drawImage(chestSprite, sx, sy, sw, sh, this.x - dw/2, this.y + 26 - dh + bob, dw, dh);
+                    ctx.filter = 'none';
+                } else {
+                    ctx.fillStyle = '#ffd700'; ctx.fillRect(this.x-15, this.y-10 + bob, 30, 20);
+                    ctx.fillStyle = '#ccaa00'; ctx.fillRect(this.x-15, this.y-5 + bob, 30, 5);
+                    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(this.x, this.y + bob, 4, 0, Math.PI*2); ctx.fill();
+                }
             }
         }
     }
@@ -2034,8 +2055,8 @@
             }
         }
 
-        // Spawn Mystery Caches
-        for(let i=0; i<10; i++) {
+        // Spawn Mystery Caches - deliberately rare, they are a bonus not a staple
+        for(let i=0; i<CACHES_PER_MAP; i++) {
             let cx = Math.random() * (WORLD_W - 200) + 100; let cy = Math.random() * (WORLD_H - 200) + 100;
             let overlapsResource = entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
             if (Math.hypot(cx-WORLD_CX, cy-WORLD_CY) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
