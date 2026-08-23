@@ -205,8 +205,6 @@
     // inside your terrain1.png file!
     // ==========================================
     const T_GROUND = { x: 0, y: 0, w: 64, h: 64 };   // The repeating floor tile
-    const T_BUSH   = { x: 64, y: 0, w: 64, h: 64 };  // Used for Wood resources
-    const T_ROCK   = { x: 128, y: 0, w: 64, h: 64 }; // Used for Stone resources
     const T_DECO   = { x: 192, y: 0, w: 32, h: 32 }; // Used for small grass/pebbles
 
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
@@ -230,7 +228,11 @@
     const warriorSprite = new Image(); warriorSprite.src = 'assets/textures/warrior.png';
     const mageSprite = new Image(); mageSprite.src = 'assets/textures/mage.png';
     const priestSprite = new Image(); priestSprite.src = 'assets/textures/priest.png';
-    const terrainSprite = new Image(); terrainSprite.src = 'assets/textures/terrain1.png'; // <--- LOAD NEW TERRAIN HERE
+    const terrainSprite = new Image(); terrainSprite.src = 'assets/textures/terrain1.png';
+    
+    // NEW DEDICATED RESOURCE TEXTURES
+    const treeSprite = new Image(); treeSprite.src = 'assets/textures/tree.png';
+    const stoneSprite = new Image(); stoneSprite.src = 'assets/textures/stone.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1379,13 +1381,15 @@
         constructor(x, y, type) { super(x, y, 30, 3); this.type = type; this.hitFlashTimer = 0; }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
         draw(ctx) {
-            if (this.type === 'wood' || this.type === 'stone') {
-                if (terrainSprite.width > 0) {
-                    let t = this.type === 'wood' ? T_BUSH : T_ROCK;
-                    ctx.drawImage(terrainSprite, t.x, t.y, t.w, t.h, this.x - this.radius, this.y - this.radius, this.radius*2, this.radius*2);
-                    if (this.hitFlashTimer > 0) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(this.x, this.y, 25, 0, Math.PI*2); ctx.fill(); }
-                    return;
-                }
+            if (this.type === 'wood' && treeSprite.width > 0) {
+                // Trees are drawn slightly larger/taller than their pure hitbox for a better RPG feel
+                ctx.drawImage(treeSprite, this.x - 40, this.y - 50, 80, 80); 
+                if (this.hitFlashTimer > 0) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(this.x, this.y, 25, 0, Math.PI*2); ctx.fill(); }
+                return;
+            } else if (this.type === 'stone' && stoneSprite.width > 0) {
+                ctx.drawImage(stoneSprite, this.x - 30, this.y - 30, 60, 60);
+                if (this.hitFlashTimer > 0) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(this.x, this.y, 25, 0, Math.PI*2); ctx.fill(); }
+                return;
             }
 
             // Fallbacks
