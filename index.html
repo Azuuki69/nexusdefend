@@ -1421,7 +1421,7 @@
                     let flip = (target.x < this.x) ? -1 : 1;
                     ctx.scale(flip, 1);
                     if (bear4Sprite.complete && bear4Sprite.naturalWidth !== 0) {
-                        let sW = Math.floor(bear4Sprite.width / 5);
+                        let sW = Math.floor(bear4Sprite.width / 4);
                         let sH = bear4Sprite.height;
                         ctx.drawImage(bear4Sprite, this.frameX * sW, 0, sW, sH, -80, -80, 160, 160);
                     } else {
