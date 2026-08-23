@@ -223,7 +223,7 @@
     const priestSprite = new Image(); priestSprite.src = 'assets/textures/priest.png';
     const treeSprite = new Image(); treeSprite.src = 'assets/textures/tree.png';
     const stoneSprite = new Image(); stoneSprite.src = 'assets/textures/stone.png';
-    const terrainSprite = new Image(); terrainSprite.src = 'assets/textures/terrain1.png';
+    const grassSprite = new Image(); grassSprite.src = 'assets/textures/grass.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1586,7 +1586,6 @@
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
-                    // Increased hit radius to 70 and interaction distance to 160
                     if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 70 && Math.hypot(player.x - r.x, player.y - r.y) < 160) {
                         
                         if (r.type === 'cache') {
@@ -1663,18 +1662,17 @@
         ctx.save();
         if (screenShake > 0) { ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake); }
 
-        if (terrainSprite.complete && terrainSprite.naturalWidth !== 0) {
-            ctx.fillStyle = ctx.createPattern(terrainSprite, 'repeat');
+        if (currentWeather === 'blizzard') {
+            ctx.fillStyle = '#aaddff';
+            ctx.fillRect(0, 0, 1920, 1080);
+        } else if (grassSprite.complete && grassSprite.naturalWidth !== 0) {
+            ctx.fillStyle = ctx.createPattern(grassSprite, 'repeat');
             ctx.fillRect(0, 0, 1920, 1080);
             
-            // Draw weather tints over the custom terrain
             if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; ctx.fillRect(0, 0, 1920, 1080); }
-            else if (currentWeather === 'blizzard') { ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'; ctx.fillRect(0, 0, 1920, 1080); }
             else if (gameState === 'NIGHT') { ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; ctx.fillRect(0, 0, 1920, 1080); }
         } else {
-            // Fallback rendering
             if (currentWeather === 'bloodmoon') ctx.fillStyle = '#4a2525';
-            else if (currentWeather === 'blizzard') ctx.fillStyle = '#aaddff';
             else ctx.fillStyle = gameState === 'DAY' ? '#354a29' : '#141d0f';
             ctx.fillRect(0, 0, 1920, 1080);
         }
