@@ -694,6 +694,12 @@
             this.shiftCd = 0;
             this.dashTimer = 0;
             this.dashAngle = 0;
+            
+            // Animation variables
+            this.frameX = 0; 
+            this.frameY = 0; 
+            this.animTimer = 0;
+            
             this.resetTalents(true);
         }
         resetTalents(initial = false) {
@@ -830,6 +836,24 @@
                 }
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
+
+            // NEW ANIMATION LOGIC
+            if (this.cls === 'archer') {
+                let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
+                if (this.lastAttack > this.attackCd - 0.25) {
+                    this.frameY = 2; // ATTACK row
+                    this.animTimer += dt * 15; // Animation speed
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                } else if (isMoving) {
+                    this.frameY = 1; // RUN row
+                    this.animTimer += dt * 12;
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
+                } else {
+                    this.frameY = 0; // IDLE row
+                    this.animTimer += dt * 5;
+                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 4; }
+                }
+            }
         }
         
         useAbility() {
@@ -931,8 +955,15 @@
             if (this.cls === 'warrior') { ctx.fillStyle = '#8899a6'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#111'; ctx.fillRect(6, -6, 12, 12); ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, 10, 5, 20); ctx.fillStyle = '#eee'; ctx.fillRect(20, 12, 25, 6); if (this.abTimer > 0) { ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0, 100*this.whirlMod, 0, Math.PI*2); ctx.stroke(); } } 
             else if (this.cls === 'mage') { ctx.fillStyle = '#2b2b80'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#1a1a4d'; ctx.beginPath(); ctx.moveTo(-5, -15); ctx.lineTo(20, 0); ctx.lineTo(-5, 15); ctx.fill(); ctx.fillStyle = '#6b4226'; ctx.fillRect(10, 12, 35, 5); ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.arc(45, 14, 7, 0, Math.PI*2); ctx.fill(); } 
             else if (this.cls === 'archer') { 
-                // Using your archer.jpg sprite
-                ctx.drawImage(archerSprite, -20, -20, 40, 40); 
+                ctx.rotate(-this.angle); // Keep character upright
+                let flip = (mouse.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1); // Face the mouse
+                
+                let sW = archerSprite.width / 9; // 9 columns in the sheet
+                let sH = archerSprite.height / 4; // 4 rows
+                
+                // Draw the specific frame!
+                ctx.drawImage(archerSprite, this.frameX * sW, this.frameY * sH, sW, sH, -35, -35, 70, 70); 
             } 
             else if (this.cls === 'priest') { ctx.fillStyle = '#e6e6e6'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffcc00'; ctx.fillRect(10, 12, 30, 4); ctx.fillRect(32, 6, 4, 16); }
             ctx.restore();
