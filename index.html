@@ -1442,8 +1442,8 @@
         entities.obstacles = []; entities.resources = []; entities.decorations = [];
         for(let i=0; i<150; i++) { entities.decorations.push({ x: Math.random() * 1920, y: Math.random() * 1080, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 }); }
         
-        // Single static square pool on the left side
-        entities.obstacles.push(new Obstacle(150, 300, 450, 450, 'lake'));
+        // Single static pool on the left side
+        entities.obstacles.push(new Obstacle(50, 50, 400, 400, 'lake'));
 
         for(let i=0; i<35; i++) {
             let x = Math.random() * 1800 + 60; let y = Math.random() * 960 + 60;
@@ -1609,7 +1609,6 @@
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
-                    // Increased hit radius to 100 and interaction distance to 220 to match the 200px image size
                     if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < 100 && Math.hypot(player.x - r.x, player.y - r.y) < 220) {
                         
                         if (r.type === 'cache') {
