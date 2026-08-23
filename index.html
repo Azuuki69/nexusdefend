@@ -193,13 +193,6 @@
 </div>
 
 <script>
-    // ==========================================
-    // --- SPRITE CALIBRATION SETTINGS ---
-    // Make sure these match the number of columns and rows in your image file!
-    // ==========================================
-    const SPRITE_COLS = 10; 
-    const SPRITE_ROWS = 4;
-
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
     window.addEventListener('resize', resize); resize();
 
@@ -216,9 +209,9 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     const lightCanvas = document.createElement('canvas'); lightCanvas.width = 1920; lightCanvas.height = 1080; const lctx = lightCanvas.getContext('2d');
 
-    // LOAD CUSTOM TEXTURES HERE
+    // LOAD CUSTOM TEXTURES HERE - UPDATED TO NEW 3-FRAME IMAGE
     const archerSprite = new Image();
-    archerSprite.src = 'assets/textures/archer.png';
+    archerSprite.src = 'assets/textures/archer2.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -843,19 +836,18 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // STATIC ANIMATION LOGIC FOR ARCHER
+            // STATIC ANIMATION LOGIC FOR NEW 3-FRAME SPRITE
             if (this.cls === 'archer') {
                 let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
                 
+                this.frameY = 0; // Only 1 row now!
+
                 if (this.lastAttack > this.attackCd - 0.25) {
-                    this.frameY = 2; // Attack row
-                    this.frameX = 6; // Static drawn bow frame
+                    this.frameX = 2; // Attack pose (3rd column)
                 } else if (isMoving) {
-                    this.frameY = 1; // Run row
-                    this.frameX = 2; // Static mid-stride frame
+                    this.frameX = 1; // Walk pose (2nd column)
                 } else {
-                    this.frameY = 0; // Idle row
-                    this.frameX = 0; // Static standing frame
+                    this.frameX = 0; // Idle pose (1st column)
                 }
             }
         }
@@ -964,13 +956,13 @@
                 ctx.scale(flip, 1); // Face the mouse
                 
                 if (archerSprite.width > 0) {
-                    let sW = Math.floor(archerSprite.width / SPRITE_COLS); 
-                    let sH = Math.floor(archerSprite.height / SPRITE_ROWS); 
+                    let sW = Math.floor(archerSprite.width / 3); // 3 distinct columns
+                    let sH = Math.floor(archerSprite.height * 0.75); // Crop the bottom 25% to remove the text!
                     
                     ctx.drawImage(
                         archerSprite, 
                         this.frameX * sW, 
-                        this.frameY * sH, 
+                        0, // Always top row
                         sW, 
                         sH, 
                         -35, 
