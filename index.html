@@ -481,17 +481,7 @@
         constructor(x, y, w, h, type) { this.x = x; this.y = y; this.w = w; this.h = h; this.type = type; }
         draw(ctx) {
             if (this.type === 'lake' && waterSprite.complete && waterSprite.naturalWidth !== 0) {
-                ctx.fillStyle = '#c2b280'; ctx.beginPath(); ctx.roundRect(this.x - 10, this.y - 10, this.w + 20, this.h + 20, 25); ctx.fill();
-                
-                ctx.save();
-                ctx.beginPath();
-                ctx.roundRect(this.x, this.y, this.w, this.h, 20);
-                ctx.clip();
-                let offset = Math.sin(performance.now()/500 + this.x) * 5;
-                ctx.fillStyle = ctx.createPattern(waterSprite, 'repeat');
-                ctx.translate(offset, 0);
-                ctx.fillRect(this.x - 20, this.y, this.w + 40, this.h);
-                ctx.restore();
+                ctx.drawImage(waterSprite, this.x, this.y, this.w, this.h);
             } else {
                 ctx.fillStyle = this.type === 'lake' ? '#c2b280' : '#3a1c1c'; ctx.beginPath(); ctx.roundRect(this.x - 10, this.y - 10, this.w + 20, this.h + 20, 25); ctx.fill();
                 ctx.fillStyle = this.type === 'lake' ? '#26547c' : '#7c2626'; ctx.beginPath(); ctx.roundRect(this.x, this.y, this.w, this.h, 20); ctx.fill();
@@ -1452,8 +1442,8 @@
         entities.obstacles = []; entities.resources = []; entities.decorations = [];
         for(let i=0; i<150; i++) { entities.decorations.push({ x: Math.random() * 1920, y: Math.random() * 1080, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 }); }
         
-        // Single static pool on the left side
-        entities.obstacles.push(new Obstacle(150, 250, 200, 580, 'lake'));
+        // Single static square pool on the left side
+        entities.obstacles.push(new Obstacle(150, 300, 450, 450, 'lake'));
 
         for(let i=0; i<35; i++) {
             let x = Math.random() * 1800 + 60; let y = Math.random() * 960 + 60;
