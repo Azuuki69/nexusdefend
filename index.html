@@ -472,6 +472,36 @@
     const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
     const chestSprite = new Image(); chestSprite.src = 'assets/textures/chest.png';
     const forgeSprite = new Image(); forgeSprite.src = 'assets/textures/buildings/forge.png';
+    const terrainSprites = { trees: new Image(), rocks: new Image() };
+    terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
+    terrainSprites.rocks.src = 'assets/textures/terrains/rocks.png';
+
+    // Scenery: pure decoration, never gatherable. Crops measured off the two sheets,
+    // grouped by size so the scatter can lean heavily on small stuff and stay sparse
+    // with the landmark trees. [sx, sy, sw, sh]
+    const SCENERY = [
+        // --- tufts and pebbles (very common, tiny) ---
+        { sheet:'trees', w:9, h:15, boxes:[[33,28,22,20],[76,26,23,22],[121,20,27,30],[172,28,23,22],[230,25,26,26],[295,33,24,18],[386,30,22,18],[446,25,36,26],[529,26,37,24],[604,26,40,25]] },
+        { sheet:'rocks', w:8, h:16, boxes:[[31,31,44,34],[103,22,57,51],[185,22,24,39],[210,28,30,45],[276,29,44,36]] },
+        // --- bushes and small rocks (common, medium) ---
+        { sheet:'trees', w:5, h:38, boxes:[[33,63,38,49],[96,60,42,52],[156,74,49,38],[221,73,45,39],[282,69,51,43],[351,68,60,44],[424,73,74,38],[509,73,77,38],[597,77,62,35]] },
+        { sheet:'rocks', w:5, h:32, boxes:[[22,107,60,48],[103,105,30,46],[181,107,65,48],[267,104,61,54],[350,101,60,59],[431,99,63,62],[517,104,56,53],[595,104,57,54]] },
+        // --- small trees and boulders (uncommon, large) ---
+        { sheet:'trees', w:3, h:206, boxes:[[31,138,47,65],[91,134,46,69],[158,140,45,63],[221,138,46,65],[279,125,56,80],[350,122,62,83],[425,122,72,84],[510,119,70,87],[589,119,68,90]] },
+        { sheet:'rocks', w:2, h:58, boxes:[[19,188,93,77],[131,187,86,78],[237,188,92,77],[347,190,93,72],[485,205,78,46],[582,194,75,64],[22,294,88,51],[133,287,76,63],[236,293,89,54],[347,287,91,63],[482,291,83,56],[599,287,62,65]] },
+        // --- landmark trees (rare, big) ---
+        { sheet:'trees', w:1, h:240, boxes:[[21,212,209,145],[241,220,95,132],[352,231,144,124],[516,214,139,143]] }
+    ];
+    const SCENERY_WEIGHT_TOTAL = SCENERY.reduce((a, g) => a + g.w, 0);
+    function rollScenery() {
+        let r = Math.random() * SCENERY_WEIGHT_TOTAL;
+        for (const g of SCENERY) { r -= g.w; if (r <= 0) return g; }
+        return SCENERY[0];
+    }
+
+    // Gatherable nodes start scarce and the forest thickens as the run goes on.
+    const RES_START = 55, RES_PER_DAY = 12, RES_MAX = 190;
+    function resourceCountFor(day) { return Math.min(RES_MAX, RES_START + (day - 1) * RES_PER_DAY); }
     // The forge stands just west of the nexus - a few seconds' walk, clear of the merchant's
     // pitch to the north and of the player's spawn to the south.
     const FORGE_OFF_X = -330, FORGE_OFF_Y = -30;
@@ -2119,6 +2149,7 @@
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
                     ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 60, dw, dh);
                     ctx.filter = 'none';
+                    drawGatherMark(ctx, this.x, this.y - 128);
                 } else {
                     ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
                     ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
@@ -2130,6 +2161,8 @@
                     let dh = 65; let dw = dh * (stoneSprite.width / stoneSprite.height);
                     if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
                     ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 43, dw, dh);
+                    ctx.filter = 'none';
+                    drawGatherMark(ctx, this.x, this.y - 38);
                     ctx.filter = 'none';
                 } else {
                     ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
@@ -2234,15 +2267,17 @@
         const lakes = [ [-2150, -900, 760], [1650, -1150, 620], [-1250, 1000, 680] ];
         lakes.forEach(l => entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[2], 'lake')));
 
-        // Ground detail, scaled to the area. Placed after the ponds so tufts and pebbles
-        // are not scattered across open water.
-        for(let i=0; i<900; i++) {
+        // Ground detail, scaled to the area. Placed after the ponds so nothing is
+        // scattered across open water.
+        for(let i=0; i<260; i++) {
             let dx = Math.random() * WORLD_W, dy = Math.random() * WORLD_H;
             if (isCollidingWithObstacle(dx, dy, 0)) continue;
             entities.decorations.push({ x: dx, y: dy, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 });
         }
 
-        for(let i=0; i<240; i++) {
+
+
+        for(let i=0, want=resourceCountFor(wave); i<want; i++) {
             // Retry placement so resources never overlap each other, obstacles, or the base
             let placed = false;
             for (let attempt = 0; attempt < 20 && !placed; attempt++) {
@@ -2265,6 +2300,27 @@
                 entities.resources.push(new Resource(cx, cy, 'cache'));
             }
         }
+
+        // Non-gatherable trees and rocks, so the world looks wooded without every
+        // trunk being a resource node.
+        for(let i=0; i<420; i++) {
+            let dx = Math.random() * WORLD_W, dy = Math.random() * WORLD_H;
+            if (isCollidingWithObstacle(dx, dy, 20)) continue;
+            if (Math.hypot(dx - WORLD_CX, dy - WORLD_CY) < 230) continue;
+            if (Math.hypot(dx - forgeX(), dy - forgeY()) < 150) continue;
+            let g = rollScenery();
+            let b = g.boxes[Math.floor(Math.random() * g.boxes.length)];
+            let dh = g.h * (0.82 + Math.random() * 0.36);
+            let dwid = dh * (b[2] / b[3]);
+            // Clearance scales with the canopy so a big tree never sits on top of a node.
+            let clear = Math.max(90, dwid * 0.6);
+            if (entities.resources.some(r => Math.hypot(r.x - dx, r.y - dy) < clear)) continue;
+            entities.decorations.push({ x: dx, y: dy, type: 'scenery', sheet: g.sheet,
+                sx: b[0], sy: b[1], sw: b[2], sh: b[3], h: dh,
+                flip: Math.random() < 0.5 });
+        }
+        // Draw back-to-front so nearer scenery overlaps what is behind it.
+        entities.decorations.sort((a, b) => a.y - b.y);
         
         // Sleeping bear: an occasional visitor, never on consecutive days
         if (wave - lastBearWave >= BEAR_MIN_GAP_DAYS && Math.random() < BEAR_SPAWN_CHANCE) {
@@ -2600,6 +2656,24 @@
         return groundPatterns[kind];
     }
 
+    // With decorative trees and rocks all over the map, gatherable nodes need a tell.
+    function drawGatherMark(ctx, x, y) {
+        let bob = Math.sin(performance.now() / 500 + x) * 1.5;
+        let cy = y + bob;
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = 'rgba(12,14,10,0.8)';
+        ctx.beginPath(); ctx.arc(x, cy, 11, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(217,178,92,0.9)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, cy, 11, 0, Math.PI*2); ctx.stroke();
+        // little pickaxe: handle plus a curved head
+        ctx.strokeStyle = '#e8c463'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x - 4, cy + 5); ctx.lineTo(x + 3, cy - 4); ctx.stroke();
+        ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.arc(x + 3.5, cy - 4.5, 5, Math.PI * 0.78, Math.PI * 1.95); ctx.stroke();
+        ctx.restore();
+    }
+
     function drawForge(ctx) {
         let fx = forgeX(), fy = forgeY();
         if (!inView(fx, fy, 200)) return;
@@ -2671,7 +2745,23 @@
         }
 
         entities.decorations.forEach(d => {
-            if (!inView(d.x, d.y, 40)) return;
+            if (!inView(d.x, d.y, 120)) return;
+            if (d.type === 'scenery') {
+                let img = terrainSprites[d.sheet];
+                if (img.complete && img.naturalWidth !== 0) {
+                    let dh = d.h, dw = dh * (d.sw / d.sh);
+                    ctx.save();
+                    ctx.globalAlpha = 0.28;
+                    ctx.fillStyle = '#000';
+                    ctx.beginPath(); ctx.ellipse(d.x, d.y - 2, dw * 0.34, Math.max(3, dh * 0.07), 0, 0, Math.PI*2); ctx.fill();
+                    ctx.globalAlpha = 1;
+                    ctx.translate(d.x, d.y);
+                    if (d.flip) ctx.scale(-1, 1);
+                    ctx.drawImage(img, d.sx, d.sy, d.sw, d.sh, -dw/2, -dh, dw, dh);
+                    ctx.restore();
+                }
+                return;
+            }
             if (d.type === 'grass') {ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
             else if (d.type === 'crystal') { ctx.fillStyle = 'rgba(255, 50, 100, 0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y-d.size); ctx.lineTo(d.x+d.size, d.y); ctx.lineTo(d.x, d.y+d.size); ctx.lineTo(d.x-d.size, d.y); ctx.fill(); }
             else { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill(); }
