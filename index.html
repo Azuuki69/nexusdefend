@@ -231,6 +231,7 @@
     const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
     const bear4Sprite = new Image(); bear4Sprite.src = 'assets/textures/enemies/bear4.png';
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
+    const wolfSprite = new Image(); wolfSprite.src = 'assets/textures/enemies/wolf_walk.png';
 
     // --- AUDIO SYSTEM ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1209,6 +1210,7 @@
             if (this.type === 'predator') { this.hp = Math.floor(1000 * Math.pow(1.15, wave - 1)); this.baseSpd = 4; this.isAsleep = true; }
             if (this.type === 'assassin') { this.hp *= 0.5; this.baseSpd *= 1.8; this.isInvisible = true; }
             if (this.type === 'necromancer') { this.hp *= 0.8; this.baseSpd *= 0.7; this.healCd = 2.0; }
+            if (this.type === 'wolf') { this.hp *= 0.7; this.baseSpd *= 1.4; }
             
             if (this.type === 'boss' || this.type === 'golem') {
                 this.aura = Math.random() > 0.5 ? 'heal' : 'speed';
@@ -1220,7 +1222,7 @@
             if (currentWeather === 'bloodmoon') { this.baseSpd *= 1.5; }
 
             this.spd = this.baseSpd; 
-            let baseDmg = this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 : 5);
+            let baseDmg = this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 : (this.type === 'wolf' ? 8 : 5));
             this.dmg = Math.floor(baseDmg * Math.pow(1.1, wave - 1)); 
             this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0;
             this.maxHp = this.hp;
@@ -1372,7 +1374,7 @@
             }
 
             this.animTimer += dt;
-            if (this.type === 'goblin') {
+            if (this.type === 'goblin' || this.type === 'wolf') {
                 if (this.attackCd > 0.8) {
                     this.frameX = 2;
                 } else {
@@ -1403,6 +1405,7 @@
             else if (this.type === 'predator') ctx.fillStyle = this.isAsleep ? '#335533' : '#aa0000';
             else if (this.type === 'assassin') ctx.fillStyle = '#222';
             else if (this.type === 'necromancer') ctx.fillStyle = '#4b0082';
+            else if (this.type === 'wolf') ctx.fillStyle = '#7a7a6e';
 
             let isCustomSprite = false;
 
@@ -1445,6 +1448,21 @@
                 let sW = Math.floor(goblinSprite.width / 3);
                 let sH = goblinSprite.height;
                 ctx.drawImage(goblinSprite, this.frameX * sW, 0, sW, sH, -40, -40, 80, 80);
+            }
+            else if (this.type === 'wolf' && wolfSprite.complete && wolfSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                // wolf_walk.png frames are NOT equal width (walk poses vs the attack pose),
+                // so slice at the real per-frame boundaries instead of dividing evenly.
+                const wolfFrames = [
+                    { sx: 0,   sw: 188 },
+                    { sx: 188, sw: 145 },
+                    { sx: 333, sw: 167 }
+                ];
+                let f = wolfFrames[this.frameX] || wolfFrames[0];
+                let sH = wolfSprite.height;
+                ctx.drawImage(wolfSprite, f.sx, 0, f.sw, sH, -40, -40, 80, 80);
             }
             else { ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x)); ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); }
 
@@ -1619,6 +1637,7 @@
             let rand = Math.random(); let type = 'goblin';
             
             // Scaled wave spawning including new enemies
+            if (wave > 0 && rand > 0.35) type = 'wolf';
             if (wave > 1 && rand > 0.5) type = 'skeleton'; 
             if (wave > 2 && rand > 0.7) type = 'bat';
             if (wave > 3 && rand > 0.8) type = 'bomber'; 
