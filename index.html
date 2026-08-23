@@ -838,7 +838,7 @@
             }
             if (this.towerRegen) { entities.towers.forEach(t => { if (t.hp < t.maxHp) t.hp = Math.min(t.maxHp, t.hp + dt * 5); }); }
 
-            // ANIMATION LOGIC FOR CLEAN SPRITE SHEET
+// ANIMATION LOGIC FOR CLEAN SPRITE SHEET
             if (this.cls === 'archer') {
                 let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
                 let newState = 'idle';
@@ -865,8 +865,7 @@
                     if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 8; }
                 } else {
                     this.frameY = 0; // IDLE row
-                    this.animTimer += dt * 5; 
-                    if (this.animTimer > 1) { this.animTimer = 0; this.frameX = (this.frameX + 1) % 4; }
+                    this.frameX = 0; // FIXED: Locks to frame 0 so it stops sliding when you stand still!
                 }
             }
         }
