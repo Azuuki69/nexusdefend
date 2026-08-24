@@ -498,10 +498,10 @@
         { sheet:'trees', w:5, h:38, boxes:[[33,63,38,49],[96,60,42,52],[156,74,49,38],[221,73,45,39],[282,69,51,43],[351,68,60,44],[424,73,74,38],[509,73,77,38],[597,77,62,35]] },
         { sheet:'rocks', w:5, h:24, solid:0, boxes:[[276,29,44,36],[351,26,56,41],[433,22,61,49],[518,19,54,54],[596,18,56,56],[22,107,60,48],[103,105,57,52],[181,107,65,48],[267,104,61,54],[350,101,60,59],[431,99,63,62],[517,104,56,53],[595,104,57,54]] },
         // --- small trees and boulders (uncommon, large) ---
-        { sheet:'trees', w:3, h:144, solid:0.15, boxes:[[31,138,47,65],[91,134,46,69],[158,140,45,63],[221,138,46,65],[279,125,56,80],[350,122,62,83],[425,122,72,84],[510,119,70,87],[589,119,68,90]] },
+        { sheet:'trees', w:3, h:144, solid:0.15, canopy:true, boxes:[[31,138,47,65],[91,134,46,69],[158,140,45,63],[221,138,46,65],[279,125,56,80],[350,122,62,83],[425,122,72,84],[510,119,70,87],[589,119,68,90]] },
         { sheet:'rocks', w:2, h:42, solid:0.36, boxes:[[19,188,93,77],[131,187,86,78],[237,188,92,77],[347,190,93,72],[485,205,78,46],[582,194,75,64],[22,294,88,51],[133,287,76,63],[236,293,89,54],[347,287,91,63],[482,291,83,56],[599,287,62,65]] },
         // --- landmark trees (rare, big) ---
-        { sheet:'trees', w:1, h:168, solid:0.12, boxes:[[21,212,209,145],[241,220,95,132],[352,231,144,124],[516,214,139,143]] }
+        { sheet:'trees', w:1, h:168, solid:0.12, canopy:true, boxes:[[21,212,209,145],[241,220,95,132],[352,231,144,124],[516,214,139,143]] }
     ];
     const SCENERY_WEIGHT_TOTAL = SCENERY.reduce((a, g) => a + g.w, 0);
     function rollScenery() {
@@ -2359,7 +2359,7 @@
             if (entities.resources.some(r => Math.hypot(r.x - dx, r.y - dy) < clear)) continue;
             entities.decorations.push({ x: dx, y: dy, type: 'scenery', sheet: g.sheet,
                 sx: b[0], sy: b[1], sw: b[2], sh: b[3], h: dh,
-                flip: Math.random() < 0.5 });
+                flip: Math.random() < 0.5, canopy: !!g.canopy });
             if (g.solid) entities.solids.push({ x: dx, y: dy, r: dwid * g.solid });
         }
         // Draw back-to-front so nearer scenery overlaps what is behind it.
@@ -2830,11 +2830,18 @@
         base.draw(ctx); entities.towers.forEach(t => { if (inView(t.x, t.y)) t.draw(ctx); }); entities.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(ctx); });
         entities.projectiles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); entities.effects.forEach(ef => { if (inView(ef.x, ef.y, ef.radius + 40)) ef.draw(ctx); }); entities.particles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); player.draw(ctx);
 
-        // Re-draw tree crowns that stand in front of the player so the player appears to walk behind the foliage
+        // Re-draw tree crowns that stand in front of the player so the player walks behind the
+        // foliage instead of appearing on top of it. The player is painted after every prop,
+        // so without this pass they would always sit above the leaves.
         entities.resources.forEach(r => {
             if (r.type === 'wood' && r.y > player.y - 20 && Math.abs(r.x - player.x) < 100 && Math.abs(r.y - player.y) < 165) {
                 r.draw(ctx);
             }
+        });
+        entities.decorations.forEach(d => {
+            if (!d.canopy || d.y <= player.y - 20) return;
+            let dw = d.h * (d.sw / d.sh);
+            if (Math.abs(d.x - player.x) < dw * 0.55 && (d.y - player.y) < d.h * 0.9) drawScenery(ctx, d);
         });
 
         ctx.restore();                           // ---- back to SCREEN SPACE ----
