@@ -129,6 +129,7 @@
         #ability-q-slot.ready { border-color: #4dd9ff; box-shadow: 0 6px 14px rgba(0,0,0,0.6), 0 0 16px rgba(77,217,255,0.6); }
 
         /* ============ BUILD MENU ============ */
+        #towerSlots { position: absolute; bottom: 122px; right: 20px; font-family: var(--font-head); font-size: 13px; font-weight: 700; letter-spacing: 0.5px; color: #9a9a90; background: linear-gradient(180deg, rgba(24,28,20,0.92), rgba(9,11,8,0.95)); border: 1px solid var(--panel-border-dim); border-radius: 5px; padding: 4px 10px; pointer-events: none; text-shadow: 0 1px 2px #000; }
         #buildMenu { position: absolute; bottom: 20px; right: 20px; display: flex; gap: 10px; pointer-events: auto; }
         .build-item { position: relative; width: 84px; height: 92px; background: linear-gradient(180deg, #232823, #0c0f0c); border: 2px solid #4a4a42; border-radius: 8px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; transition: 0.15s; box-shadow: 0 4px 10px rgba(0,0,0,0.5); padding-bottom: 6px; }
         .build-item::before { content: attr(data-icon); font-size: 26px; margin-bottom: 4px; }
@@ -155,6 +156,7 @@
         .lvl-pips { display: inline-flex; gap: 3px; margin-left: 8px; vertical-align: middle; }
         .lvl-pips span { width: 6px; height: 6px; border-radius: 50%; background: #444; display: inline-block; }
         .lvl-pips span.filled { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
+        .talent-node.tier-locked { opacity: 0.45; filter: grayscale(0.6); }
 
         /* Achievements */
         #achievementToast { position: absolute; top: 20px; right: -420px; display: flex; align-items: center; gap: 12px; background: linear-gradient(135deg, rgba(0,40,25,0.95), rgba(0,10,8,0.97)); border: 2px solid var(--gold); border-radius: 10px; padding: 14px 20px; box-shadow: 0 0 28px rgba(217,178,92,0.5), 0 10px 24px rgba(0,0,0,0.6); transition: right 0.5s cubic-bezier(.2,1.3,.4,1); z-index: 150; }
@@ -323,6 +325,7 @@
             </div>
         </div>
 
+        <div id="towerSlots">Towers 0/9</div>
         <div id="buildMenu">
             <div id="build-1" class="build-item selected-build" data-icon="🧱" onclick="player.buildSelection = 1; updateBuildUI();">
                 <span class="build-key">1</span>
@@ -334,7 +337,7 @@
             </div>
             <div id="build-3" class="build-item" data-icon="⛏️" onclick="player.buildSelection = 3; updateBuildUI();">
                 <span class="build-key">3</span>
-                <strong style="color:#ffcc00;" id="build-3-label">Extractor</strong><span>30W 30S</span>
+                <strong style="color:#ffcc00;" id="build-3-label">Extractor</strong><span>50W 50S</span>
             </div>
             <div id="build-4" class="build-item" data-icon="💣" onclick="player.buildSelection = 4; updateBuildUI();">
                 <span class="build-key">4</span>
@@ -420,6 +423,12 @@
             lbl.innerText = `Extractor ${n}/${MAX_EXTRACTORS}`;
             lbl.style.color = n >= MAX_EXTRACTORS ? '#ff6b6b' : '#ffcc00';
         }
+        let slots = document.getElementById('towerSlots');
+        if (slots && typeof entities !== 'undefined' && typeof player !== 'undefined' && player) {
+            let n = defenceTowerCount(), cap = towerCap();
+            slots.innerText = `Towers ${n}/${cap}`;
+            slots.style.color = n >= cap ? '#ff6b6b' : (n >= cap - 2 ? '#ffcc00' : '#9a9a90');
+        }
     }
 
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
@@ -475,6 +484,36 @@
     const bear4Sprite = new Image(); bear4Sprite.src = 'assets/textures/enemies/bear4.png';
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
     const wolfSprite = new Image(); wolfSprite.src = 'assets/textures/enemies/wolf_walk.png';
+    const orcArcherSprite = new Image(); orcArcherSprite.src = 'assets/textures/enemies/orcarcher.png';
+    // Three poses: standing, drawing the bow, and a melee swing. The second and third overlap
+    // on the sheet because the swing's motion arc reaches back over the archer, so the split
+    // is taken at the lowest-density column between them rather than at a clean gap.
+    const ORC_FRAMES = [
+        { sx: 18,  sy: 64, sw: 202, sh: 252 },
+        { sx: 228, sy: 39, sw: 214, sh: 277 },
+        { sx: 442, sy: 40, sw: 225, sh: 280 }
+    ];
+    const ORC_DRAW_H = 92, ORC_FEET = 26, ORC_MELEE_RANGE = 70;
+
+    const orcKingSprite = new Image(); orcKingSprite.src = 'assets/textures/enemies/orcking.png';
+    const KING_FRAMES = [
+        { sx: 17,  sy: 48, sw: 198, sh: 262 },
+        { sx: 244, sy: 48, sw: 180, sh: 262 },
+        { sx: 449, sy: 41, sw: 211, sh: 269 }
+    ];
+    // The King is a landmark: the player renders ~97px tall and a goblin ~80, so 260 reads
+    // as genuinely huge without filling the screen.
+    const KING_DRAW_H = 260, KING_FEET = 70, KING_RADIUS = 80;
+    const KING_WAVE_INTERVAL = 10;      // waves 10, 20, 30 ...
+    const KING_HP_MULT = 25, KING_DMG_BASE = 45, KING_SPD_MULT = 0.55;
+    const KING_SLAM_RANGE = 210, KING_SLAM_CD = 4.0, KING_SLAM_DMG = 1.6;
+    // Get close and they come for you rather than walking past to the nexus. Aggro sticks for
+    // a few seconds so they do not flip target every step, and hitting something aggros it.
+    const AGGRO_RANGE = 300, AGGRO_RANGE_GOLEM = 140, AGGRO_HOLD = 4.0, AGGRO_DROP = 1.7;
+    // Only real walls block: barricades, knockback walls and aegis barriers. A frost trap
+    // lies on the ground, so it is walked over, not around.
+    function towerBlocks(t) { return t.type === 1 && t.pClass !== 'archer'; }
+    const WALL_STUCK_TIME = 1.2;   // seconds of no progress before they start swinging at the wall
     const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
     const chestSprite = new Image(); chestSprite.src = 'assets/textures/chest.png';
     const forgeSprite = new Image(); forgeSprite.src = 'assets/textures/buildings/forge.png';
@@ -482,7 +521,37 @@
     const EXTRACTOR_CROP = { sx: 28, sy: 42, sw: 618, sh: 308 };
     const EXTRACTOR_H = 118, EXTRACTOR_FEET = 40, EXTRACTOR_SPACING = 130;
     const MAX_EXTRACTORS = 3;
+    // Payback was 0.75 days, which made three extractors an automatic purchase rather than
+    // a choice. At 50 it is about 1.25 days, so building them costs you an early wave's defence.
+    const EXTRACTOR_COST = 50;
+    // Talent tuning: each tier of a path needs TIER_STEP more points spent in that path,
+    // so the capstone at tier 5 costs 10 points of commitment.
+    const TP_PER_LEVEL = 2, TALENT_XP_GROWTH = 1.5, TIER_STEP = 2, PARAGON_UNLOCK = 8;
+    // Freeze has diminishing returns, the way MMO crowd control does. Without this a frost
+    // trap ticking every 1.0s refreshes a 2.0s freeze forever, so a ring of traps pins the
+    // whole wave in place permanently.
+    const FREEZE_DURATION = 1.5, FREEZE_IMMUNITY = 5.0;
+    function paragonRequirement(pathId) {
+        let path = talentData[player.cls].find(p => p.id === pathId);
+        let total = path ? path.talents.reduce((n, t) => n + (t.max || 1), 0) : 0;
+        return Math.min(PARAGON_UNLOCK, total);
+    }
     function extractorCount() { return entities.towers.filter(t => t.type === 3).length; }
+    // Defensive towers are capped, and the cap grows with the wave so a long run can still
+    // build a real fortress. Extractors are economy, not defence, so they keep their own cap
+    // and do not compete for these slots.
+    const TOWER_CAP_BASE = 8, TOWER_CAP_PER_WAVE = 1;
+    function towerCap() { return TOWER_CAP_BASE + TOWER_CAP_PER_WAVE * wave; }
+    function defenceTowerCount() { return entities.towers.filter(t => t.type !== 3).length; }
+    // The bear was a 300 resource lump sum - about sixty gathering actions from one kill.
+    // Scaling it keeps the fight worth taking late without being a night-one jackpot.
+    const BEAR_LOOT_BASE = 25, BEAR_LOOT_PER_WAVE = 8;
+    // A flat 500hp nexus died in about 1.3s at wave 10 and 0.3s at wave 20, so losing was a
+    // tripwire rather than attrition. Growing the pool with the wave gives leakage somewhere
+    // to land, which is what makes repairs and the brazier worth having.
+    const NEXUS_BASE_HP = 500, NEXUS_HP_PER_WAVE = 60, FORGE_MAX_LEVEL = 5;
+    function nexusMaxHpFor(w) { return NEXUS_BASE_HP + NEXUS_HP_PER_WAVE * w + 100 * (forgeUpgrades.nexus ? forgeUpgrades.nexus.level : 0); }
+    function bearLoot() { return BEAR_LOOT_BASE + BEAR_LOOT_PER_WAVE * wave; }
     const terrainSprites = { trees: new Image(), rocks: new Image() };
     terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
     terrainSprites.rocks.src = 'assets/textures/terrains/rocks.png';
@@ -731,6 +800,11 @@
             let dx = x - sp.x; let dy = y - sp.y;
             if (dx*dx + dy*dy < Math.pow(sp.r + radius, 2)) return true;
         }
+        for (let t of entities.towers) {
+            if (!towerBlocks(t)) continue;
+            let dx = x - t.x; let dy = y - t.y;
+            if (dx*dx + dy*dy < Math.pow(28 + radius, 2)) return true;
+        }
         for (let r of entities.resources) {
             if (r.solid) {
                 let dx = x - r.x; let dy = y - r.y;
@@ -748,26 +822,114 @@
     }
 
     // --- TALENT TREE DATA ---
+    // ---- TALENT TREES ----
+    // Structured the way a WoW-style tree is: six tiers deep, most nodes multi-rank, and
+    // each tier gated behind TIER_STEP more points spent in that path. `max` is the rank
+    // cap; `apply(r)` runs once per rank purchased and receives the new rank number.
     const talentData = {
         warrior: [
-            { id: 'p1', name: 'Berserker', desc: 'Offensive Melee', talents: [ { id: 'w_b_1', name: 'Savage Strikes', desc: '+20% Base Damage', apply: () => player.recalcStats() }, { id: 'w_b_2', name: 'Quick Whirl', desc: 'Whirlwind CD -1.5s', apply: () => player.data.abCd = Math.max(1, player.data.abCd - 1.5) }, { id: 'w_b_3', name: 'Giant Cleave', desc: 'Whirlwind radius +50%', apply: () => player.whirlMod = 1.5 }, { id: 'w_b_4', name: 'Leap Slam (Ult)', desc: 'Whirlwind dashes to cursor', apply: () => player.leapSlam = true } ]},
-            { id: 'p2', name: 'Guardian', desc: 'Tank & Reflect', talents: [ { id: 'w_g_1', name: 'Thick Skin', desc: '+100 Max HP', apply: () => player.recalcStats() }, { id: 'w_g_2', name: 'Iron Will', desc: 'Take 25% less damage', apply: () => { player.talentDmgReduc = 0.75; player.recalcStats(); } }, { id: 'w_g_3', name: 'Spiked Walls', desc: 'Barricades reflect 2x dmg', apply: () => player.reflectMod = 2.0 }, { id: 'w_g_4', name: 'Taunting Walls (Ult)', desc: 'Barricades pull aggro', apply: () => player.tauntingWalls = true } ]},
-            { id: 'p3', name: 'Commander', desc: 'Tower Focus', talents: [ { id: 'w_c_1', name: 'Reinforce', desc: 'All Towers +50% HP', apply: () => { entities.towers.forEach(t => t.recalcHp()); } }, { id: 'w_c_2', name: 'Heavy Bolts', desc: 'Turrets shoot 20% faster', apply: () => player.towerSpeedMod = 0.8 }, { id: 'w_c_3', name: 'Mechanic', desc: 'Towers regen 5 HP/sec', apply: () => player.towerRegen = true }, { id: 'w_c_4', name: 'Shrapnel (Ult)', desc: 'Turrets shoot explosives', apply: () => player.shrapnelTowers = true } ]}
+            { id: 'p1', name: 'Berserker', desc: 'Raw melee damage', talents: [
+                { id: 'w_b_1', name: 'Savage Strikes', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
+                { id: 'w_b_2', name: 'Quick Whirl', desc: 'Whirlwind cooldown -0.8s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 0.8) },
+                { id: 'w_b_3', name: 'Bloodthirst', desc: 'Heal 3% of damage dealt', max: 2, apply: () => { playerBuffs.vampirism = true; } },
+                { id: 'w_b_4', name: 'Giant Cleave', desc: 'Whirlwind radius +25%', max: 2, apply: r => player.whirlMod = 1 + 0.25 * r },
+                { id: 'w_b_5', name: 'Frenzy', desc: '+8% attack speed', max: 3, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
+                { id: 'w_b_6', name: 'Leap Slam (Ult)', desc: 'Whirlwind dashes to the cursor', max: 1, apply: () => player.leapSlam = true }
+            ]},
+            { id: 'p2', name: 'Guardian', desc: 'Survivability and reflect', talents: [
+                { id: 'w_g_1', name: 'Thick Skin', desc: '+60 Max HP', max: 3, apply: () => { player.talentHpBonus += 60; player.recalcStats(); } },
+                { id: 'w_g_2', name: 'Iron Will', desc: 'Take 8% less damage', max: 3, apply: r => { player.talentDmgReduc = Math.pow(0.92, r); player.recalcStats(); } },
+                { id: 'w_g_3', name: 'Retaliate', desc: 'Reflect 15% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.15 },
+                { id: 'w_g_4', name: 'Spiked Walls', desc: 'Barricades reflect +100% damage', max: 2, apply: r => player.reflectMod = 1 + r },
+                { id: 'w_g_5', name: 'Second Wind', desc: 'Regenerate 2 HP per second', max: 2, apply: () => player.hpRegen += 2 },
+                { id: 'w_g_6', name: 'Taunting Walls (Ult)', desc: 'Barricades pull enemy aggro', max: 1, apply: () => player.tauntingWalls = true }
+            ]},
+            { id: 'p3', name: 'Warlord', desc: 'Fortifications', talents: [
+                { id: 'w_c_1', name: 'Fortify', desc: 'Tower HP +25%', max: 3, apply: () => { player.talentTowerHpMult += 0.25; entities.towers.forEach(t => t.recalcHp()); } },
+                { id: 'w_c_2', name: 'Efficient Builder', desc: 'Build costs -15%', max: 2, apply: r => player.buildCostMod = Math.pow(0.85, r) },
+                { id: 'w_c_3', name: 'Crossbow Drill', desc: 'Tower damage +20%', max: 3, apply: () => player.towerDmgMult += 0.20 },
+                { id: 'w_c_4', name: 'Rapid Fire', desc: 'Tower cooldown -15%', max: 2, apply: r => player.towerSpeedMod = Math.pow(0.85, r) },
+                { id: 'w_c_5', name: 'Field Repair', desc: 'Towers slowly repair themselves', max: 1, apply: () => player.towerRegen = true },
+                { id: 'w_c_6', name: 'Shrapnel Towers (Ult)', desc: 'Tower shots can explode', max: 1, apply: () => player.shrapnelTowers = true }
+            ]}
         ],
         mage: [
-            { id: 'p1', name: 'Pyromancer', desc: 'Raw Damage', talents: [ { id: 'm_p_1', name: 'Ignite', desc: '+20% Base Damage', apply: () => player.recalcStats() }, { id: 'm_p_2', name: 'Fast Cast', desc: 'Meteor CD -2.0s', apply: () => player.data.abCd = Math.max(1, player.data.abCd - 2.0) }, { id: 'm_p_3', name: 'Cataclysm', desc: 'Meteor radius +50%', apply: () => player.meteorMod = 1.5 }, { id: 'm_p_4', name: 'Scorched Earth (Ult)', desc: 'Meteor leaves a 5s fire zone', apply: () => player.scorchedEarth = true } ]},
-            { id: 'p2', name: 'Frostweaver', desc: 'Crowd Control', talents: [ { id: 'm_f_1', name: 'Chilling Touch', desc: 'Attacks slow enemies', apply: () => player.attackSlows = true }, { id: 'm_f_2', name: 'Glacial Walls', desc: 'Knockback wall slows', apply: () => player.wallSlows = true }, { id: 'm_f_3', name: 'Blizzard', desc: 'Global 20% Enemy Slow', apply: () => player.globalSlow = true }, { id: 'm_f_4', name: 'Shatter (Ult)', desc: '300% dmg to CC targets', apply: () => player.shatter = true } ]},
-            { id: 'p3', name: 'Archmage', desc: 'Mana Efficiency', talents: [ { id: 'm_a_1', name: 'Mana Pool', desc: '+100 Max Mana', apply: () => player.recalcStats() }, { id: 'm_a_2', name: 'Leylines', desc: 'Mana Regen x2', apply: () => player.mpRegenMod = 2.0 }, { id: 'm_a_3', name: 'Efficiency', desc: 'Abilities cost 40% less', apply: () => player.data.abCost = Math.floor(player.data.abCost * 0.6) }, { id: 'm_a_4', name: 'Mana Shield (Ult)', desc: 'Mana absorbs 50% dmg', apply: () => player.manaShield = true } ]}
+            { id: 'p1', name: 'Pyromancer', desc: 'Fire and burning', talents: [
+                { id: 'm_p_1', name: 'Ignite', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
+                { id: 'm_p_2', name: 'Fast Cast', desc: 'Meteor cooldown -1.0s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 1.0) },
+                { id: 'm_p_3', name: 'Cataclysm', desc: 'Meteor radius +25%', max: 2, apply: r => player.meteorMod = 1 + 0.25 * r },
+                { id: 'm_p_4', name: 'Combustion', desc: 'Burning enemies take +20% damage', max: 2, apply: () => player.burnBonus += 0.20 },
+                { id: 'm_p_5', name: 'Flash Freeze', desc: 'Meteor also freezes', max: 1, apply: () => player.meteorFreezes = true },
+                { id: 'm_p_6', name: 'Scorched Earth (Ult)', desc: 'Meteor leaves a 5s fire zone', max: 1, apply: () => player.scorchedEarth = true }
+            ]},
+            { id: 'p2', name: 'Cryomancer', desc: 'Slow and shatter', talents: [
+                { id: 'm_c_1', name: 'Frostbite', desc: 'Attacks slow enemies', max: 1, apply: () => player.attackSlows = true },
+                { id: 'm_c_2', name: 'Deep Chill', desc: 'Your slows are 15% stronger', max: 3, apply: r => player.slowPower = Math.max(0.2, 0.5 - 0.15 * r) },
+                { id: 'm_c_3', name: 'Glacial Armor', desc: 'Take 8% less damage', max: 3, apply: r => { player.talentDmgReduc = Math.pow(0.92, r); player.recalcStats(); } },
+                { id: 'm_c_4', name: 'Knockback Wall', desc: 'Walls also slow what they shove', max: 1, apply: () => player.wallSlows = true },
+                { id: 'm_c_5', name: 'Shatter', desc: 'Triple damage to slowed or frozen targets', max: 1, apply: () => player.shatter = true },
+                { id: 'm_c_6', name: 'Permafrost (Ult)', desc: 'Every enemy on the map is slowed', max: 1, apply: () => player.globalSlow = true }
+            ]},
+            { id: 'p3', name: 'Archmage', desc: 'Mana and spellpower', talents: [
+                { id: 'm_a_1', name: 'Mana Pool', desc: '+60 Max Mana', max: 3, apply: () => { player.talentMpBonus += 60; player.recalcStats(); } },
+                { id: 'm_a_2', name: 'Leylines', desc: 'Mana regenerates 50% faster', max: 2, apply: r => player.mpRegenMod = 1 + 0.5 * r },
+                { id: 'm_a_3', name: 'Efficiency', desc: 'Abilities cost 20% less', max: 2, apply: () => player.data.abCost = Math.max(5, Math.floor(player.data.abCost * 0.8)) },
+                { id: 'm_a_4', name: 'Arcane Power', desc: '+10% damage', max: 2, apply: () => { player.talentAtkBonus += 0.10; player.recalcStats(); } },
+                { id: 'm_a_5', name: 'Spellforged Towers', desc: 'Tower damage +25%', max: 2, apply: () => player.towerDmgMult += 0.25 },
+                { id: 'm_a_6', name: 'Mana Shield (Ult)', desc: 'Mana absorbs half of all damage', max: 1, apply: () => player.manaShield = true }
+            ]}
         ],
         archer: [
-            { id: 'p1', name: 'Sniper', desc: 'Ranged Damage', talents: [ { id: 'a_s_1', name: 'Deadly Aim', desc: '+30% Base Damage', apply: () => player.recalcStats() }, { id: 'a_s_2', name: 'Velocity', desc: 'Arrow speed +50%', apply: () => player.projSpeedMod = 1.5 }, { id: 'a_s_3', name: 'Ricochet', desc: 'Arrows bounce to 3 more targets', apply: () => player.chainBounces = 3 }, { id: 'a_s_4', name: 'Piercing Arrows (Ult)', desc: 'Arrows pierce 3 more targets once bounces run out', apply: () => player.piercingArrows = 3 } ]},
-            { id: 'p2', name: 'Trapper', desc: 'Trap Mastery', talents: [ { id: 'a_t_1', name: 'Wide Net', desc: 'Frost Trap radius +50%', apply: () => player.trapSizeMod = 1.5 }, { id: 'a_t_2', name: 'Barbed Traps', desc: 'Traps deal 50% ATK dmg', apply: () => player.trapDmgMult += 0.5 }, { id: 'a_t_3', name: 'Permafrost', desc: 'Trap slow is 80% (was 50%)', apply: () => player.trapSlowMod = 0.2 }, { id: 'a_t_4', name: 'Volatile Ice (Ult)', desc: 'Traps explode on death', apply: () => player.volatileIce = true } ]},
-            { id: 'p3', name: 'Ranger', desc: 'Rain of Arrows', talents: [ { id: 'a_r_1', name: 'Fleetfoot', desc: '+30% Move Speed', apply: () => playerBuffs.speedMult += 0.3 }, { id: 'a_r_2', name: 'Rapid Volley', desc: 'Rain of Arrows CD -2.0s', apply: () => player.data.abCd = Math.max(1, player.data.abCd - 2.0) }, { id: 'a_r_3', name: 'Downpour', desc: 'Rain of Arrows radius +50%', apply: () => player.rainMod = 1.5 }, { id: 'a_r_4', name: 'Splinter Storm (Ult)', desc: 'Rain also drops explosive arrows', apply: () => player.rainSplinters = true } ]}
+            { id: 'p1', name: 'Sniper', desc: 'Precision and ricochet', talents: [
+                { id: 'a_s_1', name: 'Deadly Aim', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
+                { id: 'a_s_2', name: 'Velocity', desc: 'Arrow speed +25%', max: 2, apply: r => player.projSpeedMod = 1 + 0.25 * r },
+                { id: 'a_s_3', name: 'Ricochet', desc: 'Arrows bounce to 1 more target', max: 3, apply: r => player.chainBounces = r },
+                { id: 'a_s_4', name: 'Keen Eye', desc: '+7% critical strike chance', max: 3, apply: () => playerBuffs.critChance += 0.07 },
+                { id: 'a_s_5', name: 'Deadeye', desc: 'Critical strikes hit 50% harder', max: 2, apply: () => playerBuffs.critMult += 0.5 },
+                { id: 'a_s_6', name: 'Piercing Arrows (Ult)', desc: 'Arrows pierce 3 more targets', max: 1, apply: () => player.piercingArrows = 3 }
+            ]},
+            { id: 'p2', name: 'Trapper', desc: 'Traps and towers', talents: [
+                { id: 'a_t_1', name: 'Wide Net', desc: 'Frost Trap radius +25%', max: 2, apply: r => player.trapSizeMod = 1 + 0.25 * r },
+                { id: 'a_t_2', name: 'Barbed Traps', desc: 'Traps deal +25% of your ATK', max: 3, apply: () => player.trapDmgMult += 0.25 },
+                { id: 'a_t_3', name: 'Permafrost', desc: 'Frost Trap slows 10% harder', max: 2, apply: r => player.trapSlowMod = Math.max(0.4, 0.6 - 0.1 * r) },
+                { id: 'a_t_4', name: 'Sentry Drill', desc: 'Tower damage +20%', max: 2, apply: () => player.towerDmgMult += 0.20 },
+                { id: 'a_t_5', name: 'Quick Traps', desc: 'Build costs -15%', max: 2, apply: r => player.buildCostMod = Math.pow(0.85, r) },
+                { id: 'a_t_6', name: 'Volatile Ice (Ult)', desc: 'Traps explode when destroyed', max: 1, apply: () => player.volatileIce = true }
+            ]},
+            { id: 'p3', name: 'Ranger', desc: 'Mobility and Rain of Arrows', talents: [
+                { id: 'a_r_1', name: 'Fleetfoot', desc: '+12% move speed', max: 3, apply: () => playerBuffs.speedMult += 0.12 },
+                { id: 'a_r_2', name: 'Rapid Volley', desc: 'Rain of Arrows cooldown -1.0s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 1.0) },
+                { id: 'a_r_3', name: 'Downpour', desc: 'Rain of Arrows radius +25%', max: 2, apply: r => player.rainMod = 1 + 0.25 * r },
+                { id: 'a_r_4', name: "Hunter's Mark", desc: '+10% damage', max: 2, apply: () => { player.talentAtkBonus += 0.10; player.recalcStats(); } },
+                { id: 'a_r_5', name: 'Evasion', desc: 'Take 8% less damage', max: 2, apply: r => { player.talentDmgReduc = Math.pow(0.92, r); player.recalcStats(); } },
+                { id: 'a_r_6', name: 'Splinter Storm (Ult)', desc: 'Rain also drops explosive arrows', max: 1, apply: () => player.rainSplinters = true }
+            ]}
         ],
         priest: [
-            { id: 'p1', name: 'Paladin', desc: 'Self-Combat', talents: [ { id: 'p_p_1', name: 'Holy Vigor', desc: '+100 Max HP', apply: () => player.recalcStats() }, { id: 'p_p_2', name: 'Crusader', desc: '+40% Base Damage', apply: () => player.recalcStats() }, { id: 'p_p_3', name: 'Divine Shield', desc: 'Nova grants Invincibility', apply: () => player.novaInvincibility = true }, { id: 'p_p_4', name: 'Smite (Ult)', desc: 'Attacks are ultra-fast & explosive', apply: () => player.smite = true } ]},
-            { id: 'p2', name: 'Cleric', desc: 'Healing Focus', talents: [ { id: 'p_c_1', name: 'Radiance', desc: 'Holy Nova heals +100%', apply: () => player.novaHealMod = 2.0 }, { id: 'p_c_2', name: 'Sanctuary', desc: 'Base natural regen', apply: () => player.baseRegen = true }, { id: 'p_c_3', name: 'Purify', desc: 'Nova heals ALL towers', apply: () => player.novaHealsTowers = true }, { id: 'p_c_4', name: 'Overheal (Ult)', desc: 'Nova grants shields', apply: () => player.overheal = true } ]},
-            { id: 'p3', name: 'Inquisitor', desc: 'Tower Beams', talents: [ { id: 'p_i_1', name: 'Focus', desc: 'Beam Tower CD -0.5s', apply: () => player.towerSpeedMod = 0.75 }, { id: 'p_i_2', name: 'Wrath', desc: 'Beam Tower Dmg x2', apply: () => player.towerDmgMult = 2.0 }, { id: 'p_i_3', name: 'Judgment', desc: 'Nova calls down Beams', apply: () => player.novaBeams = true }, { id: 'p_i_4', name: 'Prismatic Beams (Ult)', desc: 'Towers hit 3 targets', apply: () => player.prismaticBeams = true } ]}
+            { id: 'p1', name: 'Paladin', desc: 'Front-line holy warrior', talents: [
+                { id: 'p_p_1', name: 'Holy Vigor', desc: '+60 Max HP', max: 3, apply: () => { player.talentHpBonus += 60; player.recalcStats(); } },
+                { id: 'p_p_2', name: 'Crusader', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
+                { id: 'p_p_3', name: 'Zeal', desc: '+8% attack speed', max: 2, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
+                { id: 'p_p_4', name: 'Retribution', desc: 'Reflect 15% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.15 },
+                { id: 'p_p_5', name: 'Divine Shield', desc: 'Holy Nova grants invincibility', max: 1, apply: () => player.novaInvincibility = true },
+                { id: 'p_p_6', name: 'Smite (Ult)', desc: 'Attacks become fast and explosive', max: 1, apply: () => player.smite = true }
+            ]},
+            { id: 'p2', name: 'Cleric', desc: 'Healing and sustain', talents: [
+                { id: 'p_c_1', name: 'Radiance', desc: 'Holy Nova heals 50% more', max: 3, apply: r => player.novaHealMod = 1 + 0.5 * r },
+                { id: 'p_c_2', name: 'Sanctuary', desc: 'The Nexus slowly regenerates', max: 1, apply: () => player.baseRegen = true },
+                { id: 'p_c_3', name: 'Blessing', desc: 'Heal 4 HP for every kill', max: 3, apply: () => playerBuffs.lifeOnKill += 4 },
+                { id: 'p_c_4', name: 'Mending', desc: 'Regenerate 2 HP per second', max: 3, apply: () => player.hpRegen += 2 },
+                { id: 'p_c_5', name: 'Purify', desc: 'Holy Nova also heals every tower', max: 1, apply: () => player.novaHealsTowers = true },
+                { id: 'p_c_6', name: 'Overheal (Ult)', desc: 'Nova overhealing becomes a shield', max: 1, apply: () => player.overheal = true }
+            ]},
+            { id: 'p3', name: 'Inquisitor', desc: 'Beam towers', talents: [
+                { id: 'p_i_1', name: 'Focus', desc: 'Tower cooldown -15%', max: 2, apply: r => player.towerSpeedMod = Math.pow(0.85, r) },
+                { id: 'p_i_2', name: 'Wrath', desc: 'Tower damage +25%', max: 3, apply: () => player.towerDmgMult += 0.25 },
+                { id: 'p_i_3', name: 'Consecration', desc: 'Tower HP +25%', max: 2, apply: () => { player.talentTowerHpMult += 0.25; entities.towers.forEach(t => t.recalcHp()); } },
+                { id: 'p_i_4', name: 'Zealotry', desc: '+10% damage', max: 2, apply: () => { player.talentAtkBonus += 0.10; player.recalcStats(); } },
+                { id: 'p_i_5', name: 'Judgment', desc: 'Holy Nova calls down beams', max: 1, apply: () => player.novaBeams = true },
+                { id: 'p_i_6', name: 'Prismatic Beams (Ult)', desc: 'Beam towers strike 3 targets', max: 1, apply: () => player.prismaticBeams = true }
+            ]}
         ]
     };
 
@@ -788,18 +950,18 @@
 
         const pips = (lvl, max=5) => { let h = '<span class="lvl-pips">'; for(let i=0;i<max;i++){ h += `<span class="${i<lvl?'filled':''}"></span>`; } return h + '</span>'; };
         let html = `
-            <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(forgeUpgrades.weapon.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')">Upgrade</button></div>
-            <div class="upgrade-row"><span class="row-icon">🛡️</span><div class="row-body"><strong>Tower Reinforcement (+15% HP)</strong> ${pips(forgeUpgrades.towerHp.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${tCostS} Stone, ${tCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('towerHp')">Upgrade</button></div>
-            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+1 Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')">Upgrade</button></div>
-            <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(forgeUpgrades.speed.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')">Upgrade</button></div>
+            <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(forgeUpgrades.weapon.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.weapon.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')" ${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">🛡️</span><div class="row-body"><strong>Tower Reinforcement (+15% HP)</strong> ${pips(forgeUpgrades.towerHp.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.towerHp.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${tCostS} Stone, ${tCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('towerHp')" ${forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+1 Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.mining.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')" ${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(forgeUpgrades.speed.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.speed.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')" ${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             
-            <div class="upgrade-row"><span class="row-icon">🎯</span><div class="row-body"><strong>Runed Whetstone (+5% Crit Chance)</strong> ${pips(forgeUpgrades.whetstone.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${whCostW} Wood, ${whCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('whetstone')">Upgrade</button></div>
-            <div class="upgrade-row"><span class="row-icon">🏰</span><div class="row-body"><strong>Nexus Reinforcement (+100 Nexus HP)</strong> ${pips(forgeUpgrades.nexus.level)}<br><span style="font-size:13px; color:#aaa;">Cost: ${nxCostS} Stone, ${nxCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('nexus')">Upgrade</button></div>
+            <div class="upgrade-row"><span class="row-icon">🎯</span><div class="row-body"><strong>Runed Whetstone (+5% Crit Chance)</strong> ${pips(forgeUpgrades.whetstone.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.whetstone.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${whCostW} Wood, ${whCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('whetstone')" ${forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">🏰</span><div class="row-body"><strong>Nexus Reinforcement (+100 Nexus HP)</strong> ${pips(forgeUpgrades.nexus.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.nexus.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${nxCostS} Stone, ${nxCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('nexus')" ${forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
 
             <hr style="border-color: #3a3a34; margin: 20px 0;">
             
             <div class="upgrade-row" style="border-color:#5ce1e6;"><span class="row-icon">🗼</span><div class="row-body"><strong style="color:#5ce1e6;">Base: The Magic Spire</strong><br><span style="font-size:13px; color:#aaa;">Fires auto-lasers. Cost: 50 Wood, 50 Stone, 20 Mana</span></div><button class="upgrade-btn" id="btn-spire" onclick="buyForge('spire')" ${base && base.hasSpire ? 'disabled' : ''}>${base && base.hasSpire ? 'Built' : 'Build'}</button></div>
-            <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🔧</span><div class="row-body"><strong style="color:#7ef7d8;">Nexus Repairs (+${repairAmt} HP)</strong><br><span style="font-size:13px; color:#aaa;">${base && base.hp >= base.maxHp ? 'Nexus is at full strength.' : `Cost: ${REPAIR_W} Wood, ${REPAIR_S} Stone, ${REPAIR_M} Mana`}</span></div><button class="upgrade-btn" id="btn-repair" onclick="buyForge('repair')" ${base && base.hp >= base.maxHp ? 'disabled' : ''}>${base && base.hp >= base.maxHp ? 'Full' : 'Repair'}</button></div>
+            <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🔧</span><div class="row-body"><strong style="color:#7ef7d8;">Nexus Repairs (+${repairAmt} HP)</strong><br><span style="font-size:13px; color:#aaa;">${base && base.repairedToday ? 'Crew is spent - available again tomorrow.' : (base && base.hp >= base.maxHp ? 'Nexus is at full strength.' : `Once per day • Cost: ${REPAIR_W} Wood, ${REPAIR_S} Stone, ${REPAIR_M} Mana`)}</span></div><button class="upgrade-btn" id="btn-repair" onclick="buyForge('repair')" ${base && (base.repairedToday || base.hp >= base.maxHp) ? 'disabled' : ''}>${base && base.repairedToday ? 'Used' : (base && base.hp >= base.maxHp ? 'Full' : 'Repair')}</button></div>
             <div class="upgrade-row" style="border-color:#ffaa55;"><span class="row-icon">🔥</span><div class="row-body"><strong style="color:#ffaa55;">Base: Brazier of Renewal</strong><br><span style="font-size:13px; color:#aaa;">Nexus mends 12 HP every 2s. Cost: 70 Wood, 40 Stone, 30 Mana</span></div><button class="upgrade-btn" id="btn-brazier" onclick="buyForge('brazier')" ${base && base.hasBrazier ? 'disabled' : ''}>${base && base.hasBrazier ? 'Built' : 'Build'}</button></div>
             <div class="upgrade-row" style="border-color:#5ce1e6;"><span class="row-icon">🚧</span><div class="row-body"><strong style="color:#5ce1e6;">Base: Iron Gates</strong><br><span style="font-size:13px; color:#aaa;">Spawns 4 Huge Walls. Cost: 60 Wood, 60 Stone</span></div><button class="upgrade-btn" id="btn-gates" onclick="buyForge('gates')" ${base && base.hasGates ? 'disabled' : ''}>${base && base.hasGates ? 'Built' : 'Build'}</button></div>
         `;
@@ -807,32 +969,59 @@
     }
 
     function renderTalentMenu() {
-        const pathIcons = { p1: '⚔️', p2: '🛡️', p3: '🏰' };
-        let html = `<h2 class="modal-title" style="color:#00ffcc; margin-top:0;">Class Talents</h2>
-                    <p class="modal-sub" style="margin-top:-4px;">Talent Points Available: <span style="color:#ffcc00; font-weight:bold;">${player.tp}</span> &nbsp;•&nbsp; Choose 1 specialization path (Amnesia Potion required to change)</p>
-                    <div class="talent-columns">`;
+        const pathIcons = { p1: '\u2694\ufe0f', p2: '\u1f6e1\ufe0f', p3: '\u1f3f0' };
         let paths = talentData[player.cls];
-        paths.forEach((path, pathIdx) => {
-            let isActive = player.chosenPath === path.id; let isLocked = player.chosenPath !== null && player.chosenPath !== path.id;
-            let pathClass = isActive ? 'path-active' : (isLocked ? 'path-locked' : '');
-            
-            html += `<div class="talent-path ${pathClass}"><h3 style="color:#ffcc00; margin:0;">${pathIcons[path.id] || '⭐'} ${path.name}</h3><p style="font-size:12px; color:#aaa; margin-top:5px;">${path.desc}</p>`;
-            if (!player.chosenPath) { html += `<button class="upgrade-btn" style="margin-bottom:15px; width:100%;" onclick="selectTalentPath('${path.id}')">Select Path</button>`; }
+        let html = `<h2 class="modal-title" style="color:#00ffcc; margin-top:0;">Class Talents</h2>
+                    <p class="modal-sub" style="margin-top:-4px;">Talent Points: <span style="color:#ffcc00; font-weight:bold;">${player.tp}</span>
+                    &nbsp;\u2022&nbsp; Pick one specialization (Amnesia Potion to change) &nbsp;\u2022&nbsp; each tier needs ${TIER_STEP} more points in that path</p>
+                    <div class="talent-columns">`;
 
-            let allBought = true;
+        paths.forEach(path => {
+            let isActive = player.chosenPath === path.id;
+            let isLocked = player.chosenPath !== null && !isActive;
+            let spent = pointsInPath(path.id);
+            let pathClass = isActive ? 'path-active' : (isLocked ? 'path-locked' : '');
+
+            html += `<div class="talent-path ${pathClass}">
+                        <h3 style="color:#ffcc00; margin:0;">${pathIcons[path.id] || '\u2b50'} ${path.name}</h3>
+                        <p style="font-size:12px; color:#aaa; margin:5px 0 8px;">${path.desc}${isActive ? ` &nbsp;\u2022&nbsp; <span style="color:#00ffcc;">${spent} spent</span>` : ''}</p>`;
+            if (!player.chosenPath) html += `<button class="upgrade-btn" style="margin-bottom:12px; width:100%;" onclick="selectTalentPath('${path.id}')">Select Path</button>`;
+
             path.talents.forEach((t, tIdx) => {
-                let bought = player.talents.includes(t.id); if (!bought) allBought = false;
-                let canBuy = isActive && !bought && player.tp > 0 && (tIdx === 0 || player.talents.includes(path.talents[tIdx-1].id));
-                html += `<div class="talent-node ${bought ? 'bought' : ''}"><strong>${t.name}</strong><br><span style="color:#bbb;">${t.desc}</span>
-                            ${bought ? `<span style="position:absolute; right:10px; top:12px; color:#00ffcc; font-weight:bold;">✔</span>` : `<button class="upgrade-btn" style="${canBuy ? '' : 'display:none;'}" onclick="buyTalent('${path.id}', ${tIdx})">Unlock</button>`}
-                         </div>`;
+                let max = t.max || 1;
+                let r = talentRank(t.id);
+                let maxed = r >= max;
+                let tierOk = tierUnlocked(path.id, tIdx);
+                let need = tierRequirement(path.id, tIdx);
+                let canBuy = isActive && !maxed && tierOk && player.tp > 0;
+
+                let pips = '<span class="lvl-pips">';
+                for (let i = 0; i < max; i++) pips += `<span class="${i < r ? 'filled' : ''}"></span>`;
+                pips += '</span>';
+
+                let cls = maxed ? 'bought' : (tierOk ? '' : 'tier-locked');
+                html += `<div class="talent-node ${cls}">
+                            <strong>${t.name}</strong> ${max > 1 ? `<span style="color:#00ffcc; font-size:11px;">${r}/${max}</span>` : ''} ${pips}
+                            <br><span style="color:#bbb;">${t.desc}</span>`;
+                if (maxed) {
+                    html += `<span style="position:absolute; right:10px; top:12px; color:#00ffcc; font-weight:bold;">\u2714</span>`;
+                } else if (!tierOk) {
+                    html += `<br><span style="color:#ff8a5c; font-size:11px;">Requires ${need} points in ${path.name}</span>`;
+                } else {
+                    html += `<button class="upgrade-btn" style="${canBuy ? '' : 'display:none;'}" onclick="buyTalent('${path.id}', ${tIdx})">${r > 0 ? 'Upgrade' : 'Unlock'}</button>`;
+                }
+                html += `</div>`;
             });
-            if (isActive && allBought) {
-                let canParagon = player.tp > 0;
-                html += `<div class="talent-node ${player.paragonPoints > 0 ? 'bought' : ''}" style="border-color: #ff00ff;">
-                            <strong style="color:#ff00ff;">Paragon Mastery</strong><br><span style="color:#bbb;">+3% DMG, +5% Max HP</span><br><span style="color:#00ffcc; font-size: 11px;">Level: ${player.paragonPoints}</span>
-                            <button class="upgrade-btn" style="background: linear-gradient(180deg, #ff66ff, #cc00cc); ${canParagon ? '' : 'display:none;'}" onclick="buyParagon()">1 TP</button>
+
+            if (isActive && spent >= paragonRequirement(path.id)) {
+                html += `<div class="talent-node ${player.paragonPoints > 0 ? 'bought' : ''}" style="border-color:#ff00ff;">
+                            <strong style="color:#ff00ff;">Paragon Mastery</strong><br><span style="color:#bbb;">+3% DMG, +5% Max HP, unlimited ranks</span>
+                            <br><span style="color:#00ffcc; font-size:11px;">Rank: ${player.paragonPoints}</span>
+                            <button class="upgrade-btn" style="background: linear-gradient(180deg, #ff66ff, #cc00cc); ${player.tp > 0 ? '' : 'display:none;'}" onclick="buyParagon()">1 TP</button>
                          </div>`;
+            } else if (isActive) {
+                html += `<div class="talent-node tier-locked"><strong style="color:#ff00ff;">Paragon Mastery</strong>
+                            <br><span style="color:#ff8a5c; font-size:11px;">Requires ${paragonRequirement(path.id)} points in ${path.name}</span></div>`;
             }
             html += `</div>`;
         });
@@ -840,14 +1029,42 @@
         document.getElementById('talentMenu').innerHTML = html;
     }
 
+    // Ranks are counted as repeats in player.talents, so `includes` still works elsewhere.
+    function talentRank(id) { return player.talents.filter(x => x === id).length; }
+    function pointsInPath(pathId) {
+        let path = talentData[player.cls].find(p => p.id === pathId);
+        return path ? path.talents.reduce((n, t) => n + talentRank(t.id), 0) : 0;
+    }
+    // Never ask for more points than the tiers above this one can actually supply, or a
+    // path built mostly from single-rank nodes would lock its own capstone away.
+    function tierRequirement(pathId, tIdx) {
+        let path = talentData[player.cls].find(p => p.id === pathId);
+        if (!path) return 0;
+        let above = path.talents.slice(0, tIdx).reduce((n, t) => n + (t.max || 1), 0);
+        return Math.min(tIdx * TIER_STEP, above);
+    }
+    function tierUnlocked(pathId, tIdx) { return pointsInPath(pathId) >= tierRequirement(pathId, tIdx); }
+
     function selectTalentPath(pathId) { player.chosenPath = pathId; playSound('pickup'); renderTalentMenu(); }
-    function buyTalent(pathId, tIdx) { if (player.tp > 0) { let t = talentData[player.cls].find(p => p.id === pathId).talents[tIdx]; player.tp--; player.talents.push(t.id); t.apply(); playSound('levelup'); renderTalentMenu(); addShake(5); } }
+    function buyTalent(pathId, tIdx) {
+        if (player.tp <= 0 || player.chosenPath !== pathId) { playSound('error'); return; }
+        let path = talentData[player.cls].find(p => p.id === pathId);
+        let t = path.talents[tIdx];
+        let r = talentRank(t.id);
+        if (r >= (t.max || 1)) { playSound('error'); return; }
+        if (!tierUnlocked(pathId, tIdx)) { playSound('error'); return; }
+        player.tp--;
+        player.talents.push(t.id);
+        t.apply(r + 1);
+        playSound('levelup'); renderTalentMenu(); addShake(4);
+    }
     function buyParagon() { if (player.tp > 0) { player.tp--; player.paragonPoints++; player.recalcStats(); playSound('levelup'); renderTalentMenu(); addShake(2); } }
 
     function buyForge(type) {
         let getCost = (baseCost, lvl) => Math.min(500, Math.floor(baseCost * Math.pow(1.5, lvl)));
 
         if (type === 'weapon') {
+            if (forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let cw = getCost(20, forgeUpgrades.weapon.level); let cs = getCost(20, forgeUpgrades.weapon.level);
             if (inventory.wood >= cw && inventory.stone >= cs) {
                 inventory.wood -= cw; inventory.stone -= cs;
@@ -855,6 +1072,7 @@
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         } 
         else if (type === 'towerHp') {
+            if (forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let cs = getCost(30, forgeUpgrades.towerHp.level); let cm = getCost(10, forgeUpgrades.towerHp.level);
             if (inventory.stone >= cs && inventory.mana >= cm) {
                 inventory.stone -= cs; inventory.mana -= cm;
@@ -862,6 +1080,7 @@
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'mining') {
+            if (forgeUpgrades.mining.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let cw = getCost(30, forgeUpgrades.mining.level); let cm = getCost(10, forgeUpgrades.mining.level);
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
@@ -869,6 +1088,7 @@
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'whetstone') {
+            if (forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let cw = getCost(25, forgeUpgrades.whetstone.level); let cm = getCost(25, forgeUpgrades.whetstone.level);
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
@@ -876,6 +1096,7 @@
             } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'nexus') {
+            if (forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let cs = getCost(40, forgeUpgrades.nexus.level); let cm = getCost(20, forgeUpgrades.nexus.level);
             if (inventory.stone >= cs && inventory.mana >= cm) {
                 inventory.stone -= cs; inventory.mana -= cm;
@@ -883,11 +1104,13 @@
             } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'repair') {
-            if (base.hp >= base.maxHp) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NEXUS ALREADY FULL", '#ffcc00')); }
+            if (base.repairedToday) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY REPAIRED TODAY", '#ffcc00')); }
+            else if (base.hp >= base.maxHp) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NEXUS ALREADY FULL", '#ffcc00')); }
             else if (inventory.wood >= REPAIR_W && inventory.stone >= REPAIR_S && inventory.mana >= REPAIR_M) {
                 inventory.wood -= REPAIR_W; inventory.stone -= REPAIR_S; inventory.mana -= REPAIR_M;
                 let healed = Math.min(Math.ceil(base.maxHp * REPAIR_FRACTION), Math.ceil(base.maxHp - base.hp));
                 base.hp = Math.min(base.maxHp, base.hp + healed);
+                base.repairedToday = true;
                 entities.texts.push(new FloatingText(base.x, base.y - 60, "+" + healed + " NEXUS", '#7ef7d8'));
                 spawnParticles(base.x, base.y, '#7ef7d8', 24);
                 addShake(6); playSound('levelup'); updateForgeUI();
@@ -900,6 +1123,7 @@
             } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'speed') {
+            if (forgeUpgrades.speed.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let cw = getCost(15, forgeUpgrades.speed.level); let cm = getCost(15, forgeUpgrades.speed.level);
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
@@ -1136,6 +1360,7 @@
             }
             
             let dmg = Math.floor(amount * (this.dmgReduc || 1.0));
+            if (this instanceof Enemy && this.burningTimer > 0 && player && player.burnBonus > 0) dmg = Math.floor(dmg * (1 + player.burnBonus));
 
             // Critical strikes: only your own hits can crit, not tower or environmental damage.
             let isCrit = false;
@@ -1157,7 +1382,12 @@
                         entities.texts.push(new FloatingText(this.x, this.y - 30, "THERMAL SHOCK!", '#00ffff'));
                         entities.effects.push(new Effect(this.x, this.y, 60, '#00ffff', 0.2, dmg * 0.5, false, false, 'none', source));
                         playSound('explosion'); addShake(3);
-                    } else { this.frozenTimer = 2.0; }
+                    } else if (this.freezeImmuneTimer <= 0) {
+                        this.frozenTimer = FREEZE_DURATION;
+                        this.freezeImmuneTimer = FREEZE_DURATION + FREEZE_IMMUNITY;
+                    } else if (Math.random() < 0.08) {
+                        entities.texts.push(new FloatingText(this.x, this.y - 40, "RESIST", '#9ad4ff'));
+                    }
                 }
             }
             
@@ -1174,6 +1404,7 @@
             this.hp -= dmg;
             
             if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; if (playerBuffs.vampirism) player.hp = Math.min(player.maxHp, player.hp + dmg * 0.05); }
+            if (isPlayerSource && dmg > 0 && this instanceof Enemy && source === 'player') this.aggroTimer = AGGRO_HOLD;
 
             // Thorns pays back whoever actually swung at you.
             if (dmg > 0 && playerBuffs.thorns > 0 && attacker && attacker instanceof Enemy && (this === player || this === base)) {
@@ -1208,14 +1439,15 @@
                     if (totalKills === 1) checkAchievement('first_blood');
                     
                     if (this.type === 'predator') {
-                        inventory.mana += 100; inventory.wood += 100; inventory.stone += 100;
-                        entities.texts.push(new FloatingText(this.x, this.y, "+MASSIVE LOOT!", '#ffcc00'));
+                        let loot = bearLoot();
+                        inventory.mana += loot; inventory.wood += loot; inventory.stone += loot;
+                        entities.texts.push(new FloatingText(this.x, this.y, "+" + loot + " EACH!", '#ffcc00'));
                         playSound('levelup');
                     } else {
-                        let xpDrop = this.type === 'boss' ? 200 : (this.type === 'golem' ? 30 : (this.type === 'bomber'? 20 : 10));
+                        let xpDrop = this.type === 'orcking' ? 600 : (this.type === 'boss' ? 200 : (this.type === 'golem' ? 30 : (this.type === 'bomber'? 20 : 10)));
                         player.gainXp(xpDrop * (currentWeather==='bloodmoon'?3:1));
                         
-                        let manaDrop = this.type === 'boss' ? 50 : (this.type === 'golem' ? 5 : 2);
+                        let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'golem' ? 5 : 2));
                         manaDrop *= (currentWeather==='bloodmoon'?3:1);
                         inventory.mana += manaDrop; player.mp = Math.min(player.maxMp, player.mp + 5);
 
@@ -1231,7 +1463,14 @@
     }
 
     class Base extends Entity {
-        constructor() { super(WORLD_CX, WORLD_CY, NEXUS_RADIUS, 500); this.regenTimer = 0;this.hasSpire = false; this.hasGates = false; this.hasBrazier = false;this.spireCd = 0; this.overchargeCd = 0; this.overchargeActive = 0; }
+        constructor() { super(WORLD_CX, WORLD_CY, NEXUS_RADIUS, nexusMaxHpFor(wave)); this.repairedToday = false; this.regenTimer = 0;this.hasSpire = false; this.hasGates = false; this.hasBrazier = false;this.spireCd = 0; this.overchargeCd = 0; this.overchargeActive = 0; }
+        // Called when the wave advances: the structure hardens without erasing existing damage.
+        recalcMaxHp() {
+            let want = nexusMaxHpFor(wave);
+            if (want > this.maxHp) { let gain = want - this.maxHp; this.maxHp = want; this.hp += gain; }
+            else this.maxHp = want;
+            this.hp = Math.min(this.hp, this.maxHp);
+        }
         update(dt) {
             if (this.overchargeCd > 0) this.overchargeCd -= dt;
             if (this.overchargeActive > 0) this.overchargeActive -= dt;
@@ -1310,8 +1549,11 @@
             if (!initial) { this.tp += this.talents.length + this.paragonPoints; }
             this.talents = []; this.paragonPoints = 0; this.chosenPath = null;
             this.whirlMod = 1.0; this.talentDmgReduc = 1.0; this.reflectMod = 1.0; this.towerSpeedMod = 1.0; this.towerDmgMult = 1.0; this.buildCostMod = 1.0;
+            // Accumulated by talent ranks; read back in recalcStats so ranks stack cleanly.
+            this.talentAtkBonus = 0; this.talentHpBonus = 0; this.talentMpBonus = 0;
+            this.talentTowerHpMult = 1.0; this.hpRegen = 0; this.burnBonus = 0; this.slowPower = 0.5;
             this.meteorMod = 1.0; this.attackSlows = false; this.wallSlows = false; this.meteorFreezes = false; this.mpRegenMod = 1.0;
-            this.projSpeedMod = 1.0; this.chainBounces = 0; this.trapSizeMod = 1.0; this.trapSlowMod = 0.5; this.rainMod = 1.0;
+            this.projSpeedMod = 1.0; this.chainBounces = 0; this.trapSizeMod = 1.0; this.trapSlowMod = 0.6; this.rainMod = 1.0;
             this.novaInvincibility = false; this.novaHealMod = 1.0; this.baseRegen = false; this.novaHealsTowers = false; this.novaBeams = false;
             this.globalSlow = false; this.towerRegen = false;
             
@@ -1327,11 +1569,13 @@
         }
         recalcStats() {
             let baseA = this.data.atk * Math.pow(1.1, this.level - 1); let baseH = this.data.hp * Math.pow(1.15, this.level - 1);
-            this.atk = baseA * playerBuffs.forgeAtkMult; this.maxHp = baseH + playerBuffs.bonusHp; this.maxMp = this.data.mp;
-            if (this.talents.includes('w_b_1') || this.talents.includes('m_p_1')) this.atk *= 1.2;
-            if (this.talents.includes('a_s_1')) this.atk *= 1.3; if (this.talents.includes('p_p_2')) this.atk *= 1.4; 
-            if (this.talents.includes('p_p_1') || this.talents.includes('w_g_1')) this.maxHp += 100;
-            if (this.talents.includes('m_a_1')) this.maxMp += 100;
+            // Forge damage is additive off the class's base attack, not a multiplier on the
+            // level-scaled value, so it no longer compounds with levels, talents and crit.
+            this.atk = baseA + this.data.atk * (playerBuffs.forgeAtkMult - 1);
+            this.maxHp = baseH + playerBuffs.bonusHp; this.maxMp = this.data.mp;
+            this.atk *= (1 + this.talentAtkBonus);
+            this.maxHp += this.talentHpBonus;
+            this.maxMp += this.talentMpBonus;
             this.atk *= Math.pow(1.03, this.paragonPoints); this.maxHp *= Math.pow(1.05, this.paragonPoints);
             this.atk = Math.floor(this.atk); this.maxHp = Math.floor(this.maxHp); this.maxMp = Math.floor(this.maxMp);
             this.hp = Math.min(this.hp, this.maxHp); this.mp = Math.min(this.mp, this.maxMp);
@@ -1343,8 +1587,8 @@
             this.xp += amount;
             if (this.xp >= this.maxXp) {
                 this.level++; this.xp -= this.maxXp; 
-                this.maxXp = Math.floor(this.maxXp * 1.75); 
-                this.tp++;
+                this.maxXp = Math.floor(this.maxXp * TALENT_XP_GROWTH);
+                this.tp += TP_PER_LEVEL;
                 this.recalcStats(); this.hp = this.maxHp; this.mp = this.maxMp; playSound('levelup');
                 entities.texts.push(new FloatingText(this.x, this.y - 40, "LEVEL UP!", '#ffcc00'));
             }
@@ -1365,7 +1609,7 @@
                     let len = Math.sqrt(dx*dx + dy*dy); 
                     let speed = this.spd * playerBuffs.speedMult * (currentWeather==='blizzard'?0.7:1) * (dt*60);
                     let nextX = this.x + (dx/len) * speed; let nextY = this.y + (dy/len) * speed;
-                    if (!isCollidingWithObstacle(nextX, nextY, this.radius)) { this.x = nextX; this.y = nextY; } 
+                    if (this.isFlying || !isCollidingWithObstacle(nextX, nextY, this.radius)) { this.x = nextX; this.y = nextY; }
                     else { if (!isCollidingWithObstacle(nextX, this.y, this.radius)) this.x = nextX; else if (!isCollidingWithObstacle(this.x, nextY, this.radius)) this.y = nextY; }
                 }
             }
@@ -1375,6 +1619,7 @@
             if (this.abilityCooldownTimer > 0) this.abilityCooldownTimer -= dt;
             this.lastAttack -= dt;
             if (this.mp < this.maxMp) this.mp += dt * 2 * this.mpRegenMod * playerBuffs.mpRegenBonus;
+            if (this.hpRegen > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + dt * this.hpRegen);
             if (this.invincibleTimer > 0) { this.invincibleTimer -= dt; this.invincible = true; } else { this.invincible = false; }
             if (this.shiftCd > 0) this.shiftCd -= dt;
 
@@ -1527,8 +1772,8 @@
         }
 
         buildTower() {
-            let costW = this.buildSelection === 1 ? 10 : (this.buildSelection === 2 ? 15 : (this.buildSelection === 3 ? 30 : 10));
-            let costS = this.buildSelection === 1 ? 5 : (this.buildSelection === 2 ? 0 : (this.buildSelection === 3 ? 30 : 0));
+            let costW = this.buildSelection === 1 ? 10 : (this.buildSelection === 2 ? 15 : (this.buildSelection === 3 ? EXTRACTOR_COST : 10));
+            let costS = this.buildSelection === 1 ? 5 : (this.buildSelection === 2 ? 0 : (this.buildSelection === 3 ? EXTRACTOR_COST : 0));
             let costM = this.buildSelection === 1 ? 0 : (this.buildSelection === 2 ? 10 : (this.buildSelection === 3 ? 0 : 15));
             costW = Math.floor(costW * this.buildCostMod);
             costS = Math.floor(costS * this.buildCostMod);
@@ -1543,6 +1788,12 @@
             if (placingExtractor && extractorCount() >= MAX_EXTRACTORS) {
                 playSound('error');
                 entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "EXTRACTOR LIMIT " + MAX_EXTRACTORS + "/" + MAX_EXTRACTORS, '#ff4d4d'));
+                return;
+            }
+            if (!placingExtractor && defenceTowerCount() >= towerCap()) {
+                playSound('error');
+                entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "TOWER LIMIT " + defenceTowerCount() + "/" + towerCap(), '#ff4d4d'));
+                entities.texts.push(new FloatingText(mouse.x, mouse.y + 6, "survive a wave for +1 slot", '#ffcc00'));
                 return;
             }
             let nearBase = Math.hypot(base.x - mouse.x, base.y - mouse.y) < NEXUS_KEEPOUT;
@@ -1655,7 +1906,7 @@
             this.type = type; this.pClass = pClass; this.cd = 0; this.tick = 0; this.facing = 'down';
             this.baseMaxHp = this.maxHp; this.recalcHp(); this.hp = this.maxHp;
         }
-        recalcHp() { let r = this.hp ? this.hp / this.maxHp : 1.0; this.maxHp = this.baseMaxHp * playerBuffs.forgeTowerHpMult * (player.talents.includes('w_c_1') ? 1.5 : 1.0); this.hp = this.maxHp * r; }
+        recalcHp() { let r = this.hp ? this.hp / this.maxHp : 1.0; this.maxHp = this.baseMaxHp * playerBuffs.forgeTowerHpMult * player.talentTowerHpMult; this.hp = this.maxHp * r; }
         update(dt) {
             this.cd -= dt; this.tick -= dt;
             if (this.type === 1) {
@@ -1808,7 +2059,7 @@
                         if (player.shatter && (e.spd < e.baseSpd || e.frozenTimer > 0)) { dmgDealt *= 3; e.spd = e.baseSpd; e.frozenTimer = 0; entities.texts.push(new FloatingText(e.x, e.y, "SHATTER!", '#00ffff')); }
                         
                         e.takeDamage(dmgDealt, true, this.element, this.source); this.hitList.push(e); spawnParticles(this.x, this.y, this.color, 4);
-                        if (this.slows) e.spd = e.baseSpd * 0.5; if (player.cls === 'mage' && !this.isExplosive) entities.effects.push(new Effect(this.x, this.y, 50, '#ff9900', 0.2, 10, false, false, 'fire', this.source));
+                        if (this.slows) e.spd = e.baseSpd * (player.slowPower || 0.5);if (player.cls === 'mage' && !this.isExplosive) entities.effects.push(new Effect(this.x, this.y, 50, '#ff9900', 0.2, 10, false, false, 'fire', this.source));
                         
                         if (this.isExplosive) {
                             entities.effects.push(new Effect(this.x, this.y, 80, '#ffaa00', 0.2, this.dmg, false, false, 'fire', this.source)); playSound('explosion'); addShake(3);
@@ -1853,7 +2104,7 @@
         constructor(x, y, type) {
             let baseHPMult = Math.pow(1.15, wave - 1);
             let startHp = Math.floor(35 * baseHPMult);
-            super(x, y, type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15)), startHp);
+            super(x, y, type==='orcking'? KING_RADIUS : (type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15))), startHp);
             this.type = type; this.baseSpd = 1.5 + (wave * 0.1); this.isFlying = (type === 'bat');
             this.isAsleep = false;
             this.isInvisible = false;
@@ -1863,9 +2114,15 @@
             this.frameX = 0;
             this.distanceTraveled = 0;
 
-            if (this.type === 'skeleton') { this.hp *= 0.6; this.baseSpd *= 0.9; } 
+            if (this.type === 'orcking') {
+                // Hold the overhead swing briefly after a slam, otherwise stand ready.
+                if (this.animTimer < 0.5 && this.frameX === 2) { /* keep the swing */ }
+                else this.frameX = (Math.floor((this.distanceTraveled || 0) / 45) % 2);
+            }
+            if (this.type === 'orcarcher') {this.hp *= 0.6; this.baseSpd *= 0.9; }
             if (this.type === 'golem') { this.hp *= 3; this.baseSpd *= 0.5; }
-            if (this.type === 'boss') { this.hp *= 10; this.baseSpd *= 0.8; } 
+            if (this.type === 'boss') { this.hp *= 10; this.baseSpd *= 0.8; }
+            if (this.type === 'orcking') { this.hp *= KING_HP_MULT; this.baseSpd *= KING_SPD_MULT; this.slamCd = KING_SLAM_CD; this.enraged = false; }
             if (this.type === 'bat') { this.hp *= 0.5; this.baseSpd *= 1.5; }
             if (this.type === 'bomber') { this.hp *= 0.8; this.baseSpd *= 1.2; }
             if (this.type === 'predator') { this.hp = Math.floor(PREDATOR_BASE_HP * Math.pow(PREDATOR_HP_GROWTH, wave - 1)); this.baseSpd = 4 + Math.min(wave - 1, 10) * 0.06; this.isAsleep = true; }
@@ -1873,7 +2130,7 @@
             if (this.type === 'necromancer') { this.hp *= 0.8; this.baseSpd *= 0.7; this.healCd = 2.0; }
             if (this.type === 'wolf') { this.hp *= 0.7; this.baseSpd *= 1.4; }
             
-            if (this.type === 'boss' || this.type === 'golem') {
+            if (this.type === 'boss' || this.type === 'golem' || this.type === 'orcking') {
                 this.aura = Math.random() > 0.5 ? 'heal' : 'speed';
                 this.auraPulse = 0;
             } else {
@@ -1883,12 +2140,13 @@
             if (currentWeather === 'bloodmoon') { this.baseSpd *= 1.5; }
 
             this.spd = this.baseSpd; 
-            let baseDmg = this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 : (this.type === 'wolf' ? 8 : 5));
+            let baseDmg = this.type === 'orcking' ? KING_DMG_BASE : (this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 : (this.type === 'wolf' ? 8 : 5)));
             this.dmg = Math.floor(baseDmg * Math.pow(1.1, wave - 1)); 
-            this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0;
+            this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0; this.freezeImmuneTimer = 0; this.aggroTimer = 0; this.stuckTimer = 0; this.bestTargetDist = undefined;
             this.maxHp = this.hp;
         }
         update(dt) {
+            if (this.freezeImmuneTimer > 0) this.freezeImmuneTimer -= dt;
             if (this.frozenTimer > 0) { this.frozenTimer -= dt; return; }
             if (this.burningTimer > 0) {
                 this.burningTimer -= dt;
@@ -1904,6 +2162,32 @@
                 this.isInvisible = distPlayer > 150 && this.frozenTimer <= 0 && this.burningTimer <= 0 && this.flashAnim <= 0;
             }
 
+            if (this.type === 'orcking') {
+                this.slamCd -= dt;
+                let slamTarget = Math.hypot(player.x - this.x, player.y - this.y) < KING_SLAM_RANGE ? player
+                               : (Math.hypot(base.x - this.x, base.y - this.y) < KING_SLAM_RANGE + base.radius ? base : null);
+                if (this.slamCd <= 0 && slamTarget) {
+                    // Axe comes down: everything nearby takes a hit, towers included.
+                    this.slamCd = KING_SLAM_CD * (this.enraged ? 0.6 : 1.0);
+                    this.frameX = 2; this.animTimer = 0;
+                    entities.effects.push(new Effect(this.x, this.y, KING_SLAM_RANGE, '#ff7b2e', 0.45, 0, false, false, 'none', 'enemy'));
+                    let slam = Math.floor(this.dmg * KING_SLAM_DMG);
+                    if (Math.hypot(player.x - this.x, player.y - this.y) < KING_SLAM_RANGE) player.takeDamage(slam, false, 'none', 'player', this);
+                    if (Math.hypot(base.x - this.x, base.y - this.y) < KING_SLAM_RANGE + base.radius) base.takeDamage(slam);
+                    entities.towers.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < KING_SLAM_RANGE) t.takeDamage(slam); });
+                    spawnParticles(this.x, this.y, '#c98a3c', 26);
+                    playSound('explosion'); addShake(22);
+                }
+                if (!this.enraged && this.hp < this.maxHp * 0.5) {
+                    this.enraged = true; this.baseSpd *= 1.5; this.spd = this.baseSpd;
+                    entities.texts.push(new FloatingText(this.x, this.y - 140, "ENRAGED!", '#ff3b3b'));
+                    playSound('explosion'); addShake(25);
+                    for (let i = 0; i < 20; i++) {
+                        let ang = (Math.PI * 2 / 20) * i;
+                        entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(ang)*7, Math.sin(ang)*7, this.dmg, false, '#ffaa00'));
+                    }
+                }
+            }
             if (this.type === 'boss' && this.hp < this.maxHp * 0.5 && !this.bossPhaseTriggered) {
                 this.bossPhaseTriggered = true;
                 playSound('explosion'); addShake(15);
@@ -1914,15 +2198,21 @@
             }
             
             entities.enemies.forEach(other => {
-                if (this !== other && this.type !== 'boss' && other.type !== 'boss') {
+                if (this !== other && this.type !== 'boss' && other.type !== 'boss' && this.type !== 'orcking' && other.type !== 'orcking') {
                     let edx = this.x - other.x; let edy = this.y - other.y; let edist = Math.hypot(edx, edy);
                     if (edist < this.radius + other.radius && edist > 0) { this.x += (edx / edist) * 0.5; this.y += (edy / edist) * 0.5; }
                 }
             });
 
             let distBase = Math.hypot(base.x - this.x, base.y - this.y);
-            let target = distBase < distPlayer ? base : player; 
-            if (this.type === 'golem') target = base; 
+            if (this.aggroTimer > 0) this.aggroTimer -= dt;
+            let aggroRange = this.type === 'golem' ? AGGRO_RANGE_GOLEM : AGGRO_RANGE;
+            if (distPlayer < aggroRange) this.aggroTimer = AGGRO_HOLD;           // you walked into it
+            // Hold the grudge until you break well clear, so they don't flip-flop each step.
+            let onPlayer = this.aggroTimer > 0 && distPlayer < aggroRange * AGGRO_DROP;
+            if (!onPlayer) this.aggroTimer = 0;
+            let target = onPlayer ? player : (distBase < distPlayer ? base : player);
+            if (target !== this._lastTarget) { this._lastTarget = target; this.bestTargetDist = undefined; this.stuckTimer = 0; }
             
             if (this.type === 'necromancer') {
                 let healTarget = null;
@@ -1947,7 +2237,7 @@
             }
 
             let dx = target.x - this.x; let dy = target.y - this.y; let len = Math.hypot(dx, dy);
-            let stopDist = this.type === 'skeleton' ? 300 : (this.type === 'necromancer' && target !== player && target !== base ? 200 : this.radius + (target.radius || 0));
+            let stopDist = this.type === 'orcarcher' ? 300 :(this.type === 'necromancer' && target !== player && target !== base ? 200 : this.radius + (target.radius || 0));
             
             if (len > stopDist) {
                 let speed = this.spd * (dt*60); 
@@ -1970,6 +2260,28 @@
                             this.y = testY;
                             moved = true;
                             break;
+                        }
+                    }
+                    // "Can't move at all" is too strict: penned inside a ring an enemy can always
+                    // shuffle sideways, so it circles forever. Track failure to close on the
+                    // target instead, and once it stalls, break the wall that is in the way.
+                    // Compare against the closest it has ever got, not the last frame: an enemy
+                    // orbiting inside a pen keeps gaining and losing ground, which reads as
+                    // progress frame to frame while it is going nowhere.
+                    if (this.bestTargetDist === undefined || len < this.bestTargetDist - 0.5) { this.bestTargetDist = len; this.stuckTimer = 0; }
+                    else this.stuckTimer += dt;
+                    if (this.stuckTimer > WALL_STUCK_TIME && this.attackCd <= 0) {
+                        let wall = null, wd = 1e9;
+                        entities.towers.forEach(t => {
+                            if (!towerBlocks(t)) return;
+                            let d = Math.hypot(t.x - this.x, t.y - this.y);
+                            if (d < this.radius + 70 && d < wd) { wd = d; wall = t; }
+                        });
+                        if (wall) {
+                            wall.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.dmg);
+                            this.attackCd = 1.0;
+                            if (wall.pClass === 'warrior' && wall.type === 1 && !this.isFlying) this.takeDamage(this.dmg * player.reflectMod, true);
+                            playSound('hit');
                         }
                     }
                 }
@@ -2014,10 +2326,11 @@
 
             this.attackCd -= dt;
             if (this.attackCd <= 0) {
-                if (this.type === 'skeleton' && len <= 350) {
+                let orcInMelee = this.type === 'orcarcher' && distPlayer < ORC_MELEE_RANGE;
+                if (this.type === 'orcarcher' && len <= 350 && !orcInMelee) {
                     let angle = Math.atan2(dy, dx); entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*8, Math.sin(angle)*8, this.dmg, false, '#ff0000'));
                     this.attackCd = 2.0; playSound('shoot');
-                } else if (distPlayer < this.radius + 20 && this.type !== 'golem') { 
+                } else if ((distPlayer < this.radius + 20 || orcInMelee) && this.type !== 'golem') { 
                     if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { player.takeDamage(this.dmg, false, 'none', 'player', this); this.attackCd = 1.0; if(this.type === 'boss') addShake(5); playSound('hit'); }
                 } else if (distBase < this.radius + 60) { 
                     if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { base.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.dmg); this.attackCd = 1.0; if(this.type === 'boss') addShake(8); playSound('hit'); }
@@ -2035,6 +2348,12 @@
             }
 
             this.animTimer += dt;
+            if (this.type === 'orcarcher') {
+                // Just loosed an arrow -> drawing pose; enemy in its face -> swing; else idle.
+                if (distPlayer < ORC_MELEE_RANGE) this.frameX = 2;
+                else if (this.attackCd > 1.2) this.frameX = 1;
+                else this.frameX = 0;
+            }
             if (this.type === 'goblin' || this.type === 'wolf') {
                 if (this.attackCd > 0.8) {
                     this.frameX = 2;
@@ -2058,9 +2377,10 @@
             
             if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
             else if (this.type === 'goblin') ctx.fillStyle = '#5b9e32';
-            else if (this.type === 'skeleton') ctx.fillStyle = '#ddd';
+            else if (this.type === 'orcarcher') ctx.fillStyle = '#6b8f4e';
             else if (this.type === 'golem') ctx.fillStyle = '#666';
             else if (this.type === 'boss') ctx.fillStyle = '#992222';
+            else if (this.type === 'orcking') ctx.fillStyle = '#5e7a3a';
             else if (this.type === 'bat') ctx.fillStyle = '#660099';
             else if (this.type === 'bomber') ctx.fillStyle = Math.sin(this.flashAnim) > 0 ? '#ffaa00' : '#5b9e32';
             else if (this.type === 'predator') ctx.fillStyle = this.isAsleep ? '#335533' : '#aa0000';
@@ -2109,6 +2429,32 @@
                     }
                 }
             }
+            else if (this.type === 'orcking' && orcKingSprite.complete && orcKingSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                let f = KING_FRAMES[this.frameX] || KING_FRAMES[0];
+                let dh = KING_DRAW_H, dw = dh * (f.sw / f.sh);
+                ctx.fillStyle = 'rgba(0,0,0,0.32)';
+                ctx.beginPath(); ctx.ellipse(0, KING_FEET - 10, dw * 0.34, dw * 0.11, 0, 0, Math.PI*2); ctx.fill();
+                if (this.enraged) {
+                    let pulse = 0.35 + Math.abs(Math.sin(performance.now()/220)) * 0.3;
+                    ctx.save(); ctx.globalAlpha = pulse;
+                    let g = ctx.createRadialGradient(0, -dh*0.35, 10, 0, -dh*0.35, dw*0.8);
+                    g.addColorStop(0, 'rgba(255,70,40,0.5)'); g.addColorStop(1, 'rgba(255,70,40,0)');
+                    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -dh*0.35, dw*0.8, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
+                ctx.drawImage(orcKingSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, KING_FEET - dh, dw, dh);
+            }
+            else if (this.type === 'orcarcher' && orcArcherSprite.complete && orcArcherSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                let f = ORC_FRAMES[this.frameX] || ORC_FRAMES[0];
+                let dh = ORC_DRAW_H, dw = dh * (f.sw / f.sh);
+                ctx.drawImage(orcArcherSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, ORC_FEET - dh, dw, dh);
+            }
             else if (this.type === 'goblin' && goblinSprite.complete && goblinSprite.naturalWidth !== 0) {
                 isCustomSprite = true;
                 let flip = (target.x < this.x) ? -1 : 1;
@@ -2150,7 +2496,7 @@
                 if (this.type === 'goblin') { ctx.fillStyle = '#5c3a21'; ctx.fillRect(8, 10, 20, 5); }
             }
 
-            if (this.type === 'skeleton') { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -5, 3, 0, Math.PI*2); ctx.arc(5, 5, 3, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(12, 0, 10, -Math.PI/2, Math.PI/2); ctx.stroke(); }
+            if (this.type === 'orcarcher' && !isCustomSprite) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -5, 3, 0, Math.PI*2); ctx.arc(5, 5, 3, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(12, 0, 10, -Math.PI/2, Math.PI/2); ctx.stroke(); }
             if (this.type === 'boss') { 
                 ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(15, -12, 6, 0, Math.PI*2); ctx.arc(15, 12, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#444'; ctx.fillRect(20, 20, 40, 10); 
                 if (this.bossPhaseTriggered) { ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, this.radius + 10 + Math.sin(performance.now()/100)*5, 0, Math.PI*2); ctx.stroke(); }
@@ -2448,10 +2794,15 @@
     }
 
     function spawnWave() {
-        if (wave % 5 === 0) { 
+        if (wave % 5 === 0) {
             let bpos = ringSpawn(waveDirection === -1 ? Math.floor(Math.random()*4) : waveDirection);
-            entities.enemies.push(new Enemy(bpos.x, bpos.y, 'boss'));
-            addShake(15); 
+            // Every tenth wave the Orc King turns up instead of the usual boss.
+            let bossType = (wave % KING_WAVE_INTERVAL === 0) ? 'orcking' : 'boss';
+            entities.enemies.push(new Enemy(bpos.x, bpos.y, bossType));
+            if (bossType === 'orcking') {
+                entities.texts.push(new FloatingText(bpos.x, bpos.y - 120, "THE ORC KING COMES", '#ff3b3b'));
+                playSound('explosion'); addShake(30);
+            } else addShake(15);
         }
         let count = wave * 3 + 5;
         if (currentWeather === 'bloodmoon') count = Math.floor(count * 1.5);
@@ -2464,7 +2815,7 @@
             
             // Scaled wave spawning including new enemies
             if (wave > 0 && rand > 0.35) type = 'wolf';
-            if (wave > 1 && rand > 0.5) type = 'skeleton'; 
+            if (wave > 1 && rand > 0.5) type = 'orcarcher';
             if (wave > 2 && rand > 0.7) type = 'bat';
             if (wave > 3 && rand > 0.8) type = 'bomber'; 
             if (wave > 4 && rand > 0.88) type = 'golem';
@@ -2533,7 +2884,7 @@
                 gameState = 'DAY'; wave++; phaseTimer = 60; setWeather();
                 document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
                 document.getElementById('phaseText').style.color = '#fff'; document.getElementById('earlyNightBtn').classList.remove('hidden');
-                document.getElementById('ui-wave').innerText = wave; generateMap();
+                document.getElementById('ui-wave').innerText = wave; base.recalcMaxHp(); base.repairedToday = false; generateMap(); updateBuildUI();
                 if (merchantVisits(wave)) entities.npcs.push(new Merchant());
             }
         }
@@ -2911,8 +3262,8 @@
         entities.resources.forEach(r => { if (r.type === 'cache') ctx.fillRect(mx(r.x)-2, my(r.y)-2, 4, 4); });
         entities.towers.forEach(t => { ctx.fillStyle = '#7ef7d8'; ctx.fillRect(mx(t.x)-1.5, my(t.y)-1.5, 3, 3); });
         entities.enemies.forEach(e => {
-            ctx.fillStyle = e.type === 'predator' ? '#ff9a3c' : (e.type === 'boss' ? '#ff2b2b' : '#ff5555');
-            let sz = (e.type === 'boss' || e.type === 'predator') ? 5 : 3;
+            ctx.fillStyle = e.type === 'predator' ? '#ff9a3c' : (e.type === 'boss' || e.type === 'orcking' ? '#ff2b2b' : '#ff5555');
+            let sz = e.type === 'orcking' ? 8 : ((e.type === 'boss' || e.type === 'predator') ? 5 : 3);
             ctx.fillRect(mx(e.x)-sz/2, my(e.y)-sz/2, sz, sz);
         });
         entities.npcs.forEach(n => { ctx.fillStyle = '#5ce1e6'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
