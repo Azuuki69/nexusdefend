@@ -610,6 +610,53 @@
     const NIGHT_ACTOR_FILTER = 'brightness(1.45) saturate(1.15)';
     const RIDER_PACK_MIN = 2, RIDER_PACK_MAX = 3;
 
+    // --- The Wayfarer (roaming NPC) -----------------------------------------------
+    // The sheet has IDLE / WALK 1 / WALK 2 lettered underneath each pose, so these crop to
+    // the art only - taking the frame bounds straight from the alpha drags the captions
+    // along under his feet.
+    const npc1Sprite = new Image(); npc1Sprite.src = 'assets/textures/npc/npc1.png';
+    const NPC1_FRAMES = [
+        { sx: 31,  sy: 30, sw: 197, sh: 290 },   // idle - stood with the pack on
+        { sx: 248, sy: 56, sw: 197, sh: 261 },   // walk 1
+        { sx: 475, sy: 59, sw: 167, sh: 261 }    // walk 2
+    ];
+    const NPC1_DRAW_H = 104, NPC1_FEET = 30;
+    const WANDER_SPEED = 1.15;                  // slower than the player, so you can catch him
+    const WANDER_PAUSE_MIN = 1.5, WANDER_PAUSE_MAX = 4.0;
+    const TALK_RANGE = 130, TALK_BUBBLE_TIME = 6.5;
+
+    // --- Wildlife -----------------------------------------------------------------
+    // Passive: they never attack and nothing hunts them. Hit one and it bolts. Each sheet
+    // is WALK 1 / WALK 2 / IDLE / EATING with the words lettered underneath, so these crop
+    // above the caption band - frame bounds taken straight from the alpha drag it along.
+    const boarSprite   = new Image(); boarSprite.src   = 'assets/textures/animals/boar.png';
+    const deerSprite   = new Image(); deerSprite.src   = 'assets/textures/animals/deer.png';
+    const rabbitSprite = new Image(); rabbitSprite.src = 'assets/textures/animals/rabbit.png';
+    const BOAR_FRAMES = [
+        { sx: 18,  sy: 136, sw: 167, sh: 170 }, { sx: 185, sy: 136, sw: 158, sh: 170 },
+        { sx: 343, sy: 119, sw: 135, sh: 188 }, { sx: 478, sy: 158, sw: 176, sh: 154 }
+    ];
+    const DEER_FRAMES = [
+        { sx: 18,  sy: 52,  sw: 167, sh: 254 }, { sx: 185, sy: 52,  sw: 151, sh: 254 },
+        { sx: 343, sy: 49,  sw: 118, sh: 258 }, { sx: 461, sy: 49,  sw: 198, sh: 263 }
+    ];
+    const RABBIT_FRAMES = [
+        { sx: 16,  sy: 112, sw: 170, sh: 194 }, { sx: 186, sy: 112, sw: 154, sh: 194 },
+        { sx: 343, sy: 94,  sw: 127, sh: 214 }, { sx: 470, sy: 180, sw: 188, sh: 132 }
+    ];
+    const CRITTER_WALK1 = 0, CRITTER_WALK2 = 1, CRITTER_IDLE = 2, CRITTER_EAT = 3;
+    // `meat` is the chance of leaving a health pickup - deliberately not wood, stone or
+    // mana. Hunting stays worth doing without reopening the economy that was just tuned.
+    const CRITTERS = {
+        boar:   { sprite: null, frames: BOAR_FRAMES,   h: 78,  feet: 22, radius: 20, hp: 90, spd: 0.9, flee: 2.6, meat: 0.80 },
+        deer:   { sprite: null, frames: DEER_FRAMES,   h: 100, feet: 27, radius: 18, hp: 55, spd: 1.2, flee: 3.4, meat: 0.60 },
+        rabbit: { sprite: null, frames: RABBIT_FRAMES, h: 46,  feet: 13, radius: 10, hp: 18, spd: 1.0, flee: 3.8, meat: 0.15 }
+    };
+    CRITTERS.boar.sprite = boarSprite; CRITTERS.deer.sprite = deerSprite; CRITTERS.rabbit.sprite = rabbitSprite;
+    const CRITTER_POP = { boar: 4, deer: 5, rabbit: 7 };
+    const CRITTER_FLEE_TIME = 4.0, CRITTER_PAUSE_MIN = 2.0, CRITTER_PAUSE_MAX = 6.0;
+    const CRITTER_KEEPOUT = 500;        // they graze the wilds, not the nexus lawn
+
     // Frames on one sheet are not the same size, so scaling every pose to a fixed drawn
     // height would make the creature grow and shrink as it animates. Scale them all by a
     // single factor taken from one reference frame instead, and keep the sheet's own
@@ -865,7 +912,7 @@
 
     // --- GAME STATE ---
     let gameState = 'MENU', lastTime = 0, player, base;
-    let entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], decorations: [], solids: [] };
+    let entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
     let inventory = { wood: 50, stone: 50, mana: 20 }, wave = 1, phaseTimer = 60, totalKills = 0;
     let screenShake = 0; 
     let currentWeather = 'clear'; 
@@ -1366,7 +1413,7 @@
     }
 
     class Merchant {
-        constructor() { let fromLeft = Math.random() > 0.5; this.x = WORLD_CX + (fromLeft ? -1500 : 1500); this.y = WORLD_CY + (Math.random()*400 - 200); this.radius = 20; this.targetX = WORLD_CX + (Math.random()*500 - 250); this.targetY = WORLD_CY - 320 - Math.random()*160; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
+        constructor() { this.isShop = true; let fromLeft = Math.random() > 0.5; this.x = WORLD_CX + (fromLeft ? -1500 : 1500); this.y = WORLD_CY + (Math.random()*400 - 200); this.radius = 20; this.targetX = WORLD_CX + (Math.random()*500 - 250); this.targetY = WORLD_CY - 320 - Math.random()*160; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
         update(dt) {
             if (gameState === 'NIGHT') { this.targetX = WORLD_CX - 2600; }
             let dx = this.targetX - this.x; let dy = this.targetY - this.y; let len = Math.hypot(dx, dy);
@@ -1399,6 +1446,252 @@
                 ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke();
                 ctx.fillStyle = '#00ffcc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("Press [R] to Shop", this.x, this.y + 55);
             } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y - 82); }
+        }
+    }
+
+    // He crosses the whole map rather than orbiting the nexus, and what he trades in is
+    // information - what is coming tonight, and what it is weak to. Deliberately gives no
+    // wood, stone or mana: the economy was just tuned, and a free handout every day would
+    // quietly undo it.
+    class Wanderer {
+        constructor() {
+            let a = Math.random() * Math.PI * 2, d = 500 + Math.random() * 1700;
+            this.x = clampWorld(WORLD_CX + Math.cos(a) * d, WORLD_W, 150);
+            this.y = clampWorld(WORLD_CY + Math.sin(a) * d, WORLD_H, 150);
+            this.radius = 20; this.isShop = false; this.markedForDeletion = false;
+            this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = false;
+            this.pause = 0; this.bubble = 0; this.line = '';
+            this.pickWaypoint();
+        }
+        pickWaypoint() {
+            for (let i = 0; i < 24; i++) {
+                let tx = 150 + Math.random() * (WORLD_W - 300);
+                let ty = 150 + Math.random() * (WORLD_H - 300);
+                if (!isCollidingWithObstacle(tx, ty, this.radius)) { this.targetX = tx; this.targetY = ty; return; }
+            }
+            this.targetX = WORLD_CX; this.targetY = WORLD_CY;
+        }
+        talk() {
+            this.bubble = TALK_BUBBLE_TIME;
+            this.line = wayfarerLine();
+            this.pause = Math.max(this.pause, 2.0);      // he stops to speak to you
+            playSound('pickup');
+        }
+        update(dt) {
+            if (this.bubble > 0) this.bubble -= dt;
+            if (this.pause > 0) { this.pause -= dt; this.moving = false; this.frame = 0; return; }
+
+            let dx = this.targetX - this.x, dy = this.targetY - this.y, len = Math.hypot(dx, dy);
+            if (len < 14) {
+                this.pause = WANDER_PAUSE_MIN + Math.random() * (WANDER_PAUSE_MAX - WANDER_PAUSE_MIN);
+                this.moving = false; this.frame = 0; this.pickWaypoint(); return;
+            }
+            this.moving = true;
+            let speed = WANDER_SPEED * (dt * 60), ang = Math.atan2(dy, dx), moved = false;
+            for (let off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6]) {
+                let nx = this.x + Math.cos(ang + off) * speed, ny = this.y + Math.sin(ang + off) * speed;
+                if (!isCollidingWithObstacle(nx, ny, this.radius)) {
+                    if (Math.abs(nx - this.x) > 0.01) this.facing = nx < this.x ? -1 : 1;
+                    this.x = nx; this.y = ny; moved = true; break;
+                }
+            }
+            if (!moved) this.pickWaypoint();             // hemmed in, try somewhere else
+            this.frameTimer += dt;
+            if (this.frameTimer > 0.17) { this.frameTimer = 0; this.frame = this.frame === 1 ? 2 : 1; }
+        }
+        draw(ctx) {
+            let inRange = Math.hypot(player.x - this.x, player.y - this.y) < TALK_RANGE;
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+            ctx.fillStyle = 'rgba(0,0,0,0.26)';
+            ctx.beginPath(); ctx.ellipse(0, NPC1_FEET - 6, 24, 8, 0, 0, Math.PI*2); ctx.fill();
+            ctx.scale(this.facing, 1);
+            if (npc1Sprite.complete && npc1Sprite.naturalWidth !== 0) {
+                drawSheetFrame(ctx, npc1Sprite, NPC1_FRAMES, this.moving ? this.frame : 0, 0, NPC1_DRAW_H, NPC1_FEET, 'baseline');
+            } else {
+                ctx.fillStyle = '#6b5a3e'; ctx.fillRect(-12, -60, 24, 60);
+            }
+            ctx.restore();
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#e8d8a8'; ctx.font = 'bold 13px Arial';
+            ctx.fillText('WAYFARER', this.x, this.y - NPC1_DRAW_H + 12);
+            if (inRange) {
+                ctx.strokeStyle = 'rgba(232, 216, 168, 0.45)'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(this.x, this.y + 10, 42, 0, Math.PI*2); ctx.stroke();
+                ctx.fillStyle = '#e8d8a8'; ctx.font = 'bold 14px Arial';
+                ctx.fillText('Press [R] to Talk', this.x, this.y + NPC1_FEET + 28);
+            }
+            if (this.bubble > 0 && this.line) this.drawBubble(ctx);
+        }
+        drawBubble(ctx) {
+            // Wrapped by hand: measureText is the only honest way to size the box, and a
+            // fixed-width guess clips the longer lines.
+            ctx.font = '15px Arial';
+            let words = this.line.split(' '), lines = [], cur = '';
+            for (let w of words) {
+                let t = cur ? cur + ' ' + w : w;
+                if (ctx.measureText(t).width > 300 && cur) { lines.push(cur); cur = w; } else cur = t;
+            }
+            if (cur) lines.push(cur);
+            let wBox = 20 + Math.max(...lines.map(l => ctx.measureText(l).width));
+            let hBox = 16 + lines.length * 20;
+            let bx = this.x - wBox / 2, by = this.y - NPC1_DRAW_H - hBox - 12;
+            let a = Math.min(1, this.bubble / 0.4);              // fade out at the end
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = 'rgba(24, 22, 16, 0.92)';
+            ctx.strokeStyle = '#e8d8a8'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(bx, by, wBox, hBox, 8); else ctx.rect(bx, by, wBox, hBox);
+            ctx.fill(); ctx.stroke();
+            ctx.beginPath();                                     // tail
+            ctx.moveTo(this.x - 8, by + hBox); ctx.lineTo(this.x, by + hBox + 12); ctx.lineTo(this.x + 8, by + hBox);
+            ctx.fillStyle = 'rgba(24, 22, 16, 0.92)'; ctx.fill();
+            ctx.fillStyle = '#f0e6cc'; ctx.textAlign = 'center'; ctx.font = '15px Arial';
+            lines.forEach((l, i) => ctx.fillText(l, this.x, by + 24 + i * 20));
+            ctx.restore();
+        }
+    }
+
+    // What he actually knows. Weighted toward tonight's specifics when there are any, so
+    // talking to him is worth the walk rather than being flavour text.
+    function wayfarerLine() {
+        const dirName = ['north', 'south', 'west', 'east'];
+        let pool = [];
+        if (waveDirection !== -1) {
+            pool.push("They gather to the " + dirName[waveDirection] + " tonight. I'd face your guns that way.");
+        }
+        if (wave % KING_WAVE_INTERVAL === KING_WAVE_INTERVAL - 1) {
+            pool.push("The drums are wrong. Come tomorrow night, their King walks - and he brings the ground down with him.");
+        } else if ((wave + 1) % 5 === 0) {
+            pool.push("Something big is coming for you tomorrow. Bigger than what you've buried so far.");
+        }
+        if (wave >= TROLL_MIN_WAVE) pool.push("If a troll comes, don't trust your eyes - it knits itself back up. Burn it and the mending stops.");
+        if (wave >= CYCLOP_MIN_WAVE) pool.push("The one-eyed brute doesn't stop at your palisade, it swings through it. Keep your towers spread.");
+        if (wave >= RIDER_MIN_WAVE) pool.push("Warg riders need a run-up. Break their line early and they're just orcs on dogs.");
+        if (wave > 2) pool.push("Winged ones don't care for your traps - a frost trap can't bite what never touches the ground.");
+        pool.push("Barricades will hold them. Frost traps won't - things walk straight over those.");
+        pool.push("Your towers have a limit, and it lifts as the nights get worse. No sense hoarding what you can't raise.");
+        pool.push("Bear's worth more than it looks, if you can take it. But it only prowls by daylight.");
+        pool.push("I've walked from the coast. There's nothing left out there but what's coming here.");
+        pool.push("Chop what you can before dusk. The forest thickens each day, but so do they.");
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    class Critter {
+        constructor(type, x, y) {
+            this.type = type; this.def = CRITTERS[type];
+            this.x = x; this.y = y; this.radius = this.def.radius;
+            this.hp = this.def.hp; this.maxHp = this.def.hp;
+            this.markedForDeletion = false;
+            this.facing = Math.random() < 0.5 ? -1 : 1;
+            this.frame = CRITTER_IDLE; this.frameTimer = 0;
+            this.pause = Math.random() * CRITTER_PAUSE_MAX;
+            this.fleeTimer = 0; this.grazing = Math.random() < 0.5;
+            this.tx = x; this.ty = y;
+            this.pickWaypoint();
+        }
+        pickWaypoint() {
+            for (let i = 0; i < 16; i++) {
+                let a = Math.random() * Math.PI * 2, r = 300 + Math.random() * 550;
+                let tx = clampWorld(this.x + Math.cos(a) * r, WORLD_W, 120);
+                let ty = clampWorld(this.y + Math.sin(a) * r, WORLD_H, 120);
+                if (!isCollidingWithObstacle(tx, ty, this.radius)) { this.tx = tx; this.ty = ty; return; }
+            }
+            this.tx = this.x; this.ty = this.y;
+        }
+        // It has no attack and never retaliates - being hurt only makes it run.
+        takeDamage(amount) {
+            if (this.markedForDeletion) return;
+            this.hp -= amount;
+            this.fleeTimer = CRITTER_FLEE_TIME;
+            this.pause = 0;
+            spawnParticles(this.x, this.y, '#8f3a3a', 4);
+            if (this.hp <= 0) {
+                this.markedForDeletion = true;
+                spawnParticles(this.x, this.y, '#8f3a3a', 16);
+                playSound('hit');
+                if (Math.random() < this.def.meat) entities.items.push(new Item(this.x, this.y, 'hp'));
+            }
+        }
+        update(dt) {
+            let tx, ty, moveSpd;
+            if (this.fleeTimer > 0) {
+                this.fleeTimer -= dt;
+                let a = Math.atan2(this.y - player.y, this.x - player.x);   // straight away from you
+                tx = this.x + Math.cos(a) * 500; ty = this.y + Math.sin(a) * 500;
+                moveSpd = this.def.flee;
+                if (this.fleeTimer <= 0) { this.pause = 1.0 + Math.random(); this.pickWaypoint(); }
+            } else if (this.pause > 0) {
+                this.pause -= dt;
+                this.frameTimer += dt;
+                if (this.frameTimer > 1.3) { this.frameTimer = 0; this.grazing = !this.grazing; }
+                this.frame = this.grazing ? CRITTER_EAT : CRITTER_IDLE;
+                if (this.pause <= 0) this.pickWaypoint();
+                return;
+            } else {
+                tx = this.tx; ty = this.ty; moveSpd = this.def.spd;
+            }
+            let dx = tx - this.x, dy = ty - this.y, len = Math.hypot(dx, dy);
+            if (len < 16 && this.fleeTimer <= 0) {
+                this.pause = CRITTER_PAUSE_MIN + Math.random() * (CRITTER_PAUSE_MAX - CRITTER_PAUSE_MIN);
+                this.frame = CRITTER_IDLE; this.frameTimer = 0; return;
+            }
+            let step = moveSpd * (dt * 60), ang = Math.atan2(dy, dx), moved = false;
+            for (let off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6]) {
+                let nx = this.x + Math.cos(ang + off) * step, ny = this.y + Math.sin(ang + off) * step;
+                if (nx < 80 || nx > WORLD_W - 80 || ny < 80 || ny > WORLD_H - 80) continue;
+                if (!isCollidingWithObstacle(nx, ny, this.radius)) {
+                    if (Math.abs(nx - this.x) > 0.01) this.facing = nx < this.x ? -1 : 1;
+                    this.x = nx; this.y = ny; moved = true; break;
+                }
+            }
+            if (!moved) this.pickWaypoint();
+            this.frameTimer += dt;
+            let cadence = this.fleeTimer > 0 ? 0.09 : 0.19;      // legs go faster when bolting
+            if (this.frameTimer > cadence) {
+                this.frameTimer = 0;
+                this.frame = this.frame === CRITTER_WALK1 ? CRITTER_WALK2 : CRITTER_WALK1;
+            }
+        }
+        draw(ctx) {
+            let d = this.def;
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+            ctx.fillStyle = 'rgba(0,0,0,0.22)';
+            ctx.beginPath(); ctx.ellipse(0, d.feet - 4, d.h * 0.30, d.h * 0.10, 0, 0, Math.PI*2); ctx.fill();
+            ctx.scale(this.facing, 1);
+            if (d.sprite.complete && d.sprite.naturalWidth !== 0) {
+                drawSheetFrame(ctx, d.sprite, d.frames, this.frame, 0, d.h, d.feet, 'baseline');
+            } else {
+                ctx.fillStyle = '#7a6a4a'; ctx.fillRect(-d.h*0.3, d.feet - d.h*0.55, d.h*0.6, d.h*0.55);
+            }
+            ctx.restore();
+            if (this.hp < this.maxHp) {
+                let bw = Math.max(26, d.h * 0.42);
+                ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(this.x - bw/2, this.y + d.feet - d.h - 10, bw, 4);
+                ctx.fillStyle = '#c8503c'; ctx.fillRect(this.x - bw/2, this.y + d.feet - d.h - 10, bw * (this.hp / this.maxHp), 4);
+            }
+        }
+    }
+
+    // Keeps the wilds stocked without letting the population creep up day after day.
+    function stockWildlife() {
+        for (let type in CRITTER_POP) {
+            let have = entities.critters.filter(c => c.type === type).length;
+            for (let i = have; i < CRITTER_POP[type]; i++) {
+                for (let t = 0; t < 40; t++) {
+                    let x = 200 + Math.random() * (WORLD_W - 400);
+                    let y = 200 + Math.random() * (WORLD_H - 400);
+                    if (Math.hypot(x - WORLD_CX, y - WORLD_CY) < CRITTER_KEEPOUT) continue;
+                    if (isCollidingWithObstacle(x, y, CRITTERS[type].radius)) continue;
+                    entities.critters.push(new Critter(type, x, y));
+                    break;
+                }
+            }
         }
     }
 
@@ -1919,6 +2212,10 @@
                         e.takeDamage(dmgDealt, true, 'none', 'player'); spawnParticles(e.x, e.y, '#fff', 3); 
                     } 
                 });
+                // Wildlife is fair game, and gets no say in it beyond running.
+                entities.critters.forEach(c => {
+                    if (Math.hypot(c.x - reachX, c.y - reachY) < this.data.range + c.radius) c.takeDamage(this.atk);
+                });
             } else {
                 let vx = Math.cos(this.angle) * 12 * this.projSpeedMod, vy = Math.sin(this.angle) * 12 * this.projSpeedMod;
                 if (this.smite) { vx *= 5; vy *= 5; } 
@@ -2210,6 +2507,13 @@
         update(dt) {
             this.x += this.vx * (dt*60); this.y += this.vy * (dt*60); this.life -= dt; if(this.life <= 0) this.markedForDeletion = true;
             if(this.isFriendly) {
+                entities.critters.forEach(c => {
+                    if (!this.markedForDeletion && Math.hypot(c.x - this.x, c.y - this.y) < c.radius + 10 && !this.hitList.includes(c)) {
+                        c.takeDamage(this.dmg); this.hitList.push(c);
+                        spawnParticles(this.x, this.y, this.color, 4);
+                        if (!this.pierce) this.markedForDeletion = true;
+                    }
+                });
                 entities.enemies.forEach(e => {
                     if (!this.markedForDeletion && Math.hypot(e.x - this.x, e.y - this.y) < e.radius + 10 && !this.hitList.includes(e)) {
                         let dmgDealt = this.dmg;
@@ -3083,7 +3387,7 @@
         playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, forgeTowerHpMult: 1.0, hasteMod: 1.0, vampirism: false,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
         forgeUpgrades = { weapon: { level: 0 }, towerHp: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
-        entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], decorations: [], solids: [] };
+        entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
         globalTowerHpMult = 1.0; currentWeather = 'clear'; currentModifier = 'none'; setWeather();
         
         player = new Player(selectedClass); base = new Base();
@@ -3101,6 +3405,8 @@
         document.getElementById('ability-e-name').innerText = abilityNames[selectedClass];
         
         generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant());
+        entities.npcs.push(new Wanderer());
+        stockWildlife();
         // Retrying straight from a death left the banner reading "GAME OVER" until the next phase.
         document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
         document.getElementById('phaseText').style.color = '#fff';
@@ -3198,8 +3504,10 @@
 
         if (keys['t']) { openTalentMenu(); keys['t'] = false; }
         if (keys['r'] && gameState === 'DAY') {
-            let nearMerchant = entities.npcs.some(npc => Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
-            if (nearMerchant) { document.getElementById('merchantOverlay').classList.remove('hidden'); keys['r'] = false; }
+            let shop = entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
+            let wayfarer = entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
+            if (shop) { document.getElementById('merchantOverlay').classList.remove('hidden'); keys['r'] = false; }
+            else if (wayfarer) { wayfarer.talk(); keys['r'] = false; }
             else if (playerAtForge()) { openForge(); keys['r'] = false; }
         }
 
@@ -3222,6 +3530,12 @@
                 if (player.hasDaySpeed) { playerBuffs.speedMult -= 1.0; player.hasDaySpeed = false; }
 
                 // The bear only prowls by day - it retreats to the forest at nightfall.
+                entities.npcs.forEach(npc => {
+                    if (npc.isShop) return;
+                    entities.texts.push(new FloatingText(npc.x, npc.y - 60, "MAKES CAMP", '#e8d8a8'));
+                    spawnParticles(npc.x, npc.y, '#e8d8a8', 10);
+                    npc.markedForDeletion = true;
+                });
                 entities.enemies.forEach(e => {
                     if (e.type === 'predator') {
                         spawnParticles(e.x, e.y, '#8a6a4a', 12);
@@ -3237,13 +3551,15 @@
                 document.getElementById('phaseText').style.color = '#fff'; document.getElementById('earlyNightBtn').classList.remove('hidden');
                 document.getElementById('ui-wave').innerText = wave; base.recalcMaxHp(); base.repairedToday = false; generateMap(); updateBuildUI();
                 if (merchantVisits(wave)) entities.npcs.push(new Merchant());
+                entities.npcs.push(new Wanderer());
+                stockWildlife();
             }
         }
 
         if (mouse.clicked) {
             let clickedInteractable = false;
             if (gameState === 'DAY') {
-                entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { document.getElementById('merchantOverlay').classList.remove('hidden'); clickedInteractable = true; } });
+                entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) document.getElementById('merchantOverlay').classList.remove('hidden'); else npc.talk(); clickedInteractable = true; } });
                 if (!clickedInteractable && playerAtForge() && Math.hypot(mouse.x - forgeX(), mouse.y - forgeY()) < 90) { openForge(); clickedInteractable = true; }
             }
             if (!clickedInteractable) {
@@ -3290,14 +3606,14 @@
         }
 
         player.update(dt); base.update(dt);
-        entities.npcs.forEach(n => n.update(dt)); entities.resources.forEach(r => r.update(dt)); entities.towers.forEach(t => t.update(dt));
+        entities.npcs.forEach(n => n.update(dt)); entities.critters.forEach(c => c.update(dt)); entities.resources.forEach(r => r.update(dt)); entities.towers.forEach(t => t.update(dt));
         entities.enemies.forEach(e => e.update(dt)); entities.projectiles.forEach(p => p.update(dt)); entities.effects.forEach(ef => ef.update(dt));
         entities.texts.forEach(txt => txt.update(dt)); entities.particles.forEach(p => p.update(dt)); entities.items.forEach(i => i.update(dt));
 
         if (currentWeather === 'blizzard') spawnParticles(cam.x + Math.random()*VIEW_W, cam.y - 10, '#ffffff', 1);
 
         let towersBefore = entities.towers.length;
-        entities.npcs = entities.npcs.filter(n => !n.markedForDeletion); entities.towers = entities.towers.filter(t => !t.markedForDeletion);
+        entities.npcs = entities.npcs.filter(n => !n.markedForDeletion); entities.critters = entities.critters.filter(c => !c.markedForDeletion); entities.towers = entities.towers.filter(t => !t.markedForDeletion);
         if (entities.towers.length !== towersBefore) updateBuildUI();   // a destroyed extractor frees its slot
         entities.enemies = entities.enemies.filter(e => !e.markedForDeletion); entities.projectiles = entities.projectiles.filter(p => !p.markedForDeletion);
         entities.resources = entities.resources.filter(r => !r.markedForDeletion); entities.effects = entities.effects.filter(ef => !ef.markedForDeletion);
@@ -3521,6 +3837,7 @@
         });
 
         drawForge(ctx);
+        entities.critters.forEach(c => { if (inView(c.x, c.y, 120)) c.draw(ctx); });
         entities.npcs.forEach(n => { if (inView(n.x, n.y)) n.draw(ctx); });
         entities.items.forEach(i => { if (inView(i.x, i.y)) i.draw(ctx); });
 
@@ -3636,7 +3953,8 @@
                      ((e.type === 'cyclop' || e.type === 'troll') ? 5 : (e.type === 'orcrider' ? 4 : 3)));
             ctx.fillRect(mx(e.x)-sz/2, my(e.y)-sz/2, sz, sz);
         });
-        entities.npcs.forEach(n => { ctx.fillStyle = '#5ce1e6'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
+        entities.critters.forEach(c => { ctx.fillStyle = 'rgba(190,170,120,0.75)'; ctx.fillRect(mx(c.x)-1, my(c.y)-1, 2, 2); });
+        entities.npcs.forEach(n => { ctx.fillStyle = n.isShop ? '#5ce1e6' : '#e8d8a8'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
         // nexus
         ctx.fillStyle = '#d9b25c'; ctx.fillRect(mx(base.x)-4, my(base.y)-4, 8, 8);
         ctx.strokeStyle = '#fff6d8'; ctx.lineWidth = 1; ctx.strokeRect(mx(base.x)-4.5, my(base.y)-4.5, 9, 9);
