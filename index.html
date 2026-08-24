@@ -507,6 +507,101 @@
     const KING_WAVE_INTERVAL = 10;      // waves 10, 20, 30 ...
     const KING_HP_MULT = 25, KING_DMG_BASE = 45, KING_SPD_MULT = 0.55;
     const KING_SLAM_RANGE = 210, KING_SLAM_CD = 4.0, KING_SLAM_DMG = 1.6;
+
+    // --- Harpy ------------------------------------------------------------------
+    // Replaces the old purple flier. Fast and fragile, and because it is airborne it
+    // drifts straight over frost traps and knockback barriers - ground defences never
+    // get a chance to touch it.
+    const harpySprite = new Image(); harpySprite.src = 'assets/textures/enemies/harpy.png';
+    const HARPY_FRAMES = [
+        { sx: 25,  sy: 95, sw: 210, sh: 175 },   // glide, wings spread wide
+        { sx: 237, sy: 40, sw: 182, sh: 242 },   // beating forward
+        { sx: 461, sy: 74, sw: 193, sh: 232 }    // talon strike
+    ];
+    const HARPY_DRAW_H = 88, HARPY_REF = 1, HARPY_HOVER = 26;
+    const HARPY_HP_MULT = 0.45, HARPY_SPD_MULT = 1.9;
+
+    // --- Goblin wolf-rider --------------------------------------------------------
+    // Skirmisher: outruns everything on the field, looses arrows more than twice as
+    // fast as the orc archer, and folds to a stiff breeze. The wolf bites at point blank.
+    const gobRiderSprite = new Image(); gobRiderSprite.src = 'assets/textures/enemies/goblinarcher.png';
+    const GOB_FRAMES = [
+        { sx: 16,  sy: 80, sw: 210, sh: 236 },   // riding
+        { sx: 235, sy: 72, sw: 210, sh: 247 },   // bow drawn
+        { sx: 453, sy: 80, sw: 196, sh: 241 }    // wolf lunges - point blank
+    ];
+    const GOB_DRAW_H = 104, GOB_FEET = 30, GOB_RADIUS = 19;
+    const GOB_HP_MULT = 0.35, GOB_SPD_MULT = 1.55, GOB_DMG_MULT = 0.6;
+    const GOB_RANGE = 270, GOB_MELEE_RANGE = 62, GOB_SHOT_CD = 0.85;
+
+    // --- Cyclops (night miniboss) -------------------------------------------------
+    // Turns up on some nights, not every one. Tanky and slow, and its club lands as a
+    // small shockwave, so it chews through a tower line instead of stopping at it.
+    const cyclopSprite = new Image(); cyclopSprite.src = 'assets/textures/enemies/cyclop.png';
+    const CYCLOP_FRAMES = [
+        { sx: 58,  sy: 42, sw: 164, sh: 275 },
+        { sx: 238, sy: 70, sw: 215, sh: 247 },
+        { sx: 458, sy: 50, sw: 194, sh: 272 }
+    ];
+    const CYCLOP_DRAW_H = 168, CYCLOP_FEET = 46, CYCLOP_RADIUS = 34;
+    const CYCLOP_HP_MULT = 8, CYCLOP_DMG_BASE = 22, CYCLOP_SPD_MULT = 0.85;
+    const CYCLOP_SMASH = 105, CYCLOP_SMASH_CD = 3.2;
+    const CYCLOP_CHANCE = 0.30, CYCLOP_MIN_WAVE = 3, CYCLOP_GAP = 2;
+
+    // --- Troll (rare night spawn) -------------------------------------------------
+    // Rarer than the cyclops, and it regenerates - chip damage alone never finishes it.
+    // Fire stops the regeneration cold, which is the classic answer and one the mage
+    // already carries.
+    const trollSprite = new Image(); trollSprite.src = 'assets/textures/enemies/troll.png';
+    const TROLL_FRAMES = [
+        { sx: 31,  sy: 77, sw: 171, sh: 236 },
+        { sx: 230, sy: 73, sw: 177, sh: 240 },
+        { sx: 441, sy: 28, sw: 218, sh: 285 }    // overhead club, taller by design
+    ];
+    const TROLL_DRAW_H = 142, TROLL_FEET = 40, TROLL_RADIUS = 27;
+    const TROLL_HP_MULT = 6, TROLL_DMG_BASE = 18, TROLL_SPD_MULT = 0.95;
+    const TROLL_REGEN = 0.02;                    // fraction of max hp per second
+    const TROLL_CHANCE = 0.16, TROLL_MIN_WAVE = 4, TROLL_GAP = 3;
+
+    // --- Orc warg-rider (rare) ----------------------------------------------------
+    // Cavalry, so it is built around the run-up rather than the stand-up fight: give it
+    // open ground and it gathers pace, and whatever speed it carries into contact is what
+    // the axe is worth. Land one and it thunders past to wheel around for another pass
+    // instead of grinding in place. Pen it in and it is just an orc on a dog.
+    const orcRiderSprite = new Image(); orcRiderSprite.src = 'assets/textures/enemies/orcrider.png';
+    const RIDER_FRAMES = [
+        { sx: 19,  sy: 61, sw: 205, sh: 252 },   // riding
+        { sx: 232, sy: 77, sw: 210, sh: 236 },   // warg at full stretch
+        { sx: 450, sy: 51, sw: 210, sh: 264 }    // axe coming down
+    ];
+    const RIDER_DRAW_H = 118, RIDER_FEET = 33, RIDER_RADIUS = 22;
+    const RIDER_HP_MULT = 2.6, RIDER_SPD_MULT = 1.35, RIDER_DMG_BASE = 16;
+    const RIDER_CHARGE_MIN = 220;      // needs this much clear ground to build a charge
+    const RIDER_CHARGE_TIME = 1.6;     // seconds from a standing start to full gallop
+    const RIDER_CHARGE_SPD = 1.8;      // top speed multiplier
+    const RIDER_CHARGE_DMG = 2.4;      // damage multiplier at full charge
+    const RIDER_CHARGE_LAND = 0.55;    // below this the blow counts as an ordinary swing
+    const RIDER_WHEEL = 1.8, RIDER_KNOCKBACK = 46;
+    const RIDER_CHANCE = 0.14, RIDER_MIN_WAVE = 5, RIDER_GAP = 3;
+    const RIDER_PACK_MIN = 2, RIDER_PACK_MAX = 3;
+
+    // Frames on one sheet are not the same size, so scaling every pose to a fixed drawn
+    // height would make the creature grow and shrink as it animates. Scale them all by a
+    // single factor taken from one reference frame instead, and keep the sheet's own
+    // baseline so the feet stay planted. Flying things anchor on their centre - they have
+    // no feet to plant.
+    function drawSheetFrame(ctx, img, frames, idx, refIdx, drawH, feet, anchor) {
+        let f = frames[idx] || frames[0];
+        let scale = drawH / frames[refIdx].sh;
+        let dw = f.sw * scale, dh = f.sh * scale;
+        let bottom;
+        if (anchor === 'center') bottom = feet + dh / 2;
+        else {
+            let baseline = frames.reduce((m, q) => Math.max(m, q.sy + q.sh), 0);
+            bottom = feet - (baseline - (f.sy + f.sh)) * scale;
+        }
+        ctx.drawImage(img, f.sx, f.sy, f.sw, f.sh, -dw / 2, bottom - dh, dw, dh);
+    }
     // Get close and they come for you rather than walking past to the nexus. Aggro sticks for
     // a few seconds so they do not flip target every step, and hitting something aggros it.
     const AGGRO_RANGE = 300, AGGRO_RANGE_GOLEM = 140, AGGRO_HOLD = 4.0, AGGRO_DROP = 1.7;
@@ -726,6 +821,7 @@
     let isPaused = false;
     let waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
     let lastBearWave = -99;
+    let lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
     let gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, towers: 0 };
     let achievements = [
         { id: 'first_blood', name: 'First Blood', desc: 'Slay your first enemy.', unlocked: false },
@@ -1444,16 +1540,20 @@
                         entities.texts.push(new FloatingText(this.x, this.y, "+" + loot + " EACH!", '#ffcc00'));
                         playSound('levelup');
                     } else {
-                        let xpDrop = this.type === 'orcking' ? 600 : (this.type === 'boss' ? 200 : (this.type === 'golem' ? 30 : (this.type === 'bomber'? 20 : 10)));
+                        let xpDrop = this.type === 'orcking' ? 600 : (this.type === 'boss' ? 200 : (this.type === 'cyclop' ? 140 :
+                                     (this.type === 'troll' ? 100 : (this.type === 'orcrider' ? 55 : (this.type === 'golem' ? 30 : (this.type === 'bomber'? 20 : 10))))));
                         player.gainXp(xpDrop * (currentWeather==='bloodmoon'?3:1));
                         
-                        let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'golem' ? 5 : 2));
+                        let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'cyclop' ? 35 :
+                                       (this.type === 'troll' ? 25 : (this.type === 'orcrider' ? 12 : (this.type === 'golem' ? 5 : 2)))));
                         manaDrop *= (currentWeather==='bloodmoon'?3:1);
                         inventory.mana += manaDrop; player.mp = Math.min(player.maxMp, player.mp + 5);
 
-                        let pColor = this.type === 'golem' ? '#777' : (this.type === 'bat' ? '#660099' : '#5b9e32');
+                        let pColor = this.type === 'golem' ? '#777' : (this.type === 'harpy' ? '#7a6a3a' : '#5b9e32');
                         spawnParticles(this.x, this.y, pColor, this.radius);
                         if (Math.random() < 0.1) entities.items.push(new Item(this.x, this.y, Math.random()>0.5?'hp':'mp'));
+                        // Night visitors are a fight you did not pick, so they always pay out.
+                        if (this.type === 'cyclop' || this.type === 'troll') entities.items.push(new Item(this.x, this.y, Math.random()>0.5?'hp':'mp'));
                         
                         if (this.type === 'bomber') { entities.effects.push(new Effect(this.x, this.y, 100, '#ffaa00', 0.5, 40, false, false, 'none', 'tower')); addShake(15); playSound('explosion'); }
                     }
@@ -2104,8 +2204,10 @@
         constructor(x, y, type) {
             let baseHPMult = Math.pow(1.15, wave - 1);
             let startHp = Math.floor(35 * baseHPMult);
-            super(x, y, type==='orcking'? KING_RADIUS : (type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15))), startHp);
-            this.type = type; this.baseSpd = 1.5 + (wave * 0.1); this.isFlying = (type === 'bat');
+            super(x, y, type==='orcking'? KING_RADIUS : (type==='cyclop'? CYCLOP_RADIUS : (type==='troll'? TROLL_RADIUS : (type==='orcrider'? RIDER_RADIUS :
+                (type==='goblinarcher'? GOB_RADIUS : (type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15))))))), startHp);
+            this.type = type; this.baseSpd = 1.5 + (wave * 0.1); this.isFlying = (type === 'harpy');
+            this.spawnPhase = Math.random() * 6.283;
             this.isAsleep = false;
             this.isInvisible = false;
             this.bossPhaseTriggered = false;
@@ -2114,16 +2216,15 @@
             this.frameX = 0;
             this.distanceTraveled = 0;
 
-            if (this.type === 'orcking') {
-                // Hold the overhead swing briefly after a slam, otherwise stand ready.
-                if (this.animTimer < 0.5 && this.frameX === 2) { /* keep the swing */ }
-                else this.frameX = (Math.floor((this.distanceTraveled || 0) / 45) % 2);
-            }
             if (this.type === 'orcarcher') {this.hp *= 0.6; this.baseSpd *= 0.9; }
             if (this.type === 'golem') { this.hp *= 3; this.baseSpd *= 0.5; }
             if (this.type === 'boss') { this.hp *= 10; this.baseSpd *= 0.8; }
             if (this.type === 'orcking') { this.hp *= KING_HP_MULT; this.baseSpd *= KING_SPD_MULT; this.slamCd = KING_SLAM_CD; this.enraged = false; }
-            if (this.type === 'bat') { this.hp *= 0.5; this.baseSpd *= 1.5; }
+            if (this.type === 'harpy') { this.hp *= HARPY_HP_MULT; this.baseSpd *= HARPY_SPD_MULT; }
+            if (this.type === 'goblinarcher') { this.hp *= GOB_HP_MULT; this.baseSpd *= GOB_SPD_MULT; }
+            if (this.type === 'cyclop') { this.hp *= CYCLOP_HP_MULT; this.baseSpd *= CYCLOP_SPD_MULT; this.smashCd = 1.5; }
+            if (this.type === 'troll') { this.hp *= TROLL_HP_MULT; this.baseSpd *= TROLL_SPD_MULT; }
+            if (this.type === 'orcrider') { this.hp *= RIDER_HP_MULT; this.baseSpd *= RIDER_SPD_MULT; this.charge = 0; this.wheelTimer = 0; }
             if (this.type === 'bomber') { this.hp *= 0.8; this.baseSpd *= 1.2; }
             if (this.type === 'predator') { this.hp = Math.floor(PREDATOR_BASE_HP * Math.pow(PREDATOR_HP_GROWTH, wave - 1)); this.baseSpd = 4 + Math.min(wave - 1, 10) * 0.06; this.isAsleep = true; }
             if (this.type === 'assassin') { this.hp *= 0.5; this.baseSpd *= 1.8; this.isInvisible = true; }
@@ -2140,10 +2241,27 @@
             if (currentWeather === 'bloodmoon') { this.baseSpd *= 1.5; }
 
             this.spd = this.baseSpd; 
-            let baseDmg = this.type === 'orcking' ? KING_DMG_BASE : (this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 : (this.type === 'wolf' ? 8 : 5)));
+            let baseDmg = this.type === 'orcking' ? KING_DMG_BASE : (this.type === 'cyclop' ? CYCLOP_DMG_BASE :
+                          (this.type === 'troll' ? TROLL_DMG_BASE : (this.type === 'orcrider' ? RIDER_DMG_BASE : (this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 :
+                          (this.type === 'goblinarcher' ? 5 * GOB_DMG_MULT : (this.type === 'wolf' ? 8 : 5)))))));
             this.dmg = Math.floor(baseDmg * Math.pow(1.1, wave - 1)); 
             this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0; this.freezeImmuneTimer = 0; this.aggroTimer = 0; this.stuckTimer = 0; this.bestTargetDist = undefined;
             this.maxHp = this.hp;
+        }
+        // A rider's blow is worth whatever speed it carried into contact.
+        hitPower() {
+            if (this.type !== 'orcrider') return this.dmg;
+            return Math.floor(this.dmg * (1 + this.charge * (RIDER_CHARGE_DMG - 1)));
+        }
+        // Spend the charge on impact: a real one sends the rider past its target to come
+        // around again, a half-hearted one just resets.
+        spendCharge() {
+            if (this.type !== 'orcrider') return;
+            if (this.charge >= RIDER_CHARGE_LAND) {
+                this.wheelTimer = RIDER_WHEEL;
+                spawnParticles(this.x, this.y, '#c9b98a', 14); addShake(7);
+            }
+            this.charge = 0;
         }
         update(dt) {
             if (this.freezeImmuneTimer > 0) this.freezeImmuneTimer -= dt;
@@ -2151,6 +2269,11 @@
             if (this.burningTimer > 0) {
                 this.burningTimer -= dt;
                 if (Math.random() < 0.1) spawnParticles(this.x, this.y, '#ff6600', 1);
+            }
+
+            // Trolls knit themselves back together unless they are on fire.
+            if (this.type === 'troll' && this.hp > 0 && this.hp < this.maxHp && this.burningTimer <= 0) {
+                this.hp = Math.min(this.maxHp, this.hp + this.maxHp * TROLL_REGEN * dt);
             }
 
             if (this.isAsleep) {
@@ -2186,6 +2309,23 @@
                         let ang = (Math.PI * 2 / 20) * i;
                         entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(ang)*7, Math.sin(ang)*7, this.dmg, false, '#ffaa00'));
                     }
+                }
+            }
+            if (this.type === 'cyclop') {
+                this.smashCd -= dt;
+                let hitsPlayer = distPlayer < CYCLOP_SMASH;
+                let hitsBase = Math.hypot(base.x - this.x, base.y - this.y) < CYCLOP_SMASH + base.radius;
+                if (this.smashCd <= 0 && (hitsPlayer || hitsBase)) {
+                    // The club comes down and the ground goes with it - towers included.
+                    this.smashCd = CYCLOP_SMASH_CD;
+                    this.frameX = 2; this.animTimer = 0;
+                    entities.effects.push(new Effect(this.x, this.y, CYCLOP_SMASH, '#d8a24a', 0.35, 0, false, false, 'none', 'enemy'));
+                    let blow = Math.floor(this.dmg * 1.1);
+                    if (hitsPlayer) player.takeDamage(blow, false, 'none', 'player', this);
+                    if (hitsBase) base.takeDamage(blow);
+                    entities.towers.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < CYCLOP_SMASH) t.takeDamage(blow); });
+                    spawnParticles(this.x, this.y, '#c98a3c', 16);
+                    playSound('explosion'); addShake(11);
                 }
             }
             if (this.type === 'boss' && this.hp < this.maxHp * 0.5 && !this.bossPhaseTriggered) {
@@ -2237,7 +2377,7 @@
             }
 
             let dx = target.x - this.x; let dy = target.y - this.y; let len = Math.hypot(dx, dy);
-            let stopDist = this.type === 'orcarcher' ? 300 :(this.type === 'necromancer' && target !== player && target !== base ? 200 : this.radius + (target.radius || 0));
+            let stopDist = this.type === 'orcarcher' ? 300 : (this.type === 'goblinarcher' ? GOB_RANGE :(this.type === 'necromancer' && target !== player && target !== base ? 200 : this.radius + (target.radius || 0)));
             
             if (len > stopDist) {
                 let speed = this.spd * (dt*60); 
@@ -2293,7 +2433,18 @@
                     auraSpeedMult = 1.5;
                 }
             });
-            this.spd = this.baseSpd * (player.globalSlow ? 0.8 : 1.0) * auraSpeedMult; 
+            this.spd = this.baseSpd * (player.globalSlow ? 0.8 : 1.0) * auraSpeedMult;
+
+            if (this.type === 'orcrider') {
+                // A rising stuckTimer means it is jammed against something, and a rider with
+                // nowhere to run is not charging anything - that also stops a penned warband
+                // from battering walls down at charge damage.
+                if (this.wheelTimer > 0) { this.wheelTimer -= dt; this.charge = 0; }
+                else if (len > RIDER_CHARGE_MIN && this.stuckTimer <= 0) this.charge = Math.min(1, this.charge + dt / RIDER_CHARGE_TIME);
+                else this.charge = Math.max(0, this.charge - dt * 0.5);
+                this.spd *= 1 + this.charge * (RIDER_CHARGE_SPD - 1);
+                if (this.charge > 0.6 && Math.random() < 0.25) spawnParticles(this.x, this.y + RIDER_FEET - 8, '#8a7a5a', 1);
+            }
             
             if (this.type === 'bomber') this.flashAnim += dt * 5; 
             else if (this.flashAnim > 0) this.flashAnim -= dt;
@@ -2327,18 +2478,33 @@
             this.attackCd -= dt;
             if (this.attackCd <= 0) {
                 let orcInMelee = this.type === 'orcarcher' && distPlayer < ORC_MELEE_RANGE;
+                let gobInMelee = this.type === 'goblinarcher' && distPlayer < GOB_MELEE_RANGE;
                 if (this.type === 'orcarcher' && len <= 350 && !orcInMelee) {
                     let angle = Math.atan2(dy, dx); entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*8, Math.sin(angle)*8, this.dmg, false, '#ff0000'));
                     this.attackCd = 2.0; playSound('shoot');
-                } else if ((distPlayer < this.radius + 20 || orcInMelee) && this.type !== 'golem') { 
-                    if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { player.takeDamage(this.dmg, false, 'none', 'player', this); this.attackCd = 1.0; if(this.type === 'boss') addShake(5); playSound('hit'); }
-                } else if (distBase < this.radius + 60) { 
-                    if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { base.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.dmg); this.attackCd = 1.0; if(this.type === 'boss') addShake(8); playSound('hit'); }
+                } else if (this.type === 'goblinarcher' && len <= GOB_RANGE + 40 && !gobInMelee) {
+                    let angle = Math.atan2(dy, dx); entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*9, Math.sin(angle)*9, this.dmg, false, '#cfe36b'));
+                    this.attackCd = GOB_SHOT_CD; playSound('shoot');
+                } else if ((distPlayer < this.radius + 20 || orcInMelee || gobInMelee) && this.type !== 'golem') { 
+                    if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else {
+                        player.takeDamage(this.hitPower(), false, 'none', 'player', this);
+                        if (this.type === 'orcrider' && this.charge >= RIDER_CHARGE_LAND) {
+                            // Ridden down: shoved along the line of the charge, but never into
+                            // scenery and never off the map.
+                            let a = Math.atan2(player.y - this.y, player.x - this.x);
+                            let nx = clampWorld(player.x + Math.cos(a) * RIDER_KNOCKBACK, WORLD_W, 40);
+                            let ny = clampWorld(player.y + Math.sin(a) * RIDER_KNOCKBACK, WORLD_H, 40);
+                            if (!isCollidingWithObstacle(nx, ny, player.radius)) { player.x = nx; player.y = ny; }
+                        }
+                        this.spendCharge();
+                        this.attackCd = 1.0; if(this.type === 'boss') addShake(5); playSound('hit'); }
+                } else if (distBase < this.radius + base.radius + 10) { 
+                    if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { base.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.hitPower()); this.spendCharge(); this.attackCd = 1.0; if(this.type === 'boss') addShake(8); playSound('hit'); }
                 } else {
                     entities.towers.forEach(t => {
                         if (Math.hypot(t.x - this.x, t.y - this.y) < this.radius + 25) {
                             if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); }
-                            else { t.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.dmg); this.attackCd = 1.0;
+                            else { t.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.hitPower()); this.spendCharge(); this.attackCd = 1.0;
                                 if (t.pClass === 'warrior' && t.type === 1 && !this.isFlying) this.takeDamage(this.dmg * player.reflectMod, true);
                                 if (this.type === 'boss') addShake(3); playSound('hit');
                             }
@@ -2348,6 +2514,35 @@
             }
 
             this.animTimer += dt;
+            if (this.type === 'orcking') {
+                // Hold the overhead swing briefly after a slam, otherwise walk.
+                if (this.animTimer < 0.5 && this.frameX === 2) { /* keep the swing */ }
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 45) % 2;
+            }
+            if (this.type === 'cyclop') {
+                if (this.animTimer < 0.45 && this.frameX === 2) { /* keep the swing */ }
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 40) % 2;
+            }
+            if (this.type === 'harpy') {
+                // Wings beat on their own clock - it never stops flying.
+                if (this.attackCd > 0.7) this.frameX = 2;
+                else this.frameX = Math.floor(this.animTimer * 7) % 2;
+            }
+            if (this.type === 'troll') {
+                if (this.attackCd > 0.75) this.frameX = 2;
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 36) % 2;
+            }
+            if (this.type === 'orcrider') {
+                if (this.attackCd > 0.72) this.frameX = 2;           // axe coming down
+                else if (this.charge > 0.35) this.frameX = 1;        // warg at full stretch
+                else this.frameX = 0;
+            }
+            if (this.type === 'goblinarcher') {
+                // Same rule as the orc archer: bow at range, wolf's teeth up close.
+                if (distPlayer < GOB_MELEE_RANGE) this.frameX = 2;
+                else if (this.attackCd > GOB_SHOT_CD * 0.55) this.frameX = 1;
+                else this.frameX = 0;
+            }
             if (this.type === 'orcarcher') {
                 // Just loosed an arrow -> drawing pose; enemy in its face -> swing; else idle.
                 if (distPlayer < ORC_MELEE_RANGE) this.frameX = 2;
@@ -2381,7 +2576,11 @@
             else if (this.type === 'golem') ctx.fillStyle = '#666';
             else if (this.type === 'boss') ctx.fillStyle = '#992222';
             else if (this.type === 'orcking') ctx.fillStyle = '#5e7a3a';
-            else if (this.type === 'bat') ctx.fillStyle = '#660099';
+            else if (this.type === 'harpy') ctx.fillStyle = '#7a6a3a';
+            else if (this.type === 'goblinarcher') ctx.fillStyle = '#6e7d4a';
+            else if (this.type === 'cyclop') ctx.fillStyle = '#5f7d3e';
+            else if (this.type === 'troll') ctx.fillStyle = '#6b8a55';
+            else if (this.type === 'orcrider') ctx.fillStyle = '#4a5a3a';
             else if (this.type === 'bomber') ctx.fillStyle = Math.sin(this.flashAnim) > 0 ? '#ffaa00' : '#5b9e32';
             else if (this.type === 'predator') ctx.fillStyle = this.isAsleep ? '#335533' : '#aa0000';
             else if (this.type === 'assassin') ctx.fillStyle = '#222';
@@ -2455,6 +2654,68 @@
                 let dh = ORC_DRAW_H, dw = dh * (f.sw / f.sh);
                 ctx.drawImage(orcArcherSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, ORC_FEET - dh, dw, dh);
             }
+            else if (this.type === 'cyclop' && cyclopSprite.complete && cyclopSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                ctx.fillStyle = 'rgba(0,0,0,0.30)';
+                ctx.beginPath(); ctx.ellipse(0, CYCLOP_FEET - 8, 40, 13, 0, 0, Math.PI*2); ctx.fill();
+                drawSheetFrame(ctx, cyclopSprite, CYCLOP_FRAMES, this.frameX, 0, CYCLOP_DRAW_H, CYCLOP_FEET, 'baseline');
+            }
+            else if (this.type === 'troll' && trollSprite.complete && trollSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                ctx.fillStyle = 'rgba(0,0,0,0.28)';
+                ctx.beginPath(); ctx.ellipse(0, TROLL_FEET - 8, 32, 11, 0, 0, Math.PI*2); ctx.fill();
+                // A wounded troll glows while it knits itself back up; fire snuffs that out,
+                // so the glow doubles as the tell for whether your damage is sticking.
+                if (this.hp < this.maxHp && this.burningTimer <= 0) {
+                    ctx.save(); ctx.globalAlpha = 0.22 + Math.abs(Math.sin(performance.now()/300)) * 0.18;
+                    ctx.fillStyle = '#4dff88';
+                    ctx.beginPath(); ctx.ellipse(0, TROLL_FEET - TROLL_DRAW_H*0.45, 26, 44, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
+                drawSheetFrame(ctx, trollSprite, TROLL_FRAMES, this.frameX, 0, TROLL_DRAW_H, TROLL_FEET, 'baseline');
+            }
+            else if (this.type === 'orcrider' && orcRiderSprite.complete && orcRiderSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                ctx.fillStyle = 'rgba(0,0,0,0.28)';
+                ctx.beginPath(); ctx.ellipse(0, RIDER_FEET - 6, 33, 11, 0, 0, Math.PI*2); ctx.fill();
+                // Speed lines trailing the warg while it is up to pace, so a charge coming at
+                // you is readable before it lands rather than after.
+                if (this.charge > 0.45) {
+                    ctx.save(); ctx.globalAlpha = (this.charge - 0.45) * 1.1;
+                    ctx.strokeStyle = '#e8dcc0'; ctx.lineWidth = 2;
+                    for (let i = 0; i < 3; i++) {
+                        let ly = RIDER_FEET - 26 - i * 20, lx = -34 - i * 9;
+                        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - 20 - this.charge * 16, ly); ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+                drawSheetFrame(ctx, orcRiderSprite, RIDER_FRAMES, this.frameX, 0, RIDER_DRAW_H, RIDER_FEET, 'baseline');
+            }
+            else if (this.type === 'goblinarcher' && gobRiderSprite.complete && gobRiderSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                ctx.fillStyle = 'rgba(0,0,0,0.26)';
+                ctx.beginPath(); ctx.ellipse(0, GOB_FEET - 6, 30, 10, 0, 0, Math.PI*2); ctx.fill();
+                drawSheetFrame(ctx, gobRiderSprite, GOB_FRAMES, this.frameX, 0, GOB_DRAW_H, GOB_FEET, 'baseline');
+            }
+            else if (this.type === 'harpy' && harpySprite.complete && harpySprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                // Shadow stays on the ground while the harpy bobs above it, so it reads as
+                // airborne. The phase is per-enemy or a flock beats its wings in lockstep.
+                ctx.fillStyle = 'rgba(0,0,0,0.22)';
+                ctx.beginPath(); ctx.ellipse(0, 32, 19, 6, 0, 0, Math.PI*2); ctx.fill();
+                let bob = Math.sin(performance.now() / 190 + this.spawnPhase) * 5;
+                drawSheetFrame(ctx, harpySprite, HARPY_FRAMES, this.frameX, HARPY_REF, HARPY_DRAW_H, -HARPY_HOVER + bob, 'center');
+            }
             else if (this.type === 'goblin' && goblinSprite.complete && goblinSprite.naturalWidth !== 0) {
                 isCustomSprite = true;
                 let flip = (target.x < this.x) ? -1 : 1;
@@ -2501,7 +2762,6 @@
                 ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(15, -12, 6, 0, Math.PI*2); ctx.arc(15, 12, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#444'; ctx.fillRect(20, 20, 40, 10); 
                 if (this.bossPhaseTriggered) { ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, this.radius + 10 + Math.sin(performance.now()/100)*5, 0, Math.PI*2); ctx.stroke(); }
             }
-            if (this.type === 'bat') { ctx.fillStyle = '#ff00ff'; ctx.beginPath(); ctx.arc(3, -4, 2, 0, Math.PI*2); ctx.arc(3, 4, 2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#440066'; ctx.beginPath(); ctx.moveTo(-5, -5); ctx.lineTo(-15, -20); ctx.lineTo(0, -10); ctx.fill(); ctx.beginPath(); ctx.moveTo(-5, 5); ctx.lineTo(-15, 20); ctx.lineTo(0, 10); ctx.fill(); }
             if (this.type === 'bomber') { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(12, 0, 8, 0, Math.PI*2); ctx.fill(); }
             if (this.type === 'assassin') { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, 10); ctx.lineTo(-5, -10); ctx.fill(); }
             if (this.type === 'necromancer') { ctx.fillStyle = '#00ff00'; ctx.fillRect(0, -5, 10, 10); }
@@ -2760,7 +3020,7 @@
         if(audioCtx.state === 'suspended') audioCtx.resume(); 
         
         inventory = { wood: 50, stone: 50, mana: 20 }; wave = 1; phaseTimer = 60; totalKills = 0; gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, towers: 0 };
-        isPaused = false; waveDirection = -1; lastBearWave = -99;
+        isPaused = false; waveDirection = -1; lastBearWave = -99; lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
         achievements.forEach(a => a.unlocked = false);
         playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, forgeTowerHpMult: 1.0, hasteMod: 1.0, vampirism: false,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
@@ -2793,6 +3053,33 @@
         if (!loopRunning) { loopRunning = true; requestAnimationFrame(gameLoop); }
     }
 
+    // Neither of these keeps a schedule: a roll each night, never two nights running, and
+    // never on a boss night - a King plus a cyclops on the same wave is not a fight, it is
+    // a pile-on, and boss nights read better when the boss is the story.
+    function rollNightVisitor(type, chance, minWave, gap, label, count) {
+        if (wave < minWave || wave % 5 === 0 || wave - lastVisitorWave[type] < gap || Math.random() >= chance) return;
+        lastVisitorWave[type] = wave;
+        // A warband rides in together, not merely from the same compass point: picking a
+        // fresh ringSpawn each time scatters them a screen apart, which reads as three
+        // strays rather than a charge. Form the rest up around the leader instead.
+        let side = Math.floor(Math.random() * 4);
+        let first = ringSpawn(side);
+        entities.enemies.push(new Enemy(first.x, first.y, type));
+        for (let i = 1; i < (count || 1); i++) {
+            let px = first.x, py = first.y, placed = false;
+            for (let tryN = 0; tryN < 12 && !placed; tryN++) {
+                let a = Math.random() * Math.PI * 2, d = 55 + Math.random() * 75;
+                let cx = clampWorld(first.x + Math.cos(a) * d, WORLD_W, 60);
+                let cy = clampWorld(first.y + Math.sin(a) * d, WORLD_H, 60);
+                if (!isCollidingWithObstacle(cx, cy, 30)) { px = cx; py = cy; placed = true; }
+            }
+            if (!placed) { let alt = ringSpawn(side); px = alt.x; py = alt.y; }
+            entities.enemies.push(new Enemy(px, py, type));
+        }
+        entities.texts.push(new FloatingText(first.x, first.y - 110, label, '#ffb347'));
+        playSound('explosion'); addShake(12);
+    }
+
     function spawnWave() {
         if (wave % 5 === 0) {
             let bpos = ringSpawn(waveDirection === -1 ? Math.floor(Math.random()*4) : waveDirection);
@@ -2816,8 +3103,9 @@
             // Scaled wave spawning including new enemies
             if (wave > 0 && rand > 0.35) type = 'wolf';
             if (wave > 1 && rand > 0.5) type = 'orcarcher';
-            if (wave > 2 && rand > 0.7) type = 'bat';
-            if (wave > 3 && rand > 0.8) type = 'bomber'; 
+            if (wave > 2 && rand > 0.64) type = 'goblinarcher';
+            if (wave > 2 && rand > 0.74) type = 'harpy';
+            if (wave > 3 && rand > 0.82) type = 'bomber'; 
             if (wave > 4 && rand > 0.88) type = 'golem';
             if (wave > 5 && rand > 0.93) type = 'assassin';
             if (wave > 6 && rand > 0.97) type = 'necromancer';
@@ -2828,6 +3116,11 @@
             }
             entities.enemies.push(en);
         }
+        rollNightVisitor('cyclop', CYCLOP_CHANCE, CYCLOP_MIN_WAVE, CYCLOP_GAP, "A CYCLOPS STIRS", 1);
+        rollNightVisitor('troll', TROLL_CHANCE, TROLL_MIN_WAVE, TROLL_GAP, "A TROLL PROWLS", 1);
+        rollNightVisitor('orcrider', RIDER_CHANCE, RIDER_MIN_WAVE, RIDER_GAP, "WARG RIDERS!",
+                         RIDER_PACK_MIN + Math.floor(Math.random() * (RIDER_PACK_MAX - RIDER_PACK_MIN + 1)));
+
         waveDirection = -1; // Reset for next day
     }
 
@@ -3262,8 +3555,10 @@
         entities.resources.forEach(r => { if (r.type === 'cache') ctx.fillRect(mx(r.x)-2, my(r.y)-2, 4, 4); });
         entities.towers.forEach(t => { ctx.fillStyle = '#7ef7d8'; ctx.fillRect(mx(t.x)-1.5, my(t.y)-1.5, 3, 3); });
         entities.enemies.forEach(e => {
-            ctx.fillStyle = e.type === 'predator' ? '#ff9a3c' : (e.type === 'boss' || e.type === 'orcking' ? '#ff2b2b' : '#ff5555');
-            let sz = e.type === 'orcking' ? 8 : ((e.type === 'boss' || e.type === 'predator') ? 5 : 3);
+            ctx.fillStyle = e.type === 'predator' ? '#ff9a3c' : (e.type === 'boss' || e.type === 'orcking' ? '#ff2b2b' :
+                           (e.type === 'cyclop' || e.type === 'troll' ? '#ffb347' : (e.type === 'orcrider' ? '#ff8c42' : '#ff5555')));
+            let sz = e.type === 'orcking' ? 8 : ((e.type === 'boss' || e.type === 'predator') ? 5 :
+                     ((e.type === 'cyclop' || e.type === 'troll') ? 5 : (e.type === 'orcrider' ? 4 : 3)));
             ctx.fillRect(mx(e.x)-sz/2, my(e.y)-sz/2, sz, sz);
         });
         entities.npcs.forEach(n => { ctx.fillStyle = '#5ce1e6'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
