@@ -23,7 +23,7 @@
         
         #gameContainer { position: relative; width: 1920px; height: 1080px; transform-origin: center center; box-shadow: 0 0 50px rgba(0,0,0,1); }
         canvas { display: block; background-color: #273622; }
-        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, rgba(0,0,0,0) 40%, rgba(0,0,0,0.85) 100%); z-index: 5; }
+        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, rgba(0,0,0,0) 58%, rgba(0,0,0,0.34) 100%); z-index: 5; }
 
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle at center, rgba(20,24,18,0.88) 0%, rgba(2,3,2,0.95) 100%); z-index: 100; flex-direction: column; backdrop-filter: blur(6px); }
         .hidden { display: none !important; }
@@ -362,15 +362,15 @@
         <div class="hud-panel menu-modal">
             <h2 class="modal-title" style="color:#5ce1e6;">Wandering Merchant</h2>
             <p class="modal-sub" style="font-style: italic;">"Got some spare mana? I got the goods."</p>
-            <div class="upgrade-row"><span class="row-icon">❤️</span><div class="row-body"><strong>Heart Container (+25 Max HP)</strong><br><span style="font-size:13px; color:#aaa;">Cost: 15 Mana</span></div><button class="upgrade-btn" onclick="buyMerchant('hp')">Trade</button></div>
-            <div class="upgrade-row" style="border-color:#ff99ff;"><span class="row-icon">💍</span><div class="row-body"><strong style="color:#ff99ff;">Ring of Vampirism</strong><br><span style="font-size:13px; color:#aaa;">Heal 5% of dmg dealt. Cost: 30 Mana</span></div><button class="upgrade-btn" id="btn-ring" onclick="buyMerchant('ring')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#ff99ff;"><span class="row-icon">🧿</span><div class="row-body"><strong style="color:#ff99ff;">Amulet of Haste</strong><br><span style="font-size:13px; color:#aaa;">20% faster attacks/CDs. Cost: 30 Mana</span></div><button class="upgrade-btn" id="btn-amulet" onclick="buyMerchant('amulet')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#9ad4ff;"><span class="row-icon">🛡️</span><div class="row-body"><strong style="color:#9ad4ff;">Bulwark of the Ancients</strong><br><span style="font-size:13px; color:#aaa;">Take 15% less damage from everything. Cost: 45 Mana</span></div><button class="upgrade-btn" id="btn-bulwark" onclick="buyMerchant('bulwark')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🌵</span><div class="row-body"><strong style="color:#7ef7d8;">Cloak of Thorns</strong><br><span style="font-size:13px; color:#aaa;">Attackers take 30% of the damage back. Cost: 40 Mana</span></div><button class="upgrade-btn" id="btn-thorns" onclick="buyMerchant('thorns')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#ff9a3c;"><span class="row-icon">🎯</span><div class="row-body"><strong style="color:#ff9a3c;">Gauntlets of Precision</strong><br><span style="font-size:13px; color:#aaa;">20% chance your hits strike for double. Cost: 50 Mana</span></div><button class="upgrade-btn" id="btn-crit" onclick="buyMerchant('crit')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#6fe8ee;"><span class="row-icon">🔮</span><div class="row-body"><strong style="color:#6fe8ee;">Siphoning Band</strong><br><span style="font-size:13px; color:#aaa;">Mana regenerates twice as fast. Cost: 25 Mana</span></div><button class="upgrade-btn" id="btn-siphon" onclick="buyMerchant('siphon')">Buy</button></div>
-            <div class="upgrade-row" style="border-color:#4dff88;"><span class="row-icon">🩸</span><div class="row-body"><strong style="color:#4dff88;">Reaper's Sigil</strong><br><span style="font-size:13px; color:#aaa;">Heal 8 HP for every kill. Cost: 35 Mana</span></div><button class="upgrade-btn" id="btn-reaper" onclick="buyMerchant('reaper')">Buy</button></div>
-            <div class="upgrade-row" style="border-color: #ff00ff; background: rgba(255,0,255,0.1);"><span class="row-icon">🧪</span><div class="row-body"><strong style="color:#ff00ff;">Amnesia Potion (Reset Talents)</strong><br><span style="font-size:13px; color:#aaa;">Cost: 100 Mana</span></div><button class="upgrade-btn" style="background: linear-gradient(180deg, #ff66ff, #cc00cc); color:#2a002a;" onclick="buyMerchant('amnesia')">Drink</button></div>
+            <div class="upgrade-row"><span class="row-icon">❤️</span><div class="row-body"><strong>Heart Container (+25 Max HP)</strong><br><span style="font-size:13px; color:#aaa;">Cost: <span id="price-hp">?</span> Mana</span></div><button class="upgrade-btn" onclick="buyMerchant('hp')">Trade</button></div>
+            <div class="upgrade-row" style="border-color:#ff99ff;"><span class="row-icon">💍</span><div class="row-body"><strong style="color:#ff99ff;">Ring of Vampirism</strong><br><span style="font-size:13px; color:#aaa;">Heal 5% of dmg dealt. Cost: <span id="price-ring">?</span> Mana</span></div><button class="upgrade-btn" id="btn-ring" onclick="buyMerchant('ring')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#ff99ff;"><span class="row-icon">🧿</span><div class="row-body"><strong style="color:#ff99ff;">Amulet of Haste</strong><br><span style="font-size:13px; color:#aaa;">20% faster attacks/CDs. Cost: <span id="price-amulet">?</span> Mana</span></div><button class="upgrade-btn" id="btn-amulet" onclick="buyMerchant('amulet')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#9ad4ff;"><span class="row-icon">🛡️</span><div class="row-body"><strong style="color:#9ad4ff;">Bulwark of the Ancients</strong><br><span style="font-size:13px; color:#aaa;">Take 15% less damage from everything. Cost: <span id="price-bulwark">?</span> Mana</span></div><button class="upgrade-btn" id="btn-bulwark" onclick="buyMerchant('bulwark')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🌵</span><div class="row-body"><strong style="color:#7ef7d8;">Cloak of Thorns</strong><br><span style="font-size:13px; color:#aaa;">Attackers take 30% of the damage back. Cost: <span id="price-thorns">?</span> Mana</span></div><button class="upgrade-btn" id="btn-thorns" onclick="buyMerchant('thorns')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#ff9a3c;"><span class="row-icon">🎯</span><div class="row-body"><strong style="color:#ff9a3c;">Gauntlets of Precision</strong><br><span style="font-size:13px; color:#aaa;">20% chance your hits strike for double. Cost: <span id="price-crit">?</span> Mana</span></div><button class="upgrade-btn" id="btn-crit" onclick="buyMerchant('crit')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#6fe8ee;"><span class="row-icon">🔮</span><div class="row-body"><strong style="color:#6fe8ee;">Siphoning Band</strong><br><span style="font-size:13px; color:#aaa;">Mana regenerates twice as fast. Cost: <span id="price-siphon">?</span> Mana</span></div><button class="upgrade-btn" id="btn-siphon" onclick="buyMerchant('siphon')">Buy</button></div>
+            <div class="upgrade-row" style="border-color:#4dff88;"><span class="row-icon">🩸</span><div class="row-body"><strong style="color:#4dff88;">Reaper's Sigil</strong><br><span style="font-size:13px; color:#aaa;">Heal 8 HP for every kill. Cost: <span id="price-reaper">?</span> Mana</span></div><button class="upgrade-btn" id="btn-reaper" onclick="buyMerchant('reaper')">Buy</button></div>
+            <div class="upgrade-row" style="border-color: #ff00ff; background: rgba(255,0,255,0.1);"><span class="row-icon">🧪</span><div class="row-body"><strong style="color:#ff00ff;">Amnesia Potion (Reset Talents)</strong><br><span style="font-size:13px; color:#aaa;">Cost: <span id="price-amnesia">?</span> Mana</span></div><button class="upgrade-btn" style="background: linear-gradient(180deg, #ff66ff, #cc00cc); color:#2a002a;" onclick="buyMerchant('amnesia')">Drink</button></div>
             <div style="text-align: center;"><button class="close-btn" onclick="closeModal('merchantOverlay')">Leave Shop</button></div>
         </div>
     </div>
@@ -583,6 +583,31 @@
     const RIDER_CHARGE_LAND = 0.55;    // below this the blow counts as an ordinary swing
     const RIDER_WHEEL = 1.8, RIDER_KNOCKBACK = 46;
     const RIDER_CHANCE = 0.14, RIDER_MIN_WAVE = 5, RIDER_GAP = 3;
+
+    // --- Night lighting -----------------------------------------------------------
+    // The old pass laid down 88% near-black and punched holes in it for the player, the
+    // nexus and each tower. Anything outside a lamp radius sat at luminance 11 out of 255,
+    // which is not "dark", it is invisible - you could not read terrain, and enemies only
+    // existed once they walked into a circle. Moonlight instead: a blue-shifted wash light
+    // enough to see the ground and what is standing on it, with the lamps adding contrast
+    // on top rather than being the only reason anything is visible.
+    const NIGHT_AMBIENT       = 'rgba(14, 24, 58, 0.58)';
+    const NIGHT_AMBIENT_FOG   = 'rgba(40, 44, 58, 0.72)';
+    const NIGHT_AMBIENT_BLOOD = 'rgba(40, 5, 14, 0.78)';
+    // Lamps no longer clear the wash completely - a hole punched to full transparency reads
+    // as a daylight spotlight with a hard rim, which is what made the surrounding dark look
+    // worse than it was.
+    // Deliberately partial: clearing the wash outright leaves a circle of full-daylight
+    // grass sitting inside a blue field, which reads as a green spotlight rather than as
+    // somewhere the moonlight happens to be helped along.
+    const LIGHT_PLAYER = 330, LIGHT_PLAYER_A = 0.55;
+    const LIGHT_NEXUS  = 430, LIGHT_NEXUS_A  = 0.60;
+    const LIGHT_TOWER  = 170, LIGHT_TOWER_A  = 0.38;
+    // Lifting the ambient made the ground readable but not the things standing on it: a
+    // cyclops sat at contrast 4 against moonlit grass and a harpy at 5, because the darker
+    // art lands on the same values as the wash. Actors get picked out of the night instead
+    // of sinking into it, the way a moonlit figure actually reads.
+    const NIGHT_ACTOR_FILTER = 'brightness(1.45) saturate(1.15)';
     const RIDER_PACK_MIN = 2, RIDER_PACK_MAX = 3;
 
     // Frames on one sheet are not the same size, so scaling every pose to a fixed drawn
@@ -619,6 +644,32 @@
     // Payback was 0.75 days, which made three extractors an automatic purchase rather than
     // a choice. At 50 it is about 1.25 days, so building them costs you an early wave's defence.
     const EXTRACTOR_COST = 50;
+
+    // Forge and shop prices live here and nowhere else. Growth was 1.5 and the entire shop
+    // came to 255 mana, which is how everything was owned by night 3.
+    const FORGE_COST_GROWTH = 1.65;
+    const FORGE_COSTS = {
+        weapon:    { w: 25, s: 25 },
+        towerHp:   { s: 35, m: 14 },
+        mining:    { w: 45, m: 18 },
+        speed:     { w: 20, m: 20 },
+        whetstone: { w: 30, m: 30 },
+        nexus:     { s: 45, m: 25 }
+    };
+    function forgeCost(type) {
+        let lvl = forgeUpgrades[type].level, base = FORGE_COSTS[type], out = {};
+        for (let k in base) out[k] = Math.min(500, Math.floor(base[k] * Math.pow(FORGE_COST_GROWTH, lvl)));
+        return out;
+    }
+    const SHOP_PRICES = { hp: 30, ring: 75, amulet: 75, bulwark: 110, thorns: 95,
+                          crit: 130, siphon: 65, reaper: 90, amnesia: 150 };
+    // Quote the price from the same table that charges it.
+    function refreshShopPrices() {
+        for (let k in SHOP_PRICES) {
+            let el = document.getElementById('price-' + k);
+            if (el) el.innerText = SHOP_PRICES[k];
+        }
+    }
     // Talent tuning: each tier of a path needs TIER_STEP more points spent in that path,
     // so the capstone at tier 5 costs 10 points of commitment.
     const TP_PER_LEVEL = 2, TALENT_XP_GROWTH = 1.5, TIER_STEP = 2, PARAGON_UNLOCK = 8;
@@ -675,7 +726,8 @@
     }
 
     // Gatherable nodes start scarce and the forest thickens as the run goes on.
-    const RES_START = 55, RES_PER_DAY = 12, RES_MAX = 190;
+    const RES_START = 48, RES_PER_DAY = 8, RES_MAX = 130;
+    const MINING_YIELD_STEP = 0.3;      // five levels = 2.5x total, not 6x
     function resourceCountFor(day) { return Math.min(RES_MAX, RES_START + (day - 1) * RES_PER_DAY); }
     // The forge stands just west of the nexus - a few seconds' walk, clear of the merchant's
     // pitch to the north and of the player's spawn to the south.
@@ -1034,21 +1086,21 @@
     function openForge() { updateForgeUI(); document.getElementById('forgeOverlay').classList.remove('hidden'); }
 
     function updateForgeUI() {
-        let getCost = (baseCost, lvl) => Math.min(500, Math.floor(baseCost * Math.pow(1.5, lvl)));
-        
-        let wCostW = getCost(20, forgeUpgrades.weapon.level); let wCostS = getCost(20, forgeUpgrades.weapon.level);
-        let tCostS = getCost(30, forgeUpgrades.towerHp.level); let tCostM = getCost(10, forgeUpgrades.towerHp.level);
-        let mCostW = getCost(30, forgeUpgrades.mining.level); let mCostM = getCost(10, forgeUpgrades.mining.level);
-        let sCostW = getCost(15, forgeUpgrades.speed.level); let sCostM = getCost(15, forgeUpgrades.speed.level);
-        let whCostW = getCost(25, forgeUpgrades.whetstone.level); let whCostM = getCost(25, forgeUpgrades.whetstone.level);
-        let nxCostS = getCost(40, forgeUpgrades.nexus.level); let nxCostM = getCost(20, forgeUpgrades.nexus.level);
+        let wc = forgeCost('weapon'), tc = forgeCost('towerHp'), mc = forgeCost('mining');
+        let sc = forgeCost('speed'), whc = forgeCost('whetstone'), nxc = forgeCost('nexus');
+        let wCostW = wc.w, wCostS = wc.s;
+        let tCostS = tc.s, tCostM = tc.m;
+        let mCostW = mc.w, mCostM = mc.m;
+        let sCostW = sc.w, sCostM = sc.m;
+        let whCostW = whc.w, whCostM = whc.m;
+        let nxCostS = nxc.s, nxCostM = nxc.m;
         let repairAmt = base ? Math.min(Math.ceil(base.maxHp * REPAIR_FRACTION), Math.ceil(base.maxHp - base.hp)) : 0;
 
         const pips = (lvl, max=5) => { let h = '<span class="lvl-pips">'; for(let i=0;i<max;i++){ h += `<span class="${i<lvl?'filled':''}"></span>`; } return h + '</span>'; };
         let html = `
             <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(forgeUpgrades.weapon.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.weapon.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')" ${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             <div class="upgrade-row"><span class="row-icon">🛡️</span><div class="row-body"><strong>Tower Reinforcement (+15% HP)</strong> ${pips(forgeUpgrades.towerHp.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.towerHp.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${tCostS} Stone, ${tCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('towerHp')" ${forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
-            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+1 Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.mining.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')" ${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+30% Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.mining.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')" ${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(forgeUpgrades.speed.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.speed.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')" ${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             
             <div class="upgrade-row"><span class="row-icon">🎯</span><div class="row-body"><strong>Runed Whetstone (+5% Crit Chance)</strong> ${pips(forgeUpgrades.whetstone.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.whetstone.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${whCostW} Wood, ${whCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('whetstone')" ${forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
@@ -1157,11 +1209,10 @@
     function buyParagon() { if (player.tp > 0) { player.tp--; player.paragonPoints++; player.recalcStats(); playSound('levelup'); renderTalentMenu(); addShake(2); } }
 
     function buyForge(type) {
-        let getCost = (baseCost, lvl) => Math.min(500, Math.floor(baseCost * Math.pow(1.5, lvl)));
 
         if (type === 'weapon') {
             if (forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let cw = getCost(20, forgeUpgrades.weapon.level); let cs = getCost(20, forgeUpgrades.weapon.level);
+            let c = forgeCost('weapon'); let cw = c.w, cs = c.s;
             if (inventory.wood >= cw && inventory.stone >= cs) {
                 inventory.wood -= cw; inventory.stone -= cs;
                 forgeUpgrades.weapon.level++; playerBuffs.forgeAtkMult += 0.10; player.recalcStats(); addShake(5); playSound('pickup'); updateForgeUI();
@@ -1169,7 +1220,7 @@
         } 
         else if (type === 'towerHp') {
             if (forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let cs = getCost(30, forgeUpgrades.towerHp.level); let cm = getCost(10, forgeUpgrades.towerHp.level);
+            let c = forgeCost('towerHp'); let cs = c.s, cm = c.m;
             if (inventory.stone >= cs && inventory.mana >= cm) {
                 inventory.stone -= cs; inventory.mana -= cm;
                 forgeUpgrades.towerHp.level++; playerBuffs.forgeTowerHpMult += 0.15; entities.towers.forEach(t => t.recalcHp()); addShake(5); playSound('pickup'); updateForgeUI();
@@ -1177,15 +1228,15 @@
         }
         else if (type === 'mining') {
             if (forgeUpgrades.mining.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let cw = getCost(30, forgeUpgrades.mining.level); let cm = getCost(10, forgeUpgrades.mining.level);
+            let c = forgeCost('mining'); let cw = c.w, cm = c.m;
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.mining.level++; playerBuffs.gatherYield += 1; playSound('pickup'); updateForgeUI();
+                forgeUpgrades.mining.level++; playerBuffs.gatherYield += MINING_YIELD_STEP; playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'whetstone') {
             if (forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let cw = getCost(25, forgeUpgrades.whetstone.level); let cm = getCost(25, forgeUpgrades.whetstone.level);
+            let c = forgeCost('whetstone'); let cw = c.w, cm = c.m;
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
                 forgeUpgrades.whetstone.level++; playerBuffs.critChance += 0.05; updateTrinkets(); playSound('pickup'); updateForgeUI();
@@ -1193,7 +1244,7 @@
         }
         else if (type === 'nexus') {
             if (forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let cs = getCost(40, forgeUpgrades.nexus.level); let cm = getCost(20, forgeUpgrades.nexus.level);
+            let c = forgeCost('nexus'); let cs = c.s, cm = c.m;
             if (inventory.stone >= cs && inventory.mana >= cm) {
                 inventory.stone -= cs; inventory.mana -= cm;
                 forgeUpgrades.nexus.level++; base.maxHp += 100; base.hp += 100; addShake(5); playSound('pickup'); updateForgeUI();
@@ -1220,7 +1271,7 @@
         }
         else if (type === 'speed') {
             if (forgeUpgrades.speed.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let cw = getCost(15, forgeUpgrades.speed.level); let cm = getCost(15, forgeUpgrades.speed.level);
+            let c = forgeCost('speed'); let cw = c.w, cm = c.m;
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
                 forgeUpgrades.speed.level++; playerBuffs.speedMult += 0.05; playSound('pickup'); updateForgeUI();
@@ -1242,6 +1293,7 @@
 
     // A fresh run gets fresh stock - otherwise the buttons stay disabled from last time.
     function restockMerchant() {
+        refreshShopPrices();
         [['btn-ring','Buy'],['btn-amulet','Buy'],['btn-bulwark','Buy'],['btn-thorns','Buy'],
          ['btn-crit','Buy'],['btn-siphon','Buy'],['btn-reaper','Buy']].forEach(([id,label]) => {
             let b = document.getElementById(id);
@@ -1250,28 +1302,28 @@
     }
 
     function buyMerchant(type) {
-        if (inventory.mana >= 15 && type === 'hp') {
-            inventory.mana -= 15; playerBuffs.bonusHp += 25; player.recalcStats(); player.hp += 25; playSound('pickup'); entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
-        } else if (inventory.mana >= 30 && type === 'ring') {
-            inventory.mana -= 30; playerBuffs.vampirism = true; document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
-        } else if (inventory.mana >= 30 && type === 'amulet') {
-            inventory.mana -= 30; playerBuffs.hasteMod = 0.8; document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+        if (inventory.mana >= SHOP_PRICES.hp && type === 'hp') {
+            inventory.mana -= SHOP_PRICES.hp; playerBuffs.bonusHp += 25; player.recalcStats(); player.hp += 25; playSound('pickup'); entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
+        } else if (inventory.mana >= SHOP_PRICES.ring && type === 'ring') {
+            inventory.mana -= SHOP_PRICES.ring; playerBuffs.vampirism = true; document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+        } else if (inventory.mana >= SHOP_PRICES.amulet && type === 'amulet') {
+            inventory.mana -= SHOP_PRICES.amulet; playerBuffs.hasteMod = 0.8; document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
         } else if (type === 'bulwark' || type === 'thorns' || type === 'crit' || type === 'siphon' || type === 'reaper') {
             // One-off trinkets: pay, apply, and mark the slot sold.
             const stock = {
-                bulwark: { cost: 45, btn: 'btn-bulwark', apply: () => { playerBuffs.dmgReducMult = 0.85; player.recalcStats(); } },
-                thorns:  { cost: 40, btn: 'btn-thorns',  apply: () => { playerBuffs.thorns = 0.30; } },
-                crit:    { cost: 50, btn: 'btn-crit',    apply: () => { playerBuffs.critChance += 0.20; } },
-                siphon:  { cost: 25, btn: 'btn-siphon',  apply: () => { playerBuffs.mpRegenBonus = 2.0; } },
-                reaper:  { cost: 35, btn: 'btn-reaper',  apply: () => { playerBuffs.lifeOnKill = 8; } }
+                bulwark: { cost: SHOP_PRICES.bulwark, btn: 'btn-bulwark', apply: () => { playerBuffs.dmgReducMult = 0.85; player.recalcStats(); } },
+                thorns:  { cost: SHOP_PRICES.thorns,  btn: 'btn-thorns',  apply: () => { playerBuffs.thorns = 0.30; } },
+                crit:    { cost: SHOP_PRICES.crit,    btn: 'btn-crit',    apply: () => { playerBuffs.critChance += 0.20; } },
+                siphon:  { cost: SHOP_PRICES.siphon,  btn: 'btn-siphon',  apply: () => { playerBuffs.mpRegenBonus = 2.0; } },
+                reaper:  { cost: SHOP_PRICES.reaper,  btn: 'btn-reaper',  apply: () => { playerBuffs.lifeOnKill = 8; } }
             }[type];
             if (inventory.mana >= stock.cost) {
                 inventory.mana -= stock.cost; stock.apply();
                 let b = document.getElementById(stock.btn); b.disabled = true; b.innerText = 'Sold';
                 updateTrinkets(); playSound('levelup'); addShake(4);
             } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH MANA!", '#ff4d4d')); }
-        } else if (inventory.mana >= 100 && type === 'amnesia') {
-            inventory.mana -= 100; player.resetTalents(); playSound('explosion'); addShake(20); closeModal('merchantOverlay'); entities.texts.push(new FloatingText(960, 500, "TALENTS RESET!", '#ff00ff'));
+        } else if (inventory.mana >= SHOP_PRICES.amnesia && type === 'amnesia') {
+            inventory.mana -= SHOP_PRICES.amnesia; player.resetTalents(); playSound('explosion'); addShake(20); closeModal('merchantOverlay'); entities.texts.push(new FloatingText(960, 500, "TALENTS RESET!", '#ff00ff'));
         } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH MANA!", '#ff4d4d')); }
     }
     
@@ -1544,8 +1596,13 @@
                                      (this.type === 'troll' ? 100 : (this.type === 'orcrider' ? 55 : (this.type === 'golem' ? 30 : (this.type === 'bomber'? 20 : 10))))));
                         player.gainXp(xpDrop * (currentWeather==='bloodmoon'?3:1));
                         
+                        // Trash mana creeps up with the waves. Raising forge and shop prices without
+                        // this would leave mana the permanent bottleneck on everything and a long run
+                        // unable to finish the tree at all. It does not compound the way the pickaxe
+                        // did - you earn it by killing more, which is the loop already being asked of you.
+                        let trashMana = 2 + Math.floor(wave / 5);
                         let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'cyclop' ? 35 :
-                                       (this.type === 'troll' ? 25 : (this.type === 'orcrider' ? 12 : (this.type === 'golem' ? 5 : 2)))));
+                                       (this.type === 'troll' ? 25 : (this.type === 'orcrider' ? 12 : (this.type === 'golem' ? 5 : trashMana)))));
                         manaDrop *= (currentWeather==='bloodmoon'?3:1);
                         inventory.mana += manaDrop; player.mp = Math.min(player.maxMp, player.mp + 5);
 
@@ -2054,7 +2111,7 @@
                     inventory.wood += 2; inventory.stone += 2;
                     entities.texts.push(new FloatingText(this.x, this.y - 20, "+4 Res", '#ffcc00'));
                     playSound('pickup');
-                    this.tick = 3.0; 
+                    this.tick = 4.0; 
                 }
             }
             if (this.type === 4) {
@@ -2568,6 +2625,7 @@
             if (this.type === 'assassin' && this.isInvisible) return;
 
             ctx.save(); ctx.translate(this.x, this.y); 
+            if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
             let target = (this.type === 'golem') ? base : (Math.hypot(base.x - this.x, base.y - this.y) < Math.hypot(player.x - this.x, player.y - this.y) ? base : player);
             
             if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
@@ -3206,7 +3264,7 @@
                                 forgeUpgrades[chosen].level++;
                                 if (chosen === 'weapon') { playerBuffs.forgeAtkMult += 0.1; player.recalcStats(); }
                                 if (chosen === 'towerHp') { playerBuffs.forgeTowerHpMult += 0.15; entities.towers.forEach(t=>t.recalcHp()); }
-                                if (chosen === 'mining') { playerBuffs.gatherYield += 1; }
+                                if (chosen === 'mining') { playerBuffs.gatherYield += MINING_YIELD_STEP; }
                                 if (chosen === 'speed') { playerBuffs.speedMult += 0.05; }
                                 entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); updateForgeUI();
                             }
@@ -3218,7 +3276,9 @@
                             
                             if(r.hp <= 0) {
                                 r.markedForDeletion = true;
-                                let amt = 5 * playerBuffs.gatherYield;
+                                // gatherYield is fractional now, so round here or the counters
+                                // start showing half a log.
+                                let amt = Math.round(5 * playerBuffs.gatherYield);
                                 if(r.type === 'wood') { inventory.wood += amt; gameStats.wood += amt; if (gameStats.wood >= 50) checkAchievement('lumberjack'); } 
                                 else { inventory.stone += amt; gameStats.stone += amt; if (gameStats.stone >= 50) checkAchievement('mason'); }
                             }
@@ -3491,22 +3551,37 @@
         ctx.restore();                           // ---- back to SCREEN SPACE ----
 
         if (gameState === 'NIGHT') {
+            // Clear first: the wash is semi-transparent, so source-over would lay this frame's
+            // layer on top of last frame's residue and compound toward solid black. The old
+            // 0.88 fill hid that by saturating on the second frame - a lighter wash does not.
+            lctx.clearRect(0, 0, VIEW_W, VIEW_H);
             lctx.globalCompositeOperation = 'source-over';
-            lctx.fillStyle = currentWeather === 'fog' ? 'rgba(30, 30, 30, 0.95)' : 'rgba(5, 5, 15, 0.88)';
+            lctx.fillStyle = currentWeather === 'fog' ? NIGHT_AMBIENT_FOG
+                           : (currentWeather === 'bloodmoon' ? NIGHT_AMBIENT_BLOOD : NIGHT_AMBIENT);
             lctx.fillRect(0, 0, VIEW_W, VIEW_H);
             lctx.globalCompositeOperation = 'destination-out';
 
             // The light canvas is viewport-sized, so world positions come in camera-relative.
-            let visMod = currentWeather === 'fog' ? 0.5 : 1.0;
-            drawLight(lctx, player.x - cam.x, player.y - cam.y, 300 * visMod, 'rgba(255,255,255,1)');
-            drawLight(lctx, base.x - cam.x, base.y - cam.y, 400 * visMod, 'rgba(255,255,255,1)');
-            entities.towers.forEach(t => drawLight(lctx, t.x - cam.x, t.y - cam.y, 150 * visMod, 'rgba(255,255,255,0.8)'));
-            entities.projectiles.forEach(p => drawLight(lctx, p.x - cam.x, p.y - cam.y, 100 * visMod, 'rgba(255,255,255,0.8)'));
-            entities.effects.forEach(ef => drawLight(lctx, ef.x - cam.x, ef.y - cam.y, ef.radius + 50, 'rgba(255,255,255,1)'));
-            entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x - cam.x, e.y - cam.y, 80, 'rgba(255,255,255,0.5)'); });
+            // Fog still cuts your range, but not to the point of playing blind.
+            let visMod = currentWeather === 'fog' ? 0.62 : 1.0;
+            drawLight(lctx, player.x - cam.x, player.y - cam.y, LIGHT_PLAYER * visMod, 'rgba(255,255,255,' + LIGHT_PLAYER_A + ')');
+            drawLight(lctx, base.x - cam.x, base.y - cam.y, LIGHT_NEXUS * visMod, 'rgba(255,255,255,' + LIGHT_NEXUS_A + ')');
+            entities.towers.forEach(t => { if (inView(t.x, t.y, LIGHT_TOWER)) drawLight(lctx, t.x - cam.x, t.y - cam.y, LIGHT_TOWER * visMod, 'rgba(255,255,255,' + LIGHT_TOWER_A + ')'); });
+            entities.projectiles.forEach(p => drawLight(lctx, p.x - cam.x, p.y - cam.y, 100 * visMod, 'rgba(255,255,255,0.55)'));
+            entities.effects.forEach(ef => drawLight(lctx, ef.x - cam.x, ef.y - cam.y, ef.radius + 50, 'rgba(255,255,255,0.85)'));
+            entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x - cam.x, e.y - cam.y, 80, 'rgba(255,255,255,0.45)'); });
             ctx.drawImage(lightCanvas, 0, 0);
 
-            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+            // A touch of colour thrown back by the things that are actually glowing, so the
+            // scene reads as lit by something rather than merely tinted blue.
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.translate(-cam.x, -cam.y);
+            drawLight(ctx, base.x, base.y, 300, 'rgba(120,160,255,0.10)');
+            entities.towers.forEach(t => { if (inView(t.x, t.y, 130)) drawLight(ctx, t.x, t.y, 120, 'rgba(255,178,92,0.06)'); });
+            ctx.restore();
+
+            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.05)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
         }
 
         // Floating combat text sits above the darkness but still tracks the world.
