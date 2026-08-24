@@ -69,7 +69,6 @@
         #phaseAnnouncer { position: absolute; top: 68px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
         #phaseText { font-family: var(--font-head); font-size: 30px; font-weight: 700; text-shadow: 0 2px 8px rgba(0,0,0,0.9), 0 0 18px rgba(255,255,255,0.15); color: #fff; margin-bottom: 6px; letter-spacing: 1px; }
         #weatherText { font-size: 18px; color: #ff99ff; font-weight: 700; margin-bottom: 8px; text-shadow: 1px 1px 3px #000; }
-        #forgePrompt { font-size: 15px; color: var(--gold-bright); text-shadow: 1px 1px 3px #000; font-weight: 700; background: rgba(0,0,0,0.45); padding: 5px 14px; border-radius: 20px; border: 1px solid var(--panel-border-dim); letter-spacing: 0.5px; }
         
         .action-btn { font-family: var(--font-head); background: linear-gradient(180deg, var(--gold-bright), var(--gold-dim)); color: #1a1200; border: 1px solid #a9822f; padding: 8px 22px; font-size: 15px; font-weight: 700; border-radius: 6px; cursor: pointer; transition: 0.2s; pointer-events: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
         .action-btn:hover { background: linear-gradient(180deg, #fff3c9, var(--gold)); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 14px rgba(255,230,150,0.5); }
@@ -294,7 +293,6 @@
             <div id="phaseText">DAY PHASE (60s)</div>
             <div id="weatherText"></div>
             <button id="earlyNightBtn" class="action-btn" onclick="startNightEarly()">Start Night Early</button>
-            <div id="forgePrompt">[R] Forge &amp; Merchant &nbsp;•&nbsp; [T] Talents <span id="ui-tp-hint" style="color:#00ffcc;"></span></div>
         </div>
         
         <div id="controlHint">
@@ -347,6 +345,15 @@
     </div>
 
     <!-- Crafting Forge -->
+
+    <div id="campOverlay" class="overlay hidden">
+        <div class="hud-panel menu-modal">
+            <h2 class="modal-title" style="color:#c8e06a;">Hunter's Camp</h2>
+            <p class="modal-sub" style="font-style: italic;">"Wood and stone. Keep your mana for the wizards."</p>
+            <div id="campContent"></div>
+            <div style="text-align: center;"><button class="close-btn" onclick="closeModal('campOverlay')">Leave Camp</button></div>
+        </div>
+    </div>
 
     <div id="forgeOverlay" class="overlay hidden">
         <div class="hud-panel menu-modal">
@@ -624,6 +631,127 @@
     const WANDER_SPEED = 1.15;                  // slower than the player, so you can catch him
     const WANDER_PAUSE_MIN = 1.5, WANDER_PAUSE_MAX = 4.0;
     const TALK_RANGE = 130, TALK_BUBBLE_TIME = 6.5;
+
+    // --- Hunter's camp ------------------------------------------------------------
+    // A fixed landmark rather than a random scatter, so it is somewhere you can learn and
+    // come back to. generateMap wipes decorations every dawn, so it is re-laid each time at
+    // the same spot. npc3's sheet is IDLE / WALK / ATTACK with the words underneath, and
+    // only the idle pose is used - cropped above the caption band like the others.
+    const tentSprite  = new Image(); tentSprite.src  = 'assets/textures/buildings/tent.png';
+    const npc3Sprite  = new Image(); npc3Sprite.src  = 'assets/textures/npc/npc3.png';
+    const TENT_CROP = { sx: 85, sy: 44, sw: 336, sh: 276 };
+    const NPC3_IDLE = { sx: 61, sy: 31, sw: 193, sh: 289 };
+    const TENT_H = 140, TENT_FEET = 18, TENT_SOLID = 52;
+    const NPC3_H = 120, NPC3_FEET = 22;
+    // Clear of all three ponds - checked, not guessed.
+    const CAMP_X = WORLD_CX + 1250, CAMP_Y = WORLD_CY + 900;
+    const CAMP_NPC_X = CAMP_X - 34, CAMP_NPC_Y = CAMP_Y + 58;
+    const CAMP_RANGE = 130;
+    // The hunter deals in wood and stone, not mana. That is deliberate: the merchant and the
+    // forge both compete for mana, while wood and stone pile up unspent by the middle of a
+    // run, so the camp is where the surplus goes.
+    const CAMP_COST_GROWTH = 1.6;
+    const CAMP_COSTS = {
+        jerkin: { w: 35, s: 45, max: 5, label: 'Boar-Hide Jerkin',  effect: '+25 Max HP' },
+        haft:   { w: 55, s: 30, max: 4, label: 'Reinforced Haft',   effect: '+8% Damage' },
+        stride: { w: 40, s: 30, max: 3, label: "Hunter's Stride",   effect: '+6% Move Speed' }
+    };
+    const CAMP_RATIONS  = { w: 35, s: 0 };     // once a day
+    const CAMP_SKINNING = { w: 70, s: 90 };
+    const CAMP_BEASTCALL= { w: 95, s: 75 };
+    function campCost(type) {
+        let b = CAMP_COSTS[type], lvl = campUpgrades[type].level;
+        return { w: Math.min(400, Math.floor(b.w * Math.pow(CAMP_COST_GROWTH, lvl))),
+                 s: Math.min(400, Math.floor(b.s * Math.pow(CAMP_COST_GROWTH, lvl))) };
+    }
+
+    // --- The last five without art -------------------------------------------------
+    // Each sheet is three poses: two walk frames and one attack. Frames touch on these, so
+    // the crops come from the real blank columns rather than even quarters, and above the
+    // caption band where there is one.
+    const golemSprite    = new Image(); golemSprite.src    = 'assets/textures/enemies/golem.png';
+    const bomberSprite   = new Image(); bomberSprite.src   = 'assets/textures/enemies/bomber.png';
+    const assassinSprite = new Image(); assassinSprite.src = 'assets/textures/enemies/asassin.png';
+    const healerSprite   = new Image(); healerSprite.src   = 'assets/textures/enemies/healer.png';
+    const minotaurSprite = new Image(); minotaurSprite.src = 'assets/textures/enemies/minotaur.png';
+    const GOLEM_FRAMES = [
+        { sx: 16,  sy: 65, sw: 205, sh: 206 }, { sx: 274, sy: 68, sw: 199, sh: 205 },
+        { sx: 571, sy: 30, sw: 192, sh: 249 }
+    ];
+    const BOMBER_FRAMES = [
+        { sx: 44,  sy: 45, sw: 196, sh: 277 }, { sx: 244, sy: 45, sw: 186, sh: 276 },
+        { sx: 433, sy: 3,  sw: 244, sh: 323 }      // mid-detonation
+    ];
+    // These two sheets caption at the TOP, not the bottom - taking the frame bounds without
+    // allowing for that dragged "GOBLIN ASSASSIN" into frames 1 and 2 and made the sprite
+    // grow 23% mid-walk.
+    const ASSASSIN_FRAMES = [
+        { sx: 24,  sy: 74, sw: 205, sh: 275 }, { sx: 252, sy: 74, sw: 204, sh: 275 },
+        { sx: 458, sy: 80, sw: 219, sh: 269 }
+    ];
+    const HEALER_FRAMES = [
+        { sx: 33,  sy: 69, sw: 211, sh: 278 }, { sx: 270, sy: 68, sw: 191, sh: 279 },
+        { sx: 505, sy: 63, sw: 166, sh: 284 }      // channelling
+    ];
+    const MINOTAUR_FRAMES = [
+        { sx: 17,  sy: 54, sw: 223, sh: 234 }, { sx: 270, sy: 57, sw: 216, sh: 233 },
+        { sx: 525, sy: 39, sw: 202, sh: 257 }
+    ];
+    const GOLEM_H    = 118, GOLEM_FEET    = 32;
+    const BOMBER_H   = 88,  BOMBER_FEET   = 24;
+    const ASSASSIN_H = 92,  ASSASSIN_FEET = 25;
+    const HEALER_H   = 96,  HEALER_FEET   = 26;
+    const MINOTAUR_H = 190, MINOTAUR_FEET = 52;
+    const BOMBER_FUSE = 90;     // how close before it shows the blast frame
+    const HEAL_FRACTION = 0.18; // a healer's tick, as a share of the patient's max hp
+
+    // --- Wayfarer contracts -------------------------------------------------------
+    // One at a time, taken and handed in by talking to him. Paid in mana and experience,
+    // never wood or stone: mana is the shop currency the economy pass made scarce, so a
+    // contract is a reason to go out and fight rather than a second gathering loop. Kept small
+    // on purpose: at one hand-in a day the original numbers roughly doubled mana income and
+    // would have undone the economy pass, so experience is the headline reward instead.
+    // `kind` says which list the kill is counted from - wildlife and monsters are separate
+    // arrays and always have been.
+    const QUESTS = [
+        { id:'boar',    kind:'critter', target:'boar',         need:3,  mana:16  ,  xp:70,   minWave:1,
+          give:"Boar have been rooting through my cache. Put down three and I'll make it worth the walk.",
+          done:"That's the three. Here - you've earned it." },
+        { id:'rabbit',  kind:'critter', target:'rabbit',       need:5,  mana:12  ,  xp:50,   minWave:1,
+          give:"Five hares would keep me fed a week. Bring me the count and I'll pay.",
+          done:"Five. You've a quicker hand than I do." },
+        { id:'deer',    kind:'critter', target:'deer',         need:4,  mana:20  ,  xp:90,   minWave:2,
+          give:"Four deer. I need the hides more than the meat, so mind you don't waste them.",
+          done:"Four hides. That'll see me through the cold." },
+        { id:'goblin',  kind:'enemy',   target:'goblin',       need:12, mana:18  ,  xp:110,  minWave:1,
+          give:"Twelve goblins. They're the least of what's out there, but they're the ones that never stop.",
+          done:"Twelve fewer. It won't last, but it helps." },
+        { id:'wolf',    kind:'enemy',   target:'wolf',         need:10, mana:19  ,  xp:120,  minWave:1,
+          give:"The wolves are running with them now. Thin the pack - ten should do it.",
+          done:"The pack's thinner. Take this." },
+        { id:'orcarch', kind:'enemy',   target:'orcarcher',    need:8,  mana:24  ,  xp:150,  minWave:2,
+          give:"Their archers are the ones killing you at range. Eight of them, and mind the arrows.",
+          done:"Eight bows quieted. Good." },
+        { id:'gobarch', kind:'enemy',   target:'goblinarcher', need:8,  mana:26  ,  xp:165,  minWave:3,
+          give:"Wolf-riders. Fast, and they don't stand still to be hit. Eight.",
+          done:"Eight riders down. That's proper work." },
+        { id:'harpy',   kind:'enemy',   target:'harpy',        need:6,  mana:25  ,  xp:160,  minWave:3,
+          give:"Six of the winged ones. Your traps won't help you - they never touch the ground.",
+          done:"Six out of the air. Not many manage that." },
+        { id:'golem',   kind:'enemy',   target:'golem',        need:5,  mana:32  ,  xp:210,  minWave:5,
+          give:"Five stone golems. Slow, but you'll need something with weight behind it.",
+          done:"Five broken open. Here." },
+        { id:'troll',   kind:'enemy',   target:'troll',        need:1,  mana:48  ,  xp:320,  minWave:5,
+          give:"A troll walks these woods. Kill it - and remember, fire is what stops it mending.",
+          done:"You killed the troll. I did not truly think you would." },
+        { id:'cyclop',  kind:'enemy',   target:'cyclop',       need:1,  mana:52  , xp:360,  minWave:4,
+          give:"There's a one-eyed brute out there. Bring me word that it's dead.",
+          done:"The brute is down. Take this and my thanks." },
+        { id:'rider',   kind:'enemy',   target:'orcrider',     need:4,  mana:42  ,  xp:300,  minWave:6,
+          give:"Four warg riders. Catch them before they build up speed, or they'll ride you down.",
+          done:"Four riders unhorsed. That's a hard-won thing." }
+    ];
+    let activeQuest = null;
 
     // --- Wildlife -----------------------------------------------------------------
     // Passive: they never attack and nothing hunts them. Hit one and it bolts. Each sheet
@@ -921,6 +1049,9 @@
     let waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
     let lastBearWave = -99;
     let lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
+    let campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
+    let campOneOffs = { skinning: false, beastcall: false };
+    let campRationsDay = -1;
     let gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, towers: 0 };
     let achievements = [
         { id: 'first_blood', name: 'First Blood', desc: 'Slay your first enemy.', unlocked: false },
@@ -1130,6 +1261,78 @@
 
     function openTalentMenu() { document.getElementById('talentOverlay').classList.remove('hidden'); renderTalentMenu(); }
     
+    function updateCampUI() {
+        const rows = [];
+        const pips = (lvl, max) => { let h = '<span class="lvl-pips">'; for (let i=0;i<max;i++) h += `<span class="${i<lvl?'filled':''}"></span>`; return h + '</span>'; };
+        for (const key in CAMP_COSTS) {
+            const d = CAMP_COSTS[key], lvl = campUpgrades[key].level, c = campCost(key);
+            const maxed = lvl >= d.max;
+            const icon = { jerkin: '🛡️', haft: '🔨', stride: '👣' }[key];
+            rows.push(`<div class="upgrade-row"><span class="row-icon">${icon}</span><div class="row-body">
+                <strong>${d.label} (${d.effect})</strong> ${pips(lvl, d.max)}
+                <span style="font-size:11px;color:#c8e06a;">${lvl}/${d.max}</span><br>
+                <span style="font-size:13px; color:#aaa;">${maxed ? 'Nothing more to fit.' : `Cost: ${c.w} Wood, ${c.s} Stone`}</span>
+                </div><button class="upgrade-btn" onclick="buyCamp('${key}')" ${maxed?'disabled':''}>${maxed?'Max':'Buy'}</button></div>`);
+        }
+        const usedToday = campRationsDay === wave;
+        rows.push(`<hr style="border-color:#3a3a34; margin:18px 0;">`);
+        rows.push(`<div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🍖</span><div class="row-body">
+            <strong style="color:#7ef7d8;">Trail Rations</strong><br><span style="font-size:13px;color:#aaa;">
+            ${usedToday ? 'You have eaten today. Come back tomorrow.' : `Restores all health and mana. Once a day • ${CAMP_RATIONS.w} Wood`}</span>
+            </div><button class="upgrade-btn" onclick="buyCamp('rations')" ${usedToday?'disabled':''}>${usedToday?'Used':'Eat'}</button></div>`);
+        rows.push(`<div class="upgrade-row" style="border-color:#ffb347;"><span class="row-icon">🔪</span><div class="row-body">
+            <strong style="color:#ffb347;">Skinning Knife</strong><br><span style="font-size:13px;color:#aaa;">
+            Every beast you fell leaves meat. Cost: ${CAMP_SKINNING.w} Wood, ${CAMP_SKINNING.s} Stone</span>
+            </div><button class="upgrade-btn" onclick="buyCamp('skinning')" ${campOneOffs.skinning?'disabled':''}>${campOneOffs.skinning?'Bought':'Buy'}</button></div>`);
+        rows.push(`<div class="upgrade-row" style="border-color:#ffb347;"><span class="row-icon">📯</span><div class="row-body">
+            <strong style="color:#ffb347;">Beast Caller</strong><br><span style="font-size:13px;color:#aaa;">
+            Wounded game stands its ground instead of bolting. Cost: ${CAMP_BEASTCALL.w} Wood, ${CAMP_BEASTCALL.s} Stone</span>
+            </div><button class="upgrade-btn" onclick="buyCamp('beastcall')" ${campOneOffs.beastcall?'disabled':''}>${campOneOffs.beastcall?'Bought':'Buy'}</button></div>`);
+        document.getElementById('campContent').innerHTML = rows.join('');
+    }
+    function openCamp() { updateCampUI(); document.getElementById('campOverlay').classList.remove('hidden'); }
+    function buyCamp(type) {
+        const pay = (w, s) => {
+            if (inventory.wood < w || inventory.stone < s) {
+                playSound('error');
+                entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d'));
+                return false;
+            }
+            inventory.wood -= w; inventory.stone -= s; return true;
+        };
+        if (CAMP_COSTS[type]) {
+            const d = CAMP_COSTS[type];
+            if (campUpgrades[type].level >= d.max) { playSound('error'); return; }
+            const c = campCost(type);
+            if (!pay(c.w, c.s)) return;
+            campUpgrades[type].level++;
+            if (type === 'jerkin') { playerBuffs.bonusHp += 25; player.recalcStats(); player.hp += 25; }
+            if (type === 'haft')   { playerBuffs.forgeAtkMult += 0.08; player.recalcStats(); }
+            if (type === 'stride') { playerBuffs.speedMult += 0.06; }
+            playSound('pickup'); addShake(4);
+        }
+        else if (type === 'rations') {
+            if (campRationsDay === wave) { playSound('error'); return; }
+            if (!pay(CAMP_RATIONS.w, CAMP_RATIONS.s)) return;
+            campRationsDay = wave;
+            player.hp = player.maxHp; player.mp = player.maxMp;
+            entities.texts.push(new FloatingText(player.x, player.y - 50, "FED AND RESTED", '#7ef7d8'));
+            spawnParticles(player.x, player.y, '#7ef7d8', 18);
+            playSound('levelup');
+        }
+        else if (type === 'skinning') {
+            if (campOneOffs.skinning) { playSound('error'); return; }
+            if (!pay(CAMP_SKINNING.w, CAMP_SKINNING.s)) return;
+            campOneOffs.skinning = true; playSound('levelup'); addShake(4);
+        }
+        else if (type === 'beastcall') {
+            if (campOneOffs.beastcall) { playSound('error'); return; }
+            if (!pay(CAMP_BEASTCALL.w, CAMP_BEASTCALL.s)) return;
+            campOneOffs.beastcall = true; playSound('levelup'); addShake(4);
+        }
+        updateCampUI(); updateTrinkets();
+    }
+
     function openForge() { updateForgeUI(); document.getElementById('forgeOverlay').classList.remove('hidden'); }
 
     function updateForgeUI() {
@@ -1455,9 +1658,15 @@
     // quietly undo it.
     class Wanderer {
         constructor() {
-            let a = Math.random() * Math.PI * 2, d = 500 + Math.random() * 1700;
-            this.x = clampWorld(WORLD_CX + Math.cos(a) * d, WORLD_W, 150);
-            this.y = clampWorld(WORLD_CY + Math.sin(a) * d, WORLD_H, 150);
+            // He is built after generateMap has already scattered the trees, so the spot has
+            // to be checked here - dropped inside a trunk he can never walk out of it.
+            this.x = WORLD_CX; this.y = WORLD_CY - 400;
+            for (let t = 0; t < 40; t++) {
+                let a = Math.random() * Math.PI * 2, d = 500 + Math.random() * 1700;
+                let nx = clampWorld(WORLD_CX + Math.cos(a) * d, WORLD_W, 150);
+                let ny = clampWorld(WORLD_CY + Math.sin(a) * d, WORLD_H, 150);
+                if (!isCollidingWithObstacle(nx, ny, 20)) { this.x = nx; this.y = ny; break; }
+            }
             this.radius = 20; this.isShop = false; this.markedForDeletion = false;
             this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = false;
             this.pause = 0; this.bubble = 0; this.line = '';
@@ -1473,9 +1682,20 @@
         }
         talk() {
             this.bubble = TALK_BUBBLE_TIME;
-            this.line = wayfarerLine();
             this.pause = Math.max(this.pause, 2.0);      // he stops to speak to you
-            playSound('pickup');
+            if (!activeQuest) {
+                let q = questOffer();
+                startQuest(q);
+                this.line = q.give;
+                playSound('levelup');
+            } else if (activeQuest.have >= activeQuest.need) {
+                this.line = turnInQuest();
+            } else {
+                // Still working: remind them what for, and pay the walk back with a rumour.
+                let left = activeQuest.need - activeQuest.have;
+                this.line = left + " more to go. " + wayfarerLine();
+                playSound('pickup');
+            }
         }
         update(dt) {
             if (this.bubble > 0) this.bubble -= dt;
@@ -1555,6 +1775,70 @@
         }
     }
 
+    function questOffer() {
+        let pool = QUESTS.filter(q => wave >= q.minWave);
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+    function startQuest(q) {
+        activeQuest = { id: q.id, kind: q.kind, target: q.target, need: q.need,
+                        have: 0, mana: q.mana, xp: q.xp, label: q.id };
+        updateQuestUI();
+    }
+    // Called from both death paths. Wildlife and monsters live in different arrays, so the
+    // kind has to match too or hunting rabbits would tick a goblin contract.
+    function questKill(kind, type) {
+        if (!activeQuest || activeQuest.have >= activeQuest.need) return;
+        if (activeQuest.kind !== kind || activeQuest.target !== type) return;
+        activeQuest.have++;
+        updateQuestUI();
+        if (activeQuest.have >= activeQuest.need) {
+            entities.texts.push(new FloatingText(player.x, player.y - 70, "CONTRACT COMPLETE", '#4dff88'));
+            playSound('levelup');
+        }
+    }
+    const QUEST_NOUN = { boar:'Boar', rabbit:'Hares', deer:'Deer', goblin:'Goblins', wolf:'Wolves',
+                         orcarcher:'Orc Archers', goblinarcher:'Wolf Riders', harpy:'Harpies',
+                         golem:'Golems', troll:'Troll', cyclop:'Cyclops', orcrider:'Warg Riders' };
+    function updateQuestUI() { /* the tracker is drawn on the canvas - nothing to sync */ }
+    // Anchored to the minimap's own box so the two can never drift apart.
+    function drawQuestTracker(ctx) {
+        if (!activeQuest) return;
+        let done = activeQuest.have >= activeQuest.need;
+        let noun = QUEST_NOUN[activeQuest.target] || activeQuest.target;
+        let title = 'HUNT ' + noun.toUpperCase();
+        let count = activeQuest.have + ' / ' + activeQuest.need;
+        let x = MM_X, y = MM_Y + MM_H + 10, w = MM_W, h = 46;
+        ctx.save();
+        ctx.fillStyle = 'rgba(9,11,8,0.92)'; ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = done ? 'rgba(77,255,136,0.75)' : 'rgba(217,178,92,0.55)';
+        ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = done ? '#4dff88' : '#e8d8a8';
+        ctx.fillRect(x, y, 3, h);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#a08d5c'; ctx.font = 'bold 10px Arial';
+        ctx.fillText('WAYFARER CONTRACT', x + 12, y + 15);
+        ctx.fillStyle = done ? '#9dffc4' : '#e8d8a8'; ctx.font = 'bold 14px Arial';
+        ctx.fillText(done ? title + ' - RETURN TO HIM' : title, x + 12, y + 34);
+        if (!done) {
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#fff2c8'; ctx.font = 'bold 14px Arial';
+            ctx.fillText(count, x + w - 12, y + 34);
+        }
+        ctx.restore();
+    }
+    function turnInQuest() {
+        let def = QUESTS.find(q => q.id === activeQuest.id);
+        inventory.mana += activeQuest.mana;
+        player.gainXp(activeQuest.xp);
+        entities.texts.push(new FloatingText(player.x, player.y - 60, "+" + activeQuest.mana + " MANA", '#00ffcc'));
+        entities.texts.push(new FloatingText(player.x, player.y - 90, "+" + activeQuest.xp + " XP", '#ffe066'));
+        spawnParticles(player.x, player.y, '#e8d8a8', 20);
+        playSound('levelup'); addShake(5);
+        activeQuest = null;
+        updateQuestUI();
+        return def.done;
+    }
+
     // What he actually knows. Weighted toward tonight's specifics when there are any, so
     // talking to him is worth the walk rather than being flavour text.
     function wayfarerLine() {
@@ -1606,14 +1890,15 @@
         takeDamage(amount) {
             if (this.markedForDeletion) return;
             this.hp -= amount;
-            this.fleeTimer = CRITTER_FLEE_TIME;
-            this.pause = 0;
+            // The Beast Caller keeps wounded game where it stands.
+            if (!campOneOffs.beastcall) { this.fleeTimer = CRITTER_FLEE_TIME; this.pause = 0; }
             spawnParticles(this.x, this.y, '#8f3a3a', 4);
             if (this.hp <= 0) {
                 this.markedForDeletion = true;
+                questKill('critter', this.type);
                 spawnParticles(this.x, this.y, '#8f3a3a', 16);
                 playSound('hit');
-                if (Math.random() < this.def.meat) entities.items.push(new Item(this.x, this.y, 'hp'));
+                if (campOneOffs.skinning || Math.random() < this.def.meat) entities.items.push(new Item(this.x, this.y, 'hp'));
             }
         }
         update(dt) {
@@ -1661,8 +1946,7 @@
             ctx.save();
             ctx.translate(this.x, this.y);
             if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
-            ctx.fillStyle = 'rgba(0,0,0,0.22)';
-            ctx.beginPath(); ctx.ellipse(0, d.feet - 4, d.h * 0.30, d.h * 0.10, 0, 0, Math.PI*2); ctx.fill();
+            // boar, deer and rabbit all has a shadow baked into the sprite already.
             ctx.scale(this.facing, 1);
             if (d.sprite.complete && d.sprite.naturalWidth !== 0) {
                 drawSheetFrame(ctx, d.sprite, d.frames, this.frame, 0, d.h, d.feet, 'baseline');
@@ -1877,6 +2161,7 @@
 
                 if (this instanceof Enemy) {
                     gameStats.kills++; totalKills++;
+                    questKill('enemy', this.type);
                     if (totalKills === 1) checkAchievement('first_blood');
                     
                     if (this.type === 'predator') {
@@ -2589,10 +2874,13 @@
             if (this.type === 'bomber') { this.hp *= 0.8; this.baseSpd *= 1.2; }
             if (this.type === 'predator') { this.hp = Math.floor(PREDATOR_BASE_HP * Math.pow(PREDATOR_HP_GROWTH, wave - 1)); this.baseSpd = 4 + Math.min(wave - 1, 10) * 0.06; this.isAsleep = true; }
             if (this.type === 'assassin') { this.hp *= 0.5; this.baseSpd *= 1.8; this.isInvisible = true; }
-            if (this.type === 'necromancer') { this.hp *= 0.8; this.baseSpd *= 0.7; this.healCd = 2.0; }
+            if (this.type === 'necromancer') { this.hp *= 0.8; this.baseSpd *= 0.7; this.healCd = 2.0; this.castAnim = 0; }
             if (this.type === 'wolf') { this.hp *= 0.7; this.baseSpd *= 1.4; }
             
-            if (this.type === 'boss' || this.type === 'golem' || this.type === 'orcking') {
+            if (this.type === 'golem') {
+                this.aura = 'speed';        // a war-drum, never a medic
+                this.auraPulse = 0;
+            } else if (this.type === 'boss' || this.type === 'orcking') {
                 this.aura = Math.random() > 0.5 ? 'heal' : 'speed';
                 this.auraPulse = 0;
             } else {
@@ -2719,11 +3007,10 @@
                 let healTarget = null;
                 let lowestHpRatio = 1.0;
                 entities.enemies.forEach(e => {
-                    if ((e.type === 'golem' || e.type === 'boss') && e.hp < e.maxHp) {
-                        if (e.hp / e.maxHp < lowestHpRatio) {
-                            lowestHpRatio = e.hp / e.maxHp;
-                            healTarget = e;
-                        }
+                    if (e === this || e.markedForDeletion || e.hp >= e.maxHp) return;
+                    if (e.hp / e.maxHp < lowestHpRatio) {
+                        lowestHpRatio = e.hp / e.maxHp;
+                        healTarget = e;
                     }
                 });
                 if (healTarget) {
@@ -2827,12 +3114,18 @@
                 if (len <= 250) {
                     this.healCd -= dt;
                     if (this.healCd <= 0) {
-                        target.hp = Math.min(target.maxHp, target.hp + 100);
+                        this.castAnim = 0.7;
+                        target.hp = Math.min(target.maxHp, target.hp + target.maxHp * HEAL_FRACTION);
                         entities.effects.push(new Effect(target.x, target.y, 40, '#00ff00', 0.5));
                         playSound('pickup');
                         this.healCd = 2.0;
                     }
                 }
+                // It takes no other action, but it still has to be animated - the shared
+                // animation block below sits past this return.
+                this.animTimer += dt;
+                if (this.castAnim > 0) { this.castAnim -= dt; this.frameX = 2; }
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 34) % 2;
                 return; 
             }
 
@@ -2846,7 +3139,7 @@
                 } else if (this.type === 'goblinarcher' && len <= GOB_RANGE + 40 && !gobInMelee) {
                     let angle = Math.atan2(dy, dx); entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*9, Math.sin(angle)*9, this.dmg, false, '#cfe36b'));
                     this.attackCd = GOB_SHOT_CD; playSound('shoot');
-                } else if ((distPlayer < this.radius + 20 || orcInMelee || gobInMelee) && this.type !== 'golem') { 
+                } else if ((distPlayer < this.radius + 20 || orcInMelee || gobInMelee) && this.type !== 'golem' && this.type !== 'necromancer') { 
                     if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else {
                         player.takeDamage(this.hitPower(), false, 'none', 'player', this);
                         if (this.type === 'orcrider' && this.charge >= RIDER_CHARGE_LAND) {
@@ -2892,6 +3185,30 @@
             if (this.type === 'troll') {
                 if (this.attackCd > 0.75) this.frameX = 2;
                 else this.frameX = Math.floor((this.distanceTraveled || 0) / 36) % 2;
+            }
+            if (this.type === 'golem' || this.type === 'boss') {
+                // Two walk poses, and the swing held while the attack is on cooldown.
+                if (this.attackCd > 0.72) this.frameX = 2;
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 42) % 2;
+            }
+            if (this.type === 'assassin') {
+                if (this.attackCd > 0.75) this.frameX = 2;
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 26) % 2;   // quick feet
+            }
+            if (this.type === 'necromancer') {
+                // Frame 2 is the channelling pose - held for a beat after a heal actually
+                // lands, so a lit staff means it is doing something right now. Keying it off
+                // healCd instead left it channelling forever whenever it had nothing to heal.
+                if (this.castAnim > 0) { this.castAnim -= dt; this.frameX = 2; }
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 34) % 2;
+            }
+            if (this.type === 'bomber') {
+                // The third frame is the detonation itself, so it is held for the run-in
+                // rather than the moment of death - you get a beat of warning.
+                let near = Math.min(Math.hypot(player.x - this.x, player.y - this.y),
+                                    Math.hypot(base.x - this.x, base.y - this.y) - base.radius);
+                if (near < BOMBER_FUSE) this.frameX = 2;
+                else this.frameX = Math.floor((this.distanceTraveled || 0) / 28) % 2;
             }
             if (this.type === 'orcrider') {
                 if (this.attackCd > 0.72) this.frameX = 2;           // axe coming down
@@ -2951,7 +3268,52 @@
 
             let isCustomSprite = false;
 
-            if (this.type === 'golem') { ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x)); ctx.fillRect(-15, -20, 30, 40); ctx.fillStyle = '#888'; ctx.fillRect(10, -30, 15, 20); ctx.fillRect(10, 10, 15, 20); } 
+            if (this.type === 'golem' && golemSprite.complete && golemSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                ctx.scale((target.x < this.x) ? -1 : 1, 1);
+                // The golem has a shadow baked into the sprite already.
+                drawSheetFrame(ctx, golemSprite, GOLEM_FRAMES, this.frameX, 0, GOLEM_H, GOLEM_FEET, 'baseline');
+            }
+            else if (this.type === 'boss' && minotaurSprite.complete && minotaurSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                ctx.scale((target.x < this.x) ? -1 : 1, 1);
+                // The minotaur has a shadow baked into the sprite already.
+                if (this.bossPhaseTriggered) {
+                    let pulse = 0.3 + Math.abs(Math.sin(performance.now()/180)) * 0.3;
+                    ctx.save(); ctx.globalAlpha = pulse;
+                    let gr = ctx.createRadialGradient(0, -MINOTAUR_H*0.35, 10, 0, -MINOTAUR_H*0.35, MINOTAUR_H*0.6);
+                    gr.addColorStop(0, 'rgba(255,90,40,0.55)'); gr.addColorStop(1, 'rgba(255,90,40,0)');
+                    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, -MINOTAUR_H*0.35, MINOTAUR_H*0.6, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
+                drawSheetFrame(ctx, minotaurSprite, MINOTAUR_FRAMES, this.frameX, 0, MINOTAUR_H, MINOTAUR_FEET, 'baseline');
+            }
+            else if (this.type === 'bomber' && bomberSprite.complete && bomberSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                ctx.scale((target.x < this.x) ? -1 : 1, 1);
+                ctx.fillStyle = 'rgba(0,0,0,0.26)';
+                ctx.beginPath(); ctx.ellipse(0, BOMBER_FEET - 5, 20, 7, 0, 0, Math.PI*2); ctx.fill();
+                drawSheetFrame(ctx, bomberSprite, BOMBER_FRAMES, this.frameX, 0, BOMBER_H, BOMBER_FEET, 'baseline');
+            }
+            else if (this.type === 'assassin' && assassinSprite.complete && assassinSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                ctx.scale((target.x < this.x) ? -1 : 1, 1);
+                // The assassin has a shadow baked into the sprite already.
+                drawSheetFrame(ctx, assassinSprite, ASSASSIN_FRAMES, this.frameX, 0, ASSASSIN_H, ASSASSIN_FEET, 'baseline');
+            }
+            else if (this.type === 'necromancer' && healerSprite.complete && healerSprite.naturalWidth !== 0) {
+                isCustomSprite = true;
+                ctx.scale((target.x < this.x) ? -1 : 1, 1);
+                // The healer has a shadow baked into the sprite already.
+                // Its staff is lit while it is channelling, so the thing to shoot is obvious.
+                if (this.frameX === 2) {
+                    ctx.save(); ctx.globalAlpha = 0.35 + Math.abs(Math.sin(performance.now()/160)) * 0.3;
+                    ctx.fillStyle = '#8affc4';
+                    ctx.beginPath(); ctx.ellipse(0, HEALER_FEET - HEALER_H*0.5, 26, 40, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
+                drawSheetFrame(ctx, healerSprite, HEALER_FRAMES, this.frameX, 0, HEALER_H, HEALER_FEET, 'baseline');
+            }
             else if (this.type === 'predator') { 
                 isCustomSprite = true;
                 if (this.isAsleep) {
@@ -2996,8 +3358,7 @@
                 ctx.scale(flip, 1);
                 let f = KING_FRAMES[this.frameX] || KING_FRAMES[0];
                 let dh = KING_DRAW_H, dw = dh * (f.sw / f.sh);
-                ctx.fillStyle = 'rgba(0,0,0,0.32)';
-                ctx.beginPath(); ctx.ellipse(0, KING_FEET - 10, dw * 0.34, dw * 0.11, 0, 0, Math.PI*2); ctx.fill();
+                // The Orc King has a shadow baked into the sprite already.
                 if (this.enraged) {
                     let pulse = 0.35 + Math.abs(Math.sin(performance.now()/220)) * 0.3;
                     ctx.save(); ctx.globalAlpha = pulse;
@@ -3028,8 +3389,7 @@
                 isCustomSprite = true;
                 let flip = (target.x < this.x) ? -1 : 1;
                 ctx.scale(flip, 1);
-                ctx.fillStyle = 'rgba(0,0,0,0.28)';
-                ctx.beginPath(); ctx.ellipse(0, TROLL_FEET - 8, 32, 11, 0, 0, Math.PI*2); ctx.fill();
+                // The troll has a shadow baked into the sprite already.
                 // A wounded troll glows while it knits itself back up; fire snuffs that out,
                 // so the glow doubles as the tell for whether your damage is sticking.
                 if (this.hp < this.maxHp && this.burningTimer <= 0) {
@@ -3044,8 +3404,7 @@
                 isCustomSprite = true;
                 let flip = (target.x < this.x) ? -1 : 1;
                 ctx.scale(flip, 1);
-                ctx.fillStyle = 'rgba(0,0,0,0.28)';
-                ctx.beginPath(); ctx.ellipse(0, RIDER_FEET - 6, 33, 11, 0, 0, Math.PI*2); ctx.fill();
+                // The warg rider has a shadow baked into the sprite already.
                 // Speed lines trailing the warg while it is up to pace, so a charge coming at
                 // you is readable before it lands rather than after.
                 if (this.charge > 0.45) {
@@ -3081,6 +3440,10 @@
             else if (this.type === 'goblin' && goblinSprite.complete && goblinSprite.naturalWidth !== 0) {
                 isCustomSprite = true;
                 let flip = (target.x < this.x) ? -1 : 1;
+                // The goblin was the one enemy with no shadow at all - none baked into its
+                // sprite and none drawn - so it read as floating next to everything else.
+                ctx.fillStyle = 'rgba(0,0,0,0.26)';
+                ctx.beginPath(); ctx.ellipse(0, 33, 19, 6, 0, 0, Math.PI*2); ctx.fill();
                 ctx.scale(flip, 1);
                 // goblin_clean.png frames are NOT equal width, so slice at the real boundaries.
                 const goblinFrames = [
@@ -3120,13 +3483,13 @@
             }
 
             if (this.type === 'orcarcher' && !isCustomSprite) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -5, 3, 0, Math.PI*2); ctx.arc(5, 5, 3, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(12, 0, 10, -Math.PI/2, Math.PI/2); ctx.stroke(); }
-            if (this.type === 'boss') { 
+            if (this.type === 'boss' && !isCustomSprite) { 
                 ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(15, -12, 6, 0, Math.PI*2); ctx.arc(15, 12, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#444'; ctx.fillRect(20, 20, 40, 10); 
                 if (this.bossPhaseTriggered) { ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, this.radius + 10 + Math.sin(performance.now()/100)*5, 0, Math.PI*2); ctx.stroke(); }
             }
-            if (this.type === 'bomber') { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(12, 0, 8, 0, Math.PI*2); ctx.fill(); }
-            if (this.type === 'assassin') { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, 10); ctx.lineTo(-5, -10); ctx.fill(); }
-            if (this.type === 'necromancer') { ctx.fillStyle = '#00ff00'; ctx.fillRect(0, -5, 10, 10); }
+            if (this.type === 'bomber' && !isCustomSprite) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(12, 0, 8, 0, Math.PI*2); ctx.fill(); }
+            if (this.type === 'assassin' && !isCustomSprite) { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, 10); ctx.lineTo(-5, -10); ctx.fill(); }
+            if (this.type === 'necromancer' && !isCustomSprite) { ctx.fillStyle = '#00ff00'; ctx.fillRect(0, -5, 10, 10); }
 
             ctx.restore();
             
@@ -3269,13 +3632,65 @@
     }
 
 
+    // The scatter knew about the nexus and the forge but not about anyone standing on the
+    // map, and generateMap runs at every dawn - so a morning could drop a trunk on whoever
+    // was out gathering. Measured at 5.5% of dawns, plus 0.8% of fresh games burying the
+    // fixed spawn point. Being buried is unrecoverable: every direction is blocked, so you
+    // cannot walk out of it.
+    const ACTOR_CLEAR = 110, CRITTER_CLEAR = 70, NPC_CLEAR = 80;
+    function protectedSpots() {
+        let pts = [];
+        if (typeof player !== 'undefined' && player) pts.push({ x: player.x, y: player.y, r: ACTOR_CLEAR });
+        entities.critters.forEach(c => pts.push({ x: c.x, y: c.y, r: CRITTER_CLEAR }));
+        entities.npcs.forEach(np => pts.push({ x: np.x, y: np.y, r: NPC_CLEAR }));
+        return pts;
+    }
+    function tooCloseToActor(pts, x, y) {
+        for (let p of pts) if (Math.hypot(p.x - x, p.y - y) < p.r) return true;
+        return false;
+    }
+    // Belt and braces for whatever the clearance still misses. The player gets the offending
+    // prop deleted rather than being teleported; everything else is cheap to move.
+    function freeBuriedActors() {
+        if (typeof player !== 'undefined' && player) {
+            for (let guard = 0; guard < 8; guard++) {
+                if (!isCollidingWithObstacle(player.x, player.y, player.radius)) break;
+                let before = entities.solids.length + entities.resources.length;
+                entities.solids = entities.solids.filter(sp => Math.hypot(sp.x - player.x, sp.y - player.y) >= sp.r + player.radius);
+                entities.resources = entities.resources.filter(r => !r.solid || Math.hypot(r.x - player.x, r.y - player.y) >= r.solidRadius + player.radius);
+                if (entities.solids.length + entities.resources.length === before) {
+                    // Nothing left to delete, so it is terrain - step out of it instead.
+                    let ang = Math.atan2(player.y - WORLD_CY, player.x - WORLD_CX);
+                    for (let step = 1; step <= 24; step++) {
+                        let nx = clampWorld(player.x + Math.cos(ang) * step * 40, WORLD_W, 60);
+                        let ny = clampWorld(player.y + Math.sin(ang) * step * 40, WORLD_H, 60);
+                        if (!isCollidingWithObstacle(nx, ny, player.radius)) { player.x = nx; player.y = ny; break; }
+                    }
+                    break;
+                }
+            }
+        }
+        entities.critters.concat(entities.npcs).forEach(a => {
+            if (!isCollidingWithObstacle(a.x, a.y, a.radius)) return;
+            for (let t = 0; t < 30; t++) {
+                let ang = Math.random() * Math.PI * 2, d = 90 + Math.random() * 260;
+                let nx = clampWorld(a.x + Math.cos(ang) * d, WORLD_W, 100);
+                let ny = clampWorld(a.y + Math.sin(ang) * d, WORLD_H, 100);
+                if (!isCollidingWithObstacle(nx, ny, a.radius)) { a.x = nx; a.y = ny; return; }
+            }
+        });
+    }
+
     function generateMap() {
         entities.obstacles = []; entities.resources = []; entities.decorations = []; entities.solids = [];
+        let actorSpots = protectedSpots();
 
         // A few ponds, well clear of the nexus. Kept square so the sprite is never
         // stretched out of shape - the pond's own art supplies the oval.
         const lakes = [ [-2150, -900, 760], [1650, -1150, 620], [-1250, 1000, 680] ];
         lakes.forEach(l => entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[2], 'lake')));
+
+        layOutCamp();
 
         // Ground detail, scaled to the area. Placed after the ponds so nothing is
         // scattered across open water.
@@ -3294,6 +3709,8 @@
                 let x = Math.random() * (WORLD_W - 120) + 60; let y = Math.random() * (WORLD_H - 120) + 60;
                 if (Math.hypot(x-WORLD_CX, y-WORLD_CY) < 260) continue;
                 if (Math.hypot(x-forgeX(), y-forgeY()) < 150) continue;
+                if (Math.hypot(x-CAMP_X, y-CAMP_Y) < 220) continue;
+                if (tooCloseToActor(actorSpots, x, y)) continue;
                 if (isCollidingWithObstacle(x, y, 45)) continue;
                 let overlapsResource = entities.resources.some(r => Math.hypot(r.x - x, r.y - y) < 135);
                 if (overlapsResource) continue;
@@ -3306,6 +3723,7 @@
         for(let i=0; i<CACHES_PER_MAP; i++) {
             let cx = Math.random() * (WORLD_W - 200) + 100; let cy = Math.random() * (WORLD_H - 200) + 100;
             let overlapsResource = entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
+            if (tooCloseToActor(actorSpots, cx, cy)) continue;
             if (Math.hypot(cx-WORLD_CX, cy-WORLD_CY) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
                 entities.resources.push(new Resource(cx, cy, 'cache'));
             }
@@ -3318,6 +3736,8 @@
             if (isCollidingWithObstacle(dx, dy, 20)) continue;
             if (Math.hypot(dx - WORLD_CX, dy - WORLD_CY) < 230) continue;
             if (Math.hypot(dx - forgeX(), dy - forgeY()) < 150) continue;
+            if (Math.hypot(dx - CAMP_X, dy - CAMP_Y) < 220) continue;
+            if (tooCloseToActor(actorSpots, dx, dy)) continue;
             let g = rollScenery();
             let b = g.boxes[Math.floor(Math.random() * g.boxes.length)];
             let dh = g.h * (0.82 + Math.random() * 0.36);
@@ -3330,6 +3750,8 @@
                 flip: Math.random() < 0.5, canopy: !!g.canopy });
             if (g.solid) entities.solids.push({ x: dx, y: dy, r: dwid * g.solid });
         }
+        freeBuriedActors();
+
         // Draw back-to-front so nearer scenery overlaps what is behind it.
         entities.decorations.sort((a, b) => a.y - b.y);
         
@@ -3383,6 +3805,9 @@
         
         inventory = { wood: 50, stone: 50, mana: 20 }; wave = 1; phaseTimer = 60; totalKills = 0; gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, towers: 0 };
         isPaused = false; waveDirection = -1; lastBearWave = -99; lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
+        activeQuest = null; updateQuestUI();
+        campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
+        campOneOffs = { skinning: false, beastcall: false }; campRationsDay = -1;
         achievements.forEach(a => a.unlocked = false);
         playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, forgeTowerHpMult: 1.0, hasteMod: 1.0, vampirism: false,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
@@ -3508,6 +3933,7 @@
             let wayfarer = entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
             if (shop) { document.getElementById('merchantOverlay').classList.remove('hidden'); keys['r'] = false; }
             else if (wayfarer) { wayfarer.talk(); keys['r'] = false; }
+            else if (Math.hypot(player.x - CAMP_NPC_X, player.y - CAMP_NPC_Y) < CAMP_RANGE) { openCamp(); keys['r'] = false; }
             else if (playerAtForge()) { openForge(); keys['r'] = false; }
         }
 
@@ -3544,7 +3970,7 @@
                     }
                 });
                 
-                closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('talentOverlay'); spawnWave();
+                closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('campOverlay'); closeModal('talentOverlay'); spawnWave();
             } else {
                 gameState = 'DAY'; wave++; phaseTimer = 60; setWeather();
                 document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
@@ -3626,7 +4052,7 @@
         document.getElementById('ui-atk').innerText = player.atk;
         document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`; document.getElementById('mpBar').style.width = `${(player.mp/player.maxMp)*100}%`;
         document.getElementById('xpBar').style.width = `${(player.xp/player.maxXp)*100}%`; document.getElementById('ui-level').innerText = player.level;
-        document.getElementById('ui-tp').innerText = player.tp; document.getElementById('ui-tp-hint').innerText = player.tp > 0 ? `(${player.tp} Point!)` : '';
+        document.getElementById('ui-tp').innerText = player.tp;
         document.getElementById('tpPill').classList.toggle('has-points', player.tp > 0);
         document.getElementById('playerStats').classList.toggle('low-hp', player.hp / player.maxHp <= 0.3);
         document.getElementById('hp-text').innerText = `${Math.max(0,Math.ceil(player.hp))} / ${player.maxHp}`;
@@ -3742,6 +4168,52 @@
     // Scenery taller than this shares a depth-sorted pass with the gatherable nodes,
     // so a tree in front of another tree actually draws in front of it.
     const SCENERY_PROP_MIN = 28;
+    function drawCamp(ctx, d) {
+        if (!tentSprite.complete || tentSprite.naturalWidth === 0) return;
+        let dh = TENT_H, dw = dh * (TENT_CROP.sw / TENT_CROP.sh);
+        ctx.save();
+        if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        ctx.globalAlpha = 0.26; ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.ellipse(d.x, d.y + TENT_FEET - 6, dw * 0.42, dh * 0.10, 0, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.drawImage(tentSprite, TENT_CROP.sx, TENT_CROP.sy, TENT_CROP.sw, TENT_CROP.sh,
+                      d.x - dw/2, d.y + TENT_FEET - dh, dw, dh);
+        ctx.restore();
+    }
+    function drawSentry(ctx, d) {
+        let inRange = gameState === 'DAY' && Math.hypot(player.x - d.x, player.y - d.y) < CAMP_RANGE;
+        ctx.save();
+        ctx.translate(d.x, d.y);
+        if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        ctx.fillStyle = 'rgba(0,0,0,0.26)';
+        ctx.beginPath(); ctx.ellipse(0, NPC3_FEET - 5, 20, 7, 0, 0, Math.PI*2); ctx.fill();
+        ctx.scale(d.flip ? -1 : 1, 1);
+        if (npc3Sprite.complete && npc3Sprite.naturalWidth !== 0) {
+            let dh = NPC3_H, dw = dh * (NPC3_IDLE.sw / NPC3_IDLE.sh);
+            ctx.drawImage(npc3Sprite, NPC3_IDLE.sx, NPC3_IDLE.sy, NPC3_IDLE.sw, NPC3_IDLE.sh,
+                          -dw/2, NPC3_FEET - dh, dw, dh);
+        } else {
+            ctx.fillStyle = '#6b5a3e'; ctx.fillRect(-10, -50, 20, 50);
+        }
+        ctx.restore();
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#c8e06a'; ctx.font = 'bold 13px Arial';
+        ctx.fillText('HUNTER', d.x, d.y - NPC3_H + 14);
+        if (inRange) {
+            ctx.strokeStyle = 'rgba(200, 224, 106, 0.45)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(d.x, d.y + 8, 42, 0, Math.PI*2); ctx.stroke();
+            ctx.fillStyle = '#c8e06a'; ctx.font = 'bold 14px Arial';
+            ctx.fillText('Press [R] to Trade', d.x, d.y + NPC3_FEET + 28);
+        }
+    }
+    // The camp is a landmark, so it goes back in the same place every morning.
+    function layOutCamp() {
+        entities.decorations.push({ x: CAMP_X, y: CAMP_Y, type: 'camp' });
+        entities.decorations.push({ x: CAMP_X - 34, y: CAMP_Y + 58, type: 'sentry', flip: false });
+        entities.solids.push({ x: CAMP_X, y: CAMP_Y, r: TENT_SOLID });
+        entities.solids.push({ x: CAMP_X - 34, y: CAMP_Y + 58, r: 14 });
+    }
+
     function drawScenery(ctx, d) {
         let img = terrainSprites[d.sheet];
         if (!img.complete || img.naturalWidth === 0) return;
@@ -3844,10 +4316,18 @@
         // Tall scenery and gatherable nodes drawn together, back to front, so neither
         // layer is permanently stacked on top of the other.
         let props = [];
-        entities.decorations.forEach(d => { if (d.type === 'scenery' && d.h >= SCENERY_PROP_MIN && inView(d.x, d.y, 200)) props.push(d); });
+        entities.decorations.forEach(d => {
+            let isProp = (d.type === 'scenery' && d.h >= SCENERY_PROP_MIN) || d.type === 'camp' || d.type === 'sentry';
+            if (isProp && inView(d.x, d.y, 260)) props.push(d);
+        });
         entities.resources.forEach(r => { if (inView(r.x, r.y, 200)) props.push(r); });
         props.sort((a, b) => a.y - b.y);
-        props.forEach(pr => { if (pr.type === 'scenery') drawScenery(ctx, pr); else pr.draw(ctx); });
+        props.forEach(pr => {
+            if (pr.type === 'scenery') drawScenery(ctx, pr);
+            else if (pr.type === 'camp') drawCamp(ctx, pr);
+            else if (pr.type === 'sentry') drawSentry(ctx, pr);
+            else pr.draw(ctx);
+        });
         base.draw(ctx); entities.towers.forEach(t => { if (inView(t.x, t.y)) t.draw(ctx); }); entities.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(ctx); });
         entities.projectiles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); entities.effects.forEach(ef => { if (inView(ef.x, ef.y, ef.radius + 40)) ef.draw(ctx); }); entities.particles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); player.draw(ctx);
 
@@ -3887,6 +4367,8 @@
             entities.projectiles.forEach(p => drawLight(lctx, p.x - cam.x, p.y - cam.y, 100 * visMod, 'rgba(255,255,255,0.55)'));
             entities.effects.forEach(ef => drawLight(lctx, ef.x - cam.x, ef.y - cam.y, ef.radius + 50, 'rgba(255,255,255,0.85)'));
             entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x - cam.x, e.y - cam.y, 80, 'rgba(255,255,255,0.45)'); });
+            // The tent has a lit lantern hanging in it, so the camp shows from a distance.
+            if (inView(CAMP_X, CAMP_Y, 320)) drawLight(lctx, CAMP_X - cam.x, CAMP_Y - cam.y, 215, 'rgba(255,255,255,0.55)');
             ctx.drawImage(lightCanvas, 0, 0);
 
             // A touch of colour thrown back by the things that are actually glowing, so the
@@ -3895,6 +4377,7 @@
             ctx.globalCompositeOperation = 'lighter';
             ctx.translate(-cam.x, -cam.y);
             drawLight(ctx, base.x, base.y, 300, 'rgba(120,160,255,0.10)');
+            if (inView(CAMP_X, CAMP_Y, 260)) drawLight(ctx, CAMP_X, CAMP_Y, 180, 'rgba(255,170,80,0.13)');
             entities.towers.forEach(t => { if (inView(t.x, t.y, 130)) drawLight(ctx, t.x, t.y, 120, 'rgba(255,178,92,0.06)'); });
             ctx.restore();
 
@@ -3966,6 +4449,7 @@
         // frame
         ctx.strokeStyle = 'rgba(217,178,92,0.55)'; ctx.lineWidth = 2; ctx.strokeRect(MM_X, MM_Y, MM_W, MM_H);
         ctx.restore();
+        drawQuestTracker(ctx);
     }
 
     // Off-screen nexus marker, so you can always find your way home.
