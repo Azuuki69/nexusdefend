@@ -982,6 +982,109 @@
     // Drawing them into a 110x110 square squashed them ~18% vertically and left the
     // classes a head shorter than the merchant; these keep the cell's real aspect.
     const HERO_DRAW_W = 130, HERO_DRAW_H = 160, HERO_DRAW_X = -65, HERO_DRAW_Y = -100;
+    // --- Hero walk cycles ---------------------------------------------------------
+    // The classes used to have one walk pose, so moving read as a static sprite skating over
+    // the grass. These sheets carry a real four-frame cycle each. They are labelled contact
+    // sheets rather than even grids - captions under every pose, cycles for both facings, and
+    // in places one pose's effect painted across its neighbour - so the frames are measured
+    // boxes rather than a computed grid.
+    //
+    // Per frame: [sx, sy, sw, sh, lift, mirror].
+    //   lift   - sheet pixels this frame's lowest row sits above the cycle's ground line, which
+    //            is what gives the walk its natural bob. Scaling every pose to one fixed height
+    //            instead would make the character grow and shrink as it stepped.
+    //   mirror - the frame was taken from the sheet's opposite-facing row and is flipped back.
+    // `faces` is which way the sheet's own art points - only 'left' needs correcting, since the
+    // existing mouse-facing flip already handles turning the character to look where you aim.
+    //
+    // Every frame of a cycle must share one body orientation. The warrior's L Walk row and the
+    // priest's borrowed frame both mixed a front-on pose in among profiles, and at 8fps that
+    // does not read as a footfall, it reads as the character spinning on the spot.
+    const walkSprites = { warrior: new Image(), mage: new Image(), archer: new Image(), priest: new Image() };
+    // swing.png is a complete Dark Knight sheet - idle loop, profile walk loop, a four-frame swing
+    // and more - so the warrior takes both his walk and his attack from it. warriorwalk.png has no
+    // usable side-on cycle: both of its profile rows swing the torso front-on for the contact poses,
+    // which is what made him appear to walk towards the camera while travelling sideways.
+    walkSprites.warrior.src = 'assets/textures/characters/swing.png';
+    walkSprites.mage.src    = 'assets/textures/characters/magewalk.png';
+    walkSprites.archer.src  = 'assets/textures/characters/archerwalk.png';
+    walkSprites.priest.src  = 'assets/textures/characters/priestwalk.png';
+    const swingSprite = walkSprites.warrior;   // same sheet: the warrior's walk and swing share it
+    // The sheet's "(Swing, 4 Frames)" heading dips into the top-left of the Impact cell, inside
+    // that frame's own bounding box, so no crop can avoid it. The sheet is scrubbed once into an
+    // offscreen copy rather than shipping a doctored PNG. The rectangle is measured, not guessed:
+    // on those rows the caption ends at x=303 and the sword tip does not start until x=307.
+    const SWING_SCRUB = [268, 166, 38, 16];
+    let swingClean = null;
+    function swingSheet() {
+        if (swingClean) return swingClean;
+        if (!swingSprite.complete || !swingSprite.naturalWidth) return swingSprite;
+        let c = document.createElement('canvas');
+        c.width = swingSprite.naturalWidth; c.height = swingSprite.naturalHeight;
+        let cg = c.getContext('2d');
+        cg.drawImage(swingSprite, 0, 0);
+        cg.clearRect(SWING_SCRUB[0], SWING_SCRUB[1], SWING_SCRUB[2], SWING_SCRUB[3]);
+        swingClean = c;
+        return c;
+    }
+    // h/feet match what the idle sheets already draw - a ~98px figure standing 40px below the
+    // player's origin - so switching between idle, walking and attacking never jumps or floats.
+    const HERO_WALK = {
+        // swing.png's WALK LOOP: a true right-facing profile, one orientation across all four
+        // frames, feet on a single ground line (every crop bottoms out at y=127).
+        warrior: { faces: 'right', h: 98, feet: 40, frames: [
+            [387,56,39,71,0], [466,55,41,72,0], [541,55,41,72,0], [614,55,51,72,0] ] },
+        mage:    { faces: 'right', h: 98, feet: 40, frames: [
+            [351,41,47,89,0], [424,37,58,92,1], [515,38,39,91,1], [590,41,51,89,0] ] },
+        archer:  { faces: 'right', h: 98, feet: 40, frames: [
+            [60,194,81,124,0], [227,193,70,123,2], [398,193,61,125,0], [559,193,86,123,2] ] },
+        // The right-facing row's own frame 1 is unusable - the neighbouring attack pose's beam is
+        // painted as an opaque wash across the whole upper half of that cell, in the same cream as
+        // the priest's hair, so it can be neither cropped nor keyed out. Borrowing the left row's
+        // frame 1 and mirroring it was worse: that pose is drawn front-on, so it spun.
+        // The remaining three frames are passing / mid / contact, so they run as a ping-pong -
+        // passing, mid, contact, mid - which is an even four-beat walk off three drawings.
+        priest:  { faces: 'right', h: 98, feet: 40, frames: [
+            [460,62,35,89,0], [535,65,38,86,0], [604,66,46,85,0], [535,65,38,86,0] ] }
+    };
+    // The warrior's swing, from the same sheet. Sheet order is wind-up, mid-arc, recover-across,
+    // raise - so the arc frame, the one carrying the blade trail, lands second of four and reads as
+    // the hit. That matters because a melee swing applies its damage the instant you click: putting
+    // the wind-up any later than a single frame makes the weapon feel like it lags the click.
+    // Only the warrior has a drawn sequence; every other class keeps its single attack pose.
+    const HERO_ATTACK = {
+        warrior: { faces: 'right', feet: 40, frames: [
+            [38,183,46,74,1], [114,192,69,65,1], [196,191,63,67,0], [282,179,59,79,0] ] }
+    };
+    // Both sets are crops of one sheet at one art scale, so the swing borrows the walk cycle's
+    // scale outright. Deriving it from the swing's own taller reference frame would have the
+    // warrior visibly grow every time he attacked.
+    HERO_ATTACK.warrior.scale = HERO_WALK.warrior.h / HERO_WALK.warrior.frames[0][3];
+    // How long the swing takes to play out. Also gates which pose Player.update selects, so the
+    // two can never disagree about when the attack animation is over.
+    const ATTACK_ANIM_TIME = 0.25;
+
+    // World pixels per frame of the cycle. The classes cover 210-330 px/s, so this lands the
+    // cycle at 7fps for the mage and 11 for the archer - the quick class visibly picks its feet
+    // up faster without anyone's legs blurring. Tuned by eye: much below this and the slower
+    // classes shuffle, much above and the archer vibrates.
+    const WALK_STEP = 30;
+    // Called from inside Player.draw's transform, so the origin is already the player's feet.
+    // Shared by the walk cycles and the warrior's swing: one reference frame fixes the scale so the
+    // figure never grows mid-animation, and `lift` keeps every pose on the same ground line.
+    function drawHeroFrames(ctx, set, img, idx) {
+        let f = set.frames[((idx % set.frames.length) + set.frames.length) % set.frames.length];
+        let scale = set.scale || (set.h / set.frames[0][3]);
+        let dw = f[2] * scale, dh = f[3] * scale;
+        let bottom = set.feet - (f[4] || 0) * scale;
+        ctx.save();
+        if (set.faces === 'left') ctx.scale(-1, 1);
+        if (f[5]) ctx.scale(-1, 1);
+        ctx.drawImage(img, f[0], f[1], f[2], f[3], -dw / 2, bottom - dh, dw, dh);
+        ctx.restore();
+    }
+    function drawHeroWalk(ctx, cls, idx) { drawHeroFrames(ctx, HERO_WALK[cls], walkSprites[cls], idx); }
+
     // bear4.png cells are all 216 tall with the paws 14px above the cell bottom, so
     // anchoring on the cell bottom keeps every frame standing on the same ground line.
     const BEAR_SCALE = 1.0, BEAR_GROUND = 81;
@@ -1061,7 +1164,10 @@
         { id: 'builder', name: 'Architect', desc: 'Build 3 Extractors.', unlocked: false }
     ];
     
-    let playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: false,
+    // `vampirism` is the fraction of damage dealt that comes back as health, not a flag: the
+    // ring and the warrior's Bloodthirst both feed it, and as a boolean the talent's second
+    // rank bought nothing and the tooltip's 3% was really the ring's 5%.
+    let playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: 0,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
 
     let forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
@@ -1096,9 +1202,14 @@
         }
     }
 
+    // Paying 2 mana a second meant hitting this at dawn was worth 120 mana, against the ~16 a
+    // whole first night of kills pays - so the best way to earn the shop currency was to skip
+    // playing. A quarter of a mana a second tops out at 15: enough to reward calling a day
+    // finished early, not enough to beat going out and fighting for it.
+    const EARLY_NIGHT_MANA_PER_SEC = 0.25;
     function startNightEarly() { 
         if(gameState === 'DAY') {
-            let bonusMana = Math.floor(phaseTimer) * 2;
+            let bonusMana = Math.floor(phaseTimer * EARLY_NIGHT_MANA_PER_SEC);
             inventory.mana += bonusMana;
             entities.texts.push(new FloatingText(player.x, player.y - 40, `+${bonusMana} MANA (SPEED BONUS)`, '#00ffff'));
             playSound('pickup');
@@ -1155,7 +1266,7 @@
             { id: 'p1', name: 'Berserker', desc: 'Raw melee damage', talents: [
                 { id: 'w_b_1', name: 'Savage Strikes', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
                 { id: 'w_b_2', name: 'Quick Whirl', desc: 'Whirlwind cooldown -0.8s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 0.8) },
-                { id: 'w_b_3', name: 'Bloodthirst', desc: 'Heal 3% of damage dealt', max: 2, apply: () => { playerBuffs.vampirism = true; } },
+                { id: 'w_b_3', name: 'Bloodthirst', desc: 'Heal 3% of damage dealt per rank', max: 2, apply: () => { playerBuffs.vampirism += 0.03; } },
                 { id: 'w_b_4', name: 'Giant Cleave', desc: 'Whirlwind radius +25%', max: 2, apply: r => player.whirlMod = 1 + 0.25 * r },
                 { id: 'w_b_5', name: 'Frenzy', desc: '+8% attack speed', max: 3, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
                 { id: 'w_b_6', name: 'Leap Slam (Ult)', desc: 'Whirlwind dashes to the cursor', max: 1, apply: () => player.leapSlam = true }
@@ -1596,17 +1707,19 @@
         if (inventory.mana >= SHOP_PRICES.hp && type === 'hp') {
             inventory.mana -= SHOP_PRICES.hp; playerBuffs.bonusHp += 25; player.recalcStats(); player.hp += 25; playSound('pickup'); entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
         } else if (inventory.mana >= SHOP_PRICES.ring && type === 'ring') {
-            inventory.mana -= SHOP_PRICES.ring; playerBuffs.vampirism = true; document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+            inventory.mana -= SHOP_PRICES.ring; playerBuffs.vampirism += 0.05; document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
         } else if (inventory.mana >= SHOP_PRICES.amulet && type === 'amulet') {
-            inventory.mana -= SHOP_PRICES.amulet; playerBuffs.hasteMod = 0.8; document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+            inventory.mana -= SHOP_PRICES.amulet; playerBuffs.hasteMod *= 0.8; document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
         } else if (type === 'bulwark' || type === 'thorns' || type === 'crit' || type === 'siphon' || type === 'reaper') {
-            // One-off trinkets: pay, apply, and mark the slot sold.
+            // One-off trinkets: pay, apply, and mark the slot sold. Everything here stacks onto
+            // what the talents already gave you - assigning instead of accumulating turned three
+            // of these into paid downgrades for anyone who had specced into the same stat.
             const stock = {
                 bulwark: { cost: SHOP_PRICES.bulwark, btn: 'btn-bulwark', apply: () => { playerBuffs.dmgReducMult = 0.85; player.recalcStats(); } },
-                thorns:  { cost: SHOP_PRICES.thorns,  btn: 'btn-thorns',  apply: () => { playerBuffs.thorns = 0.30; } },
+                thorns:  { cost: SHOP_PRICES.thorns,  btn: 'btn-thorns',  apply: () => { playerBuffs.thorns += 0.30; } },
                 crit:    { cost: SHOP_PRICES.crit,    btn: 'btn-crit',    apply: () => { playerBuffs.critChance += 0.20; } },
                 siphon:  { cost: SHOP_PRICES.siphon,  btn: 'btn-siphon',  apply: () => { playerBuffs.mpRegenBonus = 2.0; } },
-                reaper:  { cost: SHOP_PRICES.reaper,  btn: 'btn-reaper',  apply: () => { playerBuffs.lifeOnKill = 8; } }
+                reaper:  { cost: SHOP_PRICES.reaper,  btn: 'btn-reaper',  apply: () => { playerBuffs.lifeOnKill += 8; } }
             }[type];
             if (inventory.mana >= stock.cost) {
                 inventory.mana -= stock.cost; stock.apply();
@@ -1620,7 +1733,7 @@
     
     function updateTrinkets() {
         let t = "";
-        if (playerBuffs.vampirism) t += `<span class="trinket-badge">💍 Vampirism</span>`;
+        if (playerBuffs.vampirism > 0) t += `<span class="trinket-badge">💍 Vampirism ${Math.round(playerBuffs.vampirism*100)}%</span>`;
         if (playerBuffs.hasteMod < 1.0) t += `<span class="trinket-badge">🧿 Haste</span>`;
         if (playerBuffs.dmgReducMult < 1.0) t += `<span class="trinket-badge" style="border-color:#9ad4ff;color:#9ad4ff;">🛡️ Bulwark</span>`;
         if (playerBuffs.thorns > 0) t += `<span class="trinket-badge" style="border-color:#7ef7d8;color:#7ef7d8;">🌵 Thorns</span>`;
@@ -2100,15 +2213,23 @@
                     this.pulseTimer = 0.5;
                 }
             } else if (this.dmg > 0 && this.life < this.maxLife/2) {
-                entities.enemies.forEach(e => { 
-                    if (Math.hypot(e.x - this.x, e.y - this.y) < this.radius) { 
-                        e.takeDamage(this.dmg, true, this.element, this.source); playSound('hit'); 
-                    } 
-                });
-                if (this.color === '#ffaa00' && this.element !== 'none') { 
+                // Who a blast hurts is decided by who set it off, never by what colour it is.
+                // Keying it off the colour and element matched exactly the wrong blasts: the
+                // bomber's carries element 'none', so it went off harmlessly in your face, while
+                // the priest's Smite and the archer's splinters pass 'fire' and so detonated on
+                // their own owner, the Nexus and the extractors.
+                if (this.source === 'enemy') {
                     if (Math.hypot(player.x - this.x, player.y - this.y) < this.radius) player.takeDamage(this.dmg);
                     if (Math.hypot(base.x - this.x, base.y - this.y) < this.radius + base.radius) base.takeDamage(this.dmg);
                     entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < this.radius) t.takeDamage(this.dmg); });
+                    playSound('explosion');
+                } else {
+                    entities.enemies.forEach(e => {
+                        if (e.type === 'assassin' && e.isInvisible) return;
+                        if (Math.hypot(e.x - this.x, e.y - this.y) < this.radius) {
+                            e.takeDamage(this.dmg, this.source === 'player', this.element, this.source); playSound('hit');
+                        }
+                    });
                 }
                 this.dmg = 0; 
             }
@@ -2201,7 +2322,7 @@
 
             this.hp -= dmg;
             
-            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; if (playerBuffs.vampirism) player.hp = Math.min(player.maxHp, player.hp + dmg * 0.05); }
+            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; if (playerBuffs.vampirism > 0) player.hp = Math.min(player.maxHp, player.hp + dmg * playerBuffs.vampirism); }
             if (isPlayerSource && dmg > 0 && this instanceof Enemy && source === 'player') this.aggroTimer = AGGRO_HOLD;
 
             // Thorns pays back whoever actually swung at you.
@@ -2255,7 +2376,12 @@
                         // now, and there are fewer bodies per wave to earn them from.
                         let xpDrop = this.type === 'orcking' ? 600 : (this.type === 'boss' ? 200 : (this.type === 'cyclop' ? 140 :
                                      (this.type === 'troll' ? 100 : (this.type === 'orcrider' ? 55 : (this.type === 'golem' ? 34 : (this.type === 'bomber'? 24 : 14))))));
-                        player.gainXp(xpDrop * (currentWeather==='bloodmoon'?3:1));
+                        // A swarm night doubles the column and sets every body in it to 1 HP.
+                        // Paid at full rate that made the safest night of the run comfortably the
+                        // richest - a bloodmoon swarm was worth roughly 900 mana for no fight at
+                        // all. They pay a quarter, so it stays a breather rather than a payday.
+                        let swarmCut = this.swarmling ? 0.25 : 1;
+                        player.gainXp(Math.max(1, Math.floor(xpDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1));
                         
                         // Trash mana creeps up with the waves. Raising forge and shop prices without
                         // this would leave mana the permanent bottleneck on everything and a long run
@@ -2264,7 +2390,7 @@
                         let trashMana = 2 + Math.floor(wave / 5);
                         let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'cyclop' ? 35 :
                                        (this.type === 'troll' ? 25 : (this.type === 'orcrider' ? 12 : (this.type === 'golem' ? 5 : trashMana)))));
-                        manaDrop *= (currentWeather==='bloodmoon'?3:1);
+                        manaDrop = Math.max(1, Math.floor(manaDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1);
                         inventory.mana += manaDrop; player.mp = Math.min(player.maxMp, player.mp + 5);
 
                         let pColor = this.type === 'golem' ? '#777' : (this.type === 'harpy' ? '#7a6a3a' : '#5b9e32');
@@ -2349,6 +2475,7 @@
             // Animation variables
             this.frameX = 0; 
             this.frameY = 0; 
+            this.walkDist = 0;      // ground covered on foot, drives the walk cycle
             
             this.resetTalents(true);
         }
@@ -2432,9 +2559,14 @@
                     let len = Math.sqrt(dx*dx + dy*dy); 
                     let speed = this.spd * playerBuffs.speedMult * (currentWeather==='blizzard'?0.7:1) * (dt*60);
                     let nextX = this.x + (dx/len) * speed; let nextY = this.y + (dy/len) * speed;
+                    let px = this.x, py = this.y;
                     if (this.isFlying || !isCollidingWithObstacle(nextX, nextY, this.radius)) { this.x = nextX; this.y = nextY; }
                     else { if (!isCollidingWithObstacle(nextX, this.y, this.radius)) this.x = nextX; else if (!isCollidingWithObstacle(this.x, nextY, this.radius)) this.y = nextY; }
-                }
+                    // Cadence comes from ground actually covered, not from a timer, so the feet
+                    // keep pace with Haste, Fleetfoot and a blizzard's slow alike - and they stop
+                    // dead when you walk into a tree instead of jogging on the spot.
+                    this.walkDist += Math.hypot(this.x - px, this.y - py);
+                } else this.walkDist = 0;    // stood still, so the cycle restarts planted
             }
 
             this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, this.y));
@@ -2480,6 +2612,12 @@
             let ocNow = base && base.overchargeActive > 0;
             if (ocNow !== this.wasOvercharged) { this.wasOvercharged = ocNow; this.recalcStats(); }
 
+            // Overcharge is a night-only button, so say so rather than swallowing the press.
+            if (keys['q'] && gameState !== 'NIGHT') {
+                playSound('error');
+                entities.texts.push(new FloatingText(this.x, this.y - 50, "THE NEXUS ONLY WAKES AT NIGHT", '#9a9a90'));
+                keys['q'] = false;
+            }
             if (keys['q'] && base.overchargeCd <= 0 && gameState === 'NIGHT') {
                 base.overchargeActive = 5.0;
                 base.overchargeCd = 45.0;
@@ -2515,13 +2653,23 @@
             
             this.frameY = 0; // Only 1 row now!
 
-            if (this.lastAttack > this.attackCd - 0.25) {
+            if (this.lastAttack > this.attackCd - ATTACK_ANIM_TIME) {
                 this.frameX = 2; // Attack pose (3rd column)
             } else if (isMoving) {
                 this.frameX = 1; // Walk pose (2nd column)
             } else {
                 this.frameX = 0; // Idle pose (1st column)
             }
+        }
+
+        // Which frame of a drawn attack sequence to show. The window is capped at the attack
+        // cooldown so a hasted warrior plays the whole swing faster instead of stalling on the
+        // wind-up and never reaching the arc.
+        attackFrame(count) {
+            let window = Math.min(ATTACK_ANIM_TIME, this.attackCd);
+            if (window <= 0) return count - 1;
+            let elapsed = this.attackCd - this.lastAttack;
+            return Math.max(0, Math.min(count - 1, Math.floor((elapsed / window) * count)));
         }
         
         useAbility() {
@@ -2553,7 +2701,12 @@
                 }
                 addShake(6);
             }else if (this.cls === 'priest') {
-                let healAmt = 50 * this.novaHealMod; entities.effects.push(new Effect(this.x, this.y, 250, '#ffffcc', 0.5, 50, false, false, 'none', 'player'));
+                // The heal scales off novaHealMod and the Judgment beams off atk, but the burst
+                // itself was a hardcoded 50 - by wave 20 that is a seventh of a goblin. At 2.5x
+                // attack it opens slightly above the old flat number and then keeps up, while
+                // staying under the pure-damage ults because this one heals as well.
+                let healAmt = 50 * this.novaHealMod;
+                entities.effects.push(new Effect(this.x, this.y, 250, '#ffffcc', 0.5, this.atk * 2.5, false, false, 'none', 'player'));
                 
                 let applyHeal = (ent, amt) => {
                     if (ent.hp >= ent.maxHp && this.overheal) ent.shield = Math.min(ent.maxHp, ent.shield + amt);
@@ -2691,7 +2844,17 @@
             else if (this.cls === 'mage') activeSprite = mageSprite;
             else if (this.cls === 'priest') activeSprite = priestSprite;
             
-            if (activeSprite.width > 0) {
+            // frameX 1 is walking and 2 is attacking - the two the old sheets only had a single
+            // drawing of each. Whichever a class has a real sequence for is played here; anything
+            // without one falls through to its original single pose, so a class with no drawn
+            // sequence (and a sheet that has not loaded yet) looks exactly as it always did.
+            let walkSet = HERO_WALK[this.cls], walkImg = walkSprites[this.cls];
+            let atkSet = HERO_ATTACK[this.cls];
+            if (this.frameX === 2 && atkSet && swingSprite.complete && swingSprite.naturalWidth !== 0) {
+                drawHeroFrames(ctx, atkSet, swingSheet(), this.attackFrame(atkSet.frames.length));
+            } else if (this.frameX === 1 && walkSet && walkImg.complete && walkImg.naturalWidth !== 0) {
+                drawHeroWalk(ctx, this.cls, Math.floor(this.walkDist / WALK_STEP));
+            } else if (activeSprite.width > 0) {
                 let sW = Math.floor(activeSprite.width / 3); // 3 columns per image
                 let sH = Math.floor(activeSprite.height * 0.75); // Crop text at bottom
                 
@@ -2869,7 +3032,7 @@
                           (this.type === 'troll' ? TROLL_DMG_BASE : (this.type === 'orcrider' ? RIDER_DMG_BASE : (this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 :
                           (this.type === 'goblinarcher' ? 5 * GOB_DMG_MULT : (this.type === 'wolf' ? 8 : 5)))))));
             this.dmg = Math.floor(baseDmg * Math.pow(1.1, wave - 1)); 
-            this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0; this.freezeImmuneTimer = 0; this.aggroTimer = 0; this.stuckTimer = 0; this.bestTargetDist = undefined;
+            this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0; this.freezeImmuneTimer = 0; this.aggroTimer = 0; this.stuckTimer = 0;
             this.maxHp = this.hp;
         }
         // A rider's blow is worth whatever speed it carried into contact.
@@ -2976,7 +3139,7 @@
             let onPlayer = this.aggroTimer > 0 && distPlayer < aggroRange * AGGRO_DROP;
             if (!onPlayer) this.aggroTimer = 0;
             let target = onPlayer ? player : (distBase < distPlayer ? base : player);
-            if (target !== this._lastTarget) { this._lastTarget = target; this.bestTargetDist = undefined; this.stuckTimer = 0; }
+            if (target !== this._lastTarget) { this._lastTarget = target; this.stuckTimer = 0; }
             
             if (this.type === 'necromancer') {
                 let healTarget = null;
@@ -3002,7 +3165,8 @@
                 if (this.isFlying) { 
                     let nextX = this.x + (dx/len) * speed; let nextY = this.y + (dy/len) * speed;
                     this.distanceTraveled += Math.hypot(nextX - this.x, nextY - this.y);
-                    this.x = nextX; this.y = nextY; 
+                    this.x = nextX; this.y = nextY;
+                    this.stuckTimer = 0;                 // nothing on the ground can pen a flier in
                 } else {
                     // Improved Avoidance: Sweep multiple angles if direct path is blocked by obstacles
                     let baseAngle = Math.atan2(dy, dx);
@@ -3020,7 +3184,15 @@
                             break;
                         }
                     }
+                    // A sweep that finds nothing means it is wedged in scenery, which is a
+                    // different thing from having arrived - the rider's charge reads this to
+                    // know it has nowhere to run. It drains twice as fast as it fills, so
+                    // clipping one trunk in passing does not count as being penned in.
+                    if (moved) this.stuckTimer = Math.max(0, this.stuckTimer - dt * 2);
+                    else this.stuckTimer = Math.min(2, this.stuckTimer + dt);
                 }
+            } else {
+                this.stuckTimer = 0;                     // standing at its target, not stuck
             }
             
             let auraSpeedMult = 1.0;
@@ -3533,7 +3705,7 @@
         lastResVals[id] = val;
     }
 
-    const MODAL_IDS = ['forgeOverlay', 'talentOverlay', 'merchantOverlay', 'buildingsOverlay'];
+    const MODAL_IDS = ['forgeOverlay', 'talentOverlay', 'merchantOverlay', 'buildingsOverlay', 'campOverlay'];
 
     function resetGameToMenu() {
         // Stop the run properly - without this the loop kept simulating behind the menu.
@@ -3754,7 +3926,7 @@
         campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
         campOneOffs = { skinning: false, beastcall: false }; campRationsDay = -1;
         achievements.forEach(a => a.unlocked = false);
-        playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: false,
+        playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: 0,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
         forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
         entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
@@ -3848,7 +4020,9 @@
             
             let en = new Enemy(x, y, type);
             if (currentModifier === 'swarm' && type !== 'boss' && type !== 'predator') {
-                en.hp = 1; en.maxHp = 1;
+                // Marked as well as nerfed: a body that dies to one hit should not pay like a
+                // body that fought back. See the payout in Entity.takeDamage.
+                en.hp = 1; en.maxHp = 1; en.swarmling = true;
             }
             entities.enemies.push(en);
         }
@@ -3868,10 +4042,16 @@
         document.getElementById('go-stone').innerText = gameStats.stone; document.getElementById('go-extractors').innerText = gameStats.extractors;
     }
 
+    // Any window that takes over the screen also stops the clock. The talent tree and the
+    // Buildings window both open at night, and reading them used to cost you the wave - the
+    // horde kept walking while you were nose-deep in a menu.
+    function anyModalOpen() { return MODAL_IDS.some(id => !document.getElementById(id).classList.contains('hidden')); }
+
     function update(dt) {
         updateCamera();
         mouse.x = mouse.sx + cam.x; mouse.y = mouse.sy + cam.y;
-        if(gameState === 'OVER' || isPaused) return;
+        if (gameState === 'OVER') return;
+        if (isPaused || anyModalOpen()) { syncHud(); return; }
         if (screenShake > 0) screenShake -= dt * 30;
 
         if (keys['t']) { openTalentMenu(); keys['t'] = false; }
@@ -3951,16 +4131,22 @@
                                 if (!player.hasDaySpeed) { player.hasDaySpeed = true; playerBuffs.speedMult += 1.0; }
                                 entities.texts.push(new FloatingText(r.x, r.y - 20, "SPEED BUFF", '#00ffcc'));
                             } else {
-                                let upgs = ['weapon', 'mining', 'speed']; let chosen = upgs[Math.floor(Math.random()*upgs.length)];
-                                forgeUpgrades[chosen].level++;
-                                if (chosen === 'weapon') { playerBuffs.forgeAtkMult += 0.1; player.recalcStats(); }
-                                if (chosen === 'mining') { playerBuffs.gatherYield += MINING_YIELD_STEP; }
-                                if (chosen === 'speed') { playerBuffs.speedMult += 0.05; }
-                                entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); updateForgeUI();
+                                // The forge caps at FORGE_MAX_LEVEL and a cache has no business
+                                // walking past it - unfiltered, this printed 6/5 on the pips.
+                                let upgs = ['weapon', 'mining', 'speed'].filter(u => forgeUpgrades[u].level < FORGE_MAX_LEVEL);
+                                if (!upgs.length) {
+                                    inventory.mana += 50; entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
+                                } else {
+                                    let chosen = upgs[Math.floor(Math.random()*upgs.length)];
+                                    forgeUpgrades[chosen].level++;
+                                    if (chosen === 'weapon') { playerBuffs.forgeAtkMult += 0.1; player.recalcStats(); }
+                                    if (chosen === 'mining') { playerBuffs.gatherYield += MINING_YIELD_STEP; }
+                                    if (chosen === 'speed') { playerBuffs.speedMult += 0.05; }
+                                    entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); updateForgeUI();
+                                }
                             }
                         } else {
                             r.hp--; clickedInteractable = true; r.hitFlashTimer = 0.1; playSound('mine');
-                            this.flashAnim = 0.1;
                             entities.texts.push(new FloatingText(r.x, r.y - 20, "⛏️", '#ffffff'));
                             spawnParticles(r.x, r.y, r.type === 'wood' ? '#8B4513' : '#777', 3);
                             
@@ -3996,6 +4182,12 @@
 
         if (player.hp <= 0 || base.hp <= 0) { triggerGameOver(); }
 
+        syncHud();
+    }
+
+    // Split out of update() so it still runs while a window has the clock stopped - otherwise
+    // buying at the forge left the resource pills reading the old numbers until you closed it.
+    function syncHud() {
         flashResource('ui-wood', inventory.wood); flashResource('ui-stone', inventory.stone); flashResource('ui-mana', inventory.mana);
         document.getElementById('ui-atk').innerText = player.atk;
         document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`; document.getElementById('mpBar').style.width = `${(player.mp/player.maxMp)*100}%`;
@@ -4044,10 +4236,14 @@
         if (base.overchargeCd > 0) {
             qCdEl.style.setProperty('--p', Math.min(100, (base.overchargeCd / 45.0) * 100));
             qTxt.innerText = base.overchargeCd.toFixed(0);
-            qSlot.classList.remove('ready');
+            qSlot.classList.remove('ready', 'no-mana');
+        } else if (gameState !== 'NIGHT') {
+            // Off cooldown but unusable until dark - the slot said "ready" all day.
+            qCdEl.style.setProperty('--p', 0); qTxt.innerText = '';
+            qSlot.classList.remove('ready'); qSlot.classList.add('no-mana');
         } else {
             qCdEl.style.setProperty('--p', 0); qTxt.innerText = '';
-            qSlot.classList.add('ready');
+            qSlot.classList.add('ready'); qSlot.classList.remove('no-mana');
         }
     }
 
