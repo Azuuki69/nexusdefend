@@ -127,7 +127,16 @@
         #talentAlert #talent-count { color: #fff; font-weight: 800; }
         #talentAlert .tword { color: #4fbfa8; font-size: 10px; }
         .ability-slot { position: relative; width: 68px; height: 68px; border-radius: 10px; background: linear-gradient(180deg, #232823, #0c0f0c); border: 2px solid #4a4a42; box-shadow: 0 6px 14px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        /* The Shift/dash cards are landscape (roughly 1.5-1.6:1) where the E slot's are portrait,
+           so squaring this slot the same way cropped real content off both sides. Widened instead
+           of cropped, at the middle of that ratio, so all four classes' art shows in full with
+           only a sliver of letterboxing at either end of the range. */
+        #ability-shift-slot { width: 108px; }
         .ability-slot .ability-icon { font-size: 30px; filter: drop-shadow(0 0 6px rgba(0,0,0,0.8)); z-index: 1; }
+        /* The E and Shift slots' icons are real cropped sprites rather than emoji glyphs, sized
+           and positioned by setSkillIcon() - this just fills the slot and keeps the pixel art
+           crisp instead of letting the browser soften it on the upscale. */
+        .ability-slot .ability-icon.skill-icon { width: 100%; height: 100%; font-size: 0; image-rendering: pixelated; border-radius: 6px; }
         .ability-slot .ability-cd-overlay { position: absolute; inset: 0; background: conic-gradient(rgba(0,0,0,0.82) calc(var(--p, 0) * 1%), transparent 0); z-index: 2; }
         .ability-slot .ability-cd-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: #fff; text-shadow: 1px 1px 3px #000; z-index: 3; }
         .ability-slot .ability-key { position: absolute; top: 2px; left: 5px; font-size: 11px; font-weight: 800; color: var(--gold-bright); text-shadow: 1px 1px 2px #000; z-index: 3; background: rgba(0,0,0,0.5); padding: 0 4px; border-radius: 3px; }
@@ -334,10 +343,10 @@
             </div>
             <div id="ability-shift-slot" class="ability-slot">
                 <span class="ability-key">SHIFT</span>
-                <span class="ability-icon">💨</span>
+                <span class="ability-icon" id="ability-shift-icon">💨</span>
                 <div class="ability-cd-overlay" id="ability-shift-cd" style="--p:0;"></div>
                 <span class="ability-cd-text" id="ability-shift-text"></span>
-                <span class="ability-name">Dash</span>
+                <span class="ability-name" id="ability-shift-name">Dash</span>
             </div>
             <div id="ability-q-slot" class="ability-slot">
                 <span class="ability-key">Q</span>
@@ -508,6 +517,19 @@
     const waterSprite = new Image(); waterSprite.src = 'assets/textures/water.png';
     const goblinSprite = new Image(); goblinSprite.src = 'assets/textures/enemies/goblin_clean.png';
     const whirlwindSprite = new Image(); whirlwindSprite.src = 'assets/textures/whirlwind.png';
+    // Every flying arrow in the game - the archer's own shot, the orc archer's and goblin
+    // wolf-rider's return fire, the Orc King's enrage burst, a dying boss's shrapnel - and the
+    // falling shafts of Rain of Arrows drew as a two-part vector shape: a brown rectangle for
+    // the shaft, a small filled triangle for the head. This sprite replaces both.
+    const arrowSprite = new Image(); arrowSprite.src = 'assets/textures/arrow.png';
+    const ARROW_CROP = [67, 135, 550, 98];   // tip to fletching; excludes the sheet's corner art
+    // Shared by every arrow draw call below. The caller translates and rotates into the arrow's
+    // own local space first - local +X is "forward", matching the sprite's own head pointing
+    // right - so this only has to place it centred on that origin at the given tip-to-tail length.
+    function drawArrowSprite(ctx, len) {
+        let f = ARROW_CROP, dh = len * (f[3] / f[2]);
+        ctx.drawImage(arrowSprite, f[0], f[1], f[2], f[3], -len / 2, -dh / 2, len, dh);
+    }
     const bear4Sprite = new Image(); bear4Sprite.src = 'assets/textures/enemies/bear4.png';
     const bear3Sprite = new Image(); bear3Sprite.src = 'assets/textures/enemies/bear3.png';
     const wolfSprite = new Image(); wolfSprite.src = 'assets/textures/enemies/wolf_walk.png';
@@ -667,6 +689,128 @@
     const CAMP_X = WORLD_CX + 1250, CAMP_Y = WORLD_CY + 900;
     const CAMP_NPC_X = CAMP_X - 34, CAMP_NPC_Y = CAMP_Y + 58;
     const CAMP_RANGE = 130;
+
+    // --- Holy Nova ----------------------------------------------------------------
+    // One expanding rune circle drawn at four stages - nascent core, forming core, developing
+    // circle, full nova - captioned underneath, so these crop to the art. All four share a
+    // centre, so the burst stays concentric as it grows.
+    const holyNovaSprite = new Image(); holyNovaSprite.src = 'assets/textures/skills/holynova.png';
+    const HOLYNOVA_FRAMES = [
+        [39,149,52,53], [131,122,107,106], [255,82,183,185], [450,56,226,233]
+    ];
+    // The stage the burst has reached is the whole point, so every frame is drawn at one scale
+    // pinned to the last of them rather than being stretched to a common size - otherwise the
+    // nascent core would fill the same circle as the finished nova and nothing would appear to
+    // grow at all.
+    //
+    // The three growing stages are packed into the first half of the effect's life and the full
+    // circle holds for the rest. Spreading all four evenly put the finished nova at p=0.75, which
+    // is where the fade starts, so the one frame worth waiting for was never seen at full
+    // strength. Half is also exactly when Effect.update applies the damage, so the circle now
+    // reaches its full size on the frame it actually hits.
+    const HOLYNOVA_GROW = 0.5;
+    const HOLYNOVA_FADE_FROM = 0.8;
+
+    // --- Ability-bar icons (E and Shift slots) ---------------------------------------
+    // Both sheets are four self-contained icon cards, one per class, each already carrying its
+    // own class-coloured border - so these crop the whole card rather than just the inner art,
+    // the way you would drop a finished icon asset into an action bar.
+    const E_ICON_SHEET = { url: 'assets/textures/skills/skills.png', size: [676, 369], frames: {
+        warrior: [14,  66, 142, 165],
+        mage:    [184, 66, 141, 164],
+        priest:  [352, 62, 143, 168],
+        archer:  [521, 66, 143, 165]
+    }};
+    // dashteleport.png repeats the same four E-ability cards on its top row; the bottom row is the
+    // one this needs, one card per class showing the actual Shift move - a physical dash for the
+    // warrior and archer, a blink for the mage and priest, matching what Player.update actually
+    // does with Shift for each of them. The top row bleeds into these by a few px of drop-shadow at
+    // the seam, and each card also has its own caption above and below it, so the crop is bounded
+    // to the card's own solid-alpha block rather than trusted to a single connected alpha region.
+    const SHIFT_ICON_SHEET = { url: 'assets/textures/skills/dashteleport.png', size: [676, 369], frames: {
+        warrior: [14,  256, 142, 90],
+        mage:    [184, 257, 141, 89],
+        priest:  [353, 254, 141, 93],
+        archer:  [521, 256, 143, 88]
+    }};
+    // The E slot is square, and its cards are portrait, so those are cropped down to a centered
+    // square - the "fill without distorting" object-fit: cover gets on a photo, done by hand
+    // because this is a sprite-sheet region rather than an image of its own.
+    //
+    // The Shift slot's cards are landscape instead (roughly 1.5-1.6:1), and cropping THOSE to a
+    // square was cutting real content off both sides - a dash blur or a teleport's second figure
+    // half gone. That slot is widened to match in CSS instead, and drawn here with 'contain':
+    // the whole frame scaled to fit inside the box and centred, the way object-fit: contain
+    // letterboxes a photo rather than cropping it.
+    function setSkillIcon(el, sheet, cls, mode) {
+        let f = sheet.frames[cls];
+        if (!f || !el) return;
+        el.classList.add('skill-icon');
+        el.innerText = '';
+        let boxW = el.clientWidth || 68, boxH = el.clientHeight || 68;
+        let scale, ox = 0, oy = 0, wx = f[0], wy = f[1], fw = f[2], fh = f[3];
+        if (mode === 'contain') {
+            scale = Math.min(boxW / fw, boxH / fh);
+            ox = (boxW - fw * scale) / 2; oy = (boxH - fh * scale) / 2;
+        } else {
+            let side = Math.min(fw, fh);
+            wx = f[0] + (fw - side) / 2; wy = f[1] + (fh - side) / 2; fw = fh = side;
+            scale = boxW / side;
+        }
+        // background-size scales the WHOLE sheet by that factor, so the chosen window maps 1:1
+        // onto the box; background-position then slides the scaled sheet so that window's corner
+        // lands at (ox, oy) - the box origin for cover, or the letterbox inset for contain. Read
+        // from the element's own rendered size rather than assuming a fixed box, so this keeps
+        // working if either slot's CSS size ever changes.
+        el.style.backgroundImage = "url('" + sheet.url + "')";
+        el.style.backgroundRepeat = 'no-repeat';
+        el.style.backgroundSize = (sheet.size[0] * scale) + 'px ' + (sheet.size[1] * scale) + 'px';
+        el.style.backgroundPosition = (ox - wx * scale) + 'px ' + (oy - wy * scale) + 'px';
+    }
+
+    // --- Meteor -------------------------------------------------------------------
+    // Four frames of a falling rock, growing as it nears, then the impact blast. Uncaptioned, so
+    // these are straight bounding boxes.
+    //
+    // The last two numbers on each falling frame are where the burning head sits inside its box,
+    // as a fraction of the box. The meteor is anchored by that head rather than by the box, so it
+    // tracks the line it is travelling along - anchoring on the box centre would make the streak
+    // wobble, because the tail grows off the back and drags the centre with it. Measured off the
+    // art: the head lands at ~0.73 across and ~0.75 down on all four, which is also what tells us
+    // the tail runs up and to the left, hence METEOR_DIR.
+    const meteorSprite = new Image(); meteorSprite.src = 'assets/textures/skills/meteor.png';
+    const METEOR_FRAMES = [
+        [ 33, 141,  46,  57, 0.733, 0.704],
+        [121, 138,  72,  82, 0.729, 0.744],
+        [227, 141,  81, 101, 0.719, 0.776],
+        [322, 131,  98, 128, 0.727, 0.774],
+        [442,  96, 204, 192, 0.5,   0.5  ]   // the blast is radial, so it sits on the impact point
+    ];
+    // Impact at half the effect's life is not a look-good number: Effect.update applies the damage
+    // at exactly life < maxLife/2, so the rock lands on the frame it actually hits.
+    const METEOR_IMPACT = 0.5;
+    const METEOR_DIR = [0.6, 0.8];      // travel direction, matching the sprite's own tail angle
+    const METEOR_APPROACH = 3.0;        // how far out it starts, in multiples of the blast radius
+
+    // --- Scorched Earth -----------------------------------------------------------
+    // The last frame of scorchedearth.png: a crater with fires still burning in the rubble. The
+    // talent promises a fire zone, so it wants the burning frame - the bare crater on the sheet
+    // before it is scorched ground with the fire already out, which is the state this zone is in
+    // only once it has expired. Only that one frame is read from the sheet; the rest repeat the
+    // meteor sequence.
+    const scorchedSprite = new Image(); scorchedSprite.src = 'assets/textures/skills/scorchedearth.png';
+    const SCORCHED_CRATER = [542, 126, 125, 116];
+    // Where the burnt ground sits inside that frame, as a fraction of its height. The flames stand
+    // up out of the crater, so the art's own middle is well above the ground it is burning on -
+    // centring the box would plant the decal low and leave the fire hanging off the top. Measured:
+    // the rows at 80%+ of full width, which is the rubble rather than the flame tongues, run from
+    // row 44 to row 98 of 116.
+    const SCORCHED_GROUND_Y = 0.612;
+    // A crater is the hole the rock leaves, so it must not already be on the ground while the rock
+    // is still falling. Both effects are created on the same cast, and this one outlives the meteor
+    // 5s to 1s, so the meteor's impact at 0.5s is a tenth of the way through this one: the crater
+    // fades in from there and is fully down about when the blast has cleared.
+    const SCORCHED_IN_START = 0.10, SCORCHED_IN_END = 0.22, SCORCHED_FADE_FROM = 0.80;
 
     // --- Dropped potions ----------------------------------------------------------
     // One sheet, red flask then blue. Captioned top and bottom, so these crop to the art.
@@ -1063,6 +1207,11 @@
     // How long the swing takes to play out. Also gates which pose Player.update selects, so the
     // two can never disagree about when the attack animation is over.
     const ATTACK_ANIM_TIME = 0.25;
+
+    // How far each pose's body sits from the player's origin horizontally, indexed by frameX
+    // (0 idle, 1 walking, 2 attacking). Everything not listed is centred in its cell to within a
+    // couple of pixels and needs no correction. See Player.visualMidX for how these were measured.
+    const BODY_OFFSET_X = { priest: [7, 0, 0] };
 
     // World pixels per frame of the cycle. The classes cover 210-330 px/s, so this lands the
     // cycle at 7fps for the mage and 11 for the archer - the quick class visibly picks its feet
@@ -2236,6 +2385,72 @@
             if(this.life <= 0) this.markedForDeletion = true;
         }
         draw(ctx) {
+            if (this.style === 'scorched' && scorchedSprite.complete && scorchedSprite.naturalWidth !== 0) {
+                let q = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
+                let a = q < SCORCHED_IN_START ? 0
+                      : q < SCORCHED_IN_END   ? (q - SCORCHED_IN_START) / (SCORCHED_IN_END - SCORCHED_IN_START)
+                      : q > SCORCHED_FADE_FROM ? Math.max(0, 1 - (q - SCORCHED_FADE_FROM) / (1 - SCORCHED_FADE_FROM))
+                      : 1;
+                if (a > 0) {
+                    let f = SCORCHED_CRATER;
+                    // The burnt ground spans the radius that burns, so what you see is what stands
+                    // in it. Height follows the art's own aspect, and the anchor is the ground line
+                    // rather than the middle of the box, so the flames rise out of the crater
+                    // instead of dragging it down the screen.
+                    let dw = this.radius * 2, dh = dw * (f[3] / f[2]);
+                    ctx.save();
+                    ctx.globalAlpha = a;
+                    ctx.drawImage(scorchedSprite, f[0], f[1], f[2], f[3],
+                                  this.x - dw/2, this.y - dh * SCORCHED_GROUND_Y, dw, dh);
+                    ctx.restore();
+                }
+                return;
+            }
+            if (this.style === 'meteor' && meteorSprite.complete && meteorSprite.naturalWidth !== 0) {
+                // One scale for the whole sequence, pinned to the blast so it spans the radius that
+                // actually deals the damage. The falling frames come out proportionally smaller off
+                // that same scale, which is what sells the rock closing on you.
+                let p = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
+                let scale = (this.radius * 2) / METEOR_FRAMES[4][2];
+                let f, cx, cy, alpha = 1;
+                if (p < METEOR_IMPACT) {
+                    let t = p / METEOR_IMPACT;
+                    f = METEOR_FRAMES[Math.min(3, Math.floor(t * 4))];
+                    let away = this.radius * METEOR_APPROACH * (1 - t);
+                    cx = this.x - METEOR_DIR[0] * away;
+                    cy = this.y - METEOR_DIR[1] * away;
+                } else {
+                    f = METEOR_FRAMES[4];
+                    cx = this.x; cy = this.y;
+                    let q = (p - METEOR_IMPACT) / (1 - METEOR_IMPACT);
+                    alpha = q > 0.6 ? Math.max(0, 1 - (q - 0.6) / 0.4) : 1;
+                }
+                let dw = f[2] * scale, dh = f[3] * scale;
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.drawImage(meteorSprite, f[0], f[1], f[2], f[3], cx - f[4]*dw, cy - f[5]*dh, dw, dh);
+                ctx.restore();
+                return;
+            }
+            if (this.style === 'holynova' && holyNovaSprite.complete && holyNovaSprite.naturalWidth !== 0) {
+                // The last frame is drawn at the effect's own diameter, so the circle you see is
+                // the circle that heals and hits. The earlier stages come out proportionally
+                // smaller off the same scale, which is what makes the nova bloom outward.
+                let p = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
+                let n = HOLYNOVA_FRAMES.length;
+                let idx = p < HOLYNOVA_GROW
+                    ? Math.min(n - 2, Math.floor((p / HOLYNOVA_GROW) * (n - 1)))
+                    : n - 1;
+                let f = HOLYNOVA_FRAMES[idx];
+                let scale = (this.radius * 2) / HOLYNOVA_FRAMES[n - 1][2];
+                let dw = f[2] * scale, dh = f[3] * scale;
+                ctx.save();
+                ctx.globalAlpha = p > HOLYNOVA_FADE_FROM
+                    ? Math.max(0, 1 - (p - HOLYNOVA_FADE_FROM) / (1 - HOLYNOVA_FADE_FROM)) : 1;
+                ctx.drawImage(holyNovaSprite, f[0], f[1], f[2], f[3], this.x - dw/2, this.y - dh/2, dw, dh);
+                ctx.restore();
+                return;
+            }
             if (this.style === 'arrowrain') {
                 let fade = Math.min(1, this.life / 0.4);
                 ctx.save();
@@ -2250,10 +2465,20 @@
                     let prog = ((t / sh.dur) + sh.delay) % 1;
                     let gx = this.x + sh.ox, gy = this.y + sh.oy;
                     let ty = gy - 300 * (1 - prog);
-                    ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.moveTo(gx, ty - 16); ctx.lineTo(gx, ty); ctx.stroke();
-                    ctx.fillStyle = '#4dff4d';
-                    ctx.beginPath(); ctx.moveTo(gx, ty + 6); ctx.lineTo(gx - 3, ty - 1); ctx.lineTo(gx + 3, ty - 1); ctx.fill();
+                    if (arrowSprite.complete && arrowSprite.naturalWidth !== 0) {
+                        // The old shaft ran from ty-16 to the head's tip at ty+6, 22px nock to
+                        // point - centring a 22-long sprite on ty-5 reproduces that same span
+                        // exactly. Rotated a quarter turn so the sprite's own right-pointing head
+                        // ends up pointing straight down, the way a dropping arrow actually falls.
+                        ctx.save(); ctx.translate(gx, ty - 5); ctx.rotate(Math.PI / 2);
+                        drawArrowSprite(ctx, 22);
+                        ctx.restore();
+                    } else {
+                        ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(gx, ty - 16); ctx.lineTo(gx, ty); ctx.stroke();
+                        ctx.fillStyle = '#4dff4d';
+                        ctx.beginPath(); ctx.moveTo(gx, ty + 6); ctx.lineTo(gx - 3, ty - 1); ctx.lineTo(gx + 3, ty - 1); ctx.fill();
+                    }
                 });
                 ctx.restore();
                 return;
@@ -2261,7 +2486,12 @@
             if (this.color === '#00ffff' && this.radius < 50 && this.maxLife < 1) { // Laser
                 ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(this.x, this.y); ctx.stroke();
             } else {
-                ctx.globalAlpha = this.life / this.maxLife; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0;
+                // Fallback path for Scorched Earth when its sheet has not loaded. Its zone lives 5s,
+                // so life/maxLife alone left it at ~97% opacity for most of that - a solid disc of
+                // paint that buried the meteor's blast and the ground with it. Held down to a
+                // fraction so even the fallback stays readable; other blobs are brief and unaffected.
+                ctx.globalAlpha = (this.isScorched ? 0.3 : 1) * (this.life / this.maxLife);
+                ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0;
             }
         }
     }
@@ -2662,6 +2892,33 @@
             }
         }
 
+        // Horizontal counterpart to visualMidY. The sprite CELL is centred on the origin, but the
+        // art inside the cell need not be: the priest's idle pose stands with his staff out to one
+        // side, which pushes his body 7px off the anchor. Measured off the drawn sprite rather than
+        // eyeballed - for each row take the longest contiguous run of opaque pixels, which is the
+        // torso since a staff is a separate and shorter run, then the median across rows, which
+        // shrugs off the rows where an outstretched arm is the longest thing. His walk frames came
+        // back at +1.5 and -2.5, so only the idle pose needs correcting.
+        //
+        // Multiplied by facing, because the sprite is mirrored when you aim left: a fixed offset
+        // would be right half the time and twice as wrong the other half.
+        visualMidX() {
+            let per = BODY_OFFSET_X[this.cls];
+            let off = per ? (per[this.frameX] || 0) : 0;
+            return off * (mouse.x < this.x ? -1 : 1);
+        }
+
+        // The player's origin sits at the feet, not the middle of the figure, so anything meant to
+        // be centred ON the caster has to be placed here instead. Measured rather than eyeballed:
+        // the walk frames' bounding boxes centre on y -8 to -9.5, and feet - h/2 lands on -9.
+        // Derived from the sprite metrics rather than typed in, so it survives a re-scale of the
+        // art. Horizontal needs no correction - those same frames centre on x -0.5 - and a fixed
+        // x offset would be wrong half the time anyway, because the sprite flips with facing.
+        visualMidY() {
+            let set = HERO_WALK[this.cls];
+            return set ? set.feet - set.h / 2 : 0;
+        }
+
         // Which frame of a drawn attack sequence to show. The window is capped at the attack
         // cooldown so a hasted warrior plays the whole swing faster instead of stalling on the
         // wind-up and never reaching the arc.
@@ -2685,8 +2942,8 @@
                 this.abTimer = 1.5; this.abMaxTimer = 1.5; this.whirlTick = 0; this.whirlSpin = 0; this.whirlPulse = 0;
             } 
             else if (this.cls === 'mage') { 
-                entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player')); 
-                if (this.scorchedEarth) entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff3300', 5.0, this.atk * 0.5, false, true, 'fire', 'player'));
+                entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player', 'meteor')); 
+                if (this.scorchedEarth) entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff3300', 5.0, this.atk * 0.5, false, true, 'fire', 'player', 'scorched'));
                 addShake(15); 
             } 
             else if (this.cls === 'archer') {
@@ -2706,7 +2963,11 @@
                 // attack it opens slightly above the old flat number and then keeps up, while
                 // staying under the pure-damage ults because this one heals as well.
                 let healAmt = 50 * this.novaHealMod;
-                entities.effects.push(new Effect(this.x, this.y, 250, '#ffffcc', 0.5, this.atk * 2.5, false, false, 'none', 'player'));
+                // Placed on the caster's visual middle, not their origin, so the priest stands in
+                // the centre of his own circle instead of a head low in it. Offsetting the effect
+                // itself rather than just the drawing keeps the circle you see and the circle that
+                // heals and hits as one and the same.
+                entities.effects.push(new Effect(this.x + this.visualMidX(), this.y + this.visualMidY(), 250, '#ffffcc', 0.5, this.atk * 2.5, false, false, 'none', 'player', 'holynova'));
                 
                 let applyHeal = (ent, amt) => {
                     if (ent.hp >= ent.maxHp && this.overheal) ent.shield = Math.min(ent.maxHp, ent.shield + amt);
@@ -2976,7 +3237,10 @@
         draw(ctx) { 
             ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(Math.atan2(this.vy, this.vx));
             if (this.isExplosive && this.vx === 0) { ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(0,0, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffaa00'; ctx.fillRect(-3, -10, 6, 6); } 
-            else if (this.color === '#4dff4d' || this.color === '#ff0000' || this.color === '#ffaa00') { ctx.fillStyle = '#8B4513'; ctx.fillRect(-10, -1, 20, 2); ctx.fillStyle = this.color; ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(15, 0); ctx.lineTo(10, 3); ctx.fill(); } 
+            else if (this.color === '#4dff4d' || this.color === '#ff0000' || this.color === '#ffaa00') {
+                if (arrowSprite.complete && arrowSprite.naturalWidth !== 0) drawArrowSprite(ctx, 30);
+                else { ctx.fillStyle = '#8B4513'; ctx.fillRect(-10, -1, 20, 2); ctx.fillStyle = this.color; ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(15, 0); ctx.lineTo(10, 3); ctx.fill(); }
+            }
             else { ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0,0, 8, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0, 4, 0, Math.PI*2); ctx.fill(); }
             ctx.restore();
         }
@@ -3938,12 +4202,19 @@
         updateBuildUI(); updateTrinkets(); restockMerchant();
 
         const classIcons = { warrior: '⚔️', mage: '🔥', archer: '🏹', priest: '✨' };
-        const abilityIcons = { warrior: '🌀', mage: '☄️', archer: '🏹', priest: '💫' };
         const abilityNames = { warrior: 'Whirlwind', mage: 'Meteor', archer: 'Rain of Arrows', priest: 'Holy Nova' };
         document.getElementById('classPortrait').className = 'cls-' + selectedClass;
         document.getElementById('classPortraitIcon').innerText = classIcons[selectedClass];
-        document.getElementById('ability-e-icon').innerText = abilityIcons[selectedClass];
+        setSkillIcon(document.getElementById('ability-e-icon'), E_ICON_SHEET, selectedClass);
         document.getElementById('ability-e-name').innerText = abilityNames[selectedClass];
+        setSkillIcon(document.getElementById('ability-shift-icon'), SHIFT_ICON_SHEET, selectedClass, 'contain');
+        // Shift is two different moves wearing one button: the warrior and archer plant their feet
+        // and burst forward, invincible for the length of it: the mage and priest instead blink
+        // toward the cursor, closing distance without ever crossing the ground between. The label
+        // said "Dash" for all four before this, which the mage and priest's own icon now visibly
+        // contradicts.
+        document.getElementById('ability-shift-name').innerText =
+            (selectedClass === 'mage' || selectedClass === 'priest') ? 'Teleport' : 'Dash';
         
         generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant());
         entities.npcs.push(new Wanderer());
