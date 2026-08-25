@@ -2367,12 +2367,21 @@
         }
         gainXp(amount) {
             this.xp += amount;
-            if (this.xp >= this.maxXp) {
-                this.level++; this.xp -= this.maxXp; 
+            // `while`, not `if`: a single award can be worth more than one level. A cyclops
+            // contract pays 360 against a 150 threshold, and with `if` the surplus just sat
+            // banked - so levels were gated by how many things you killed rather than by the
+            // experience you actually earned, and every boss and contract was short-changed.
+            let gained = 0;
+            while (this.xp >= this.maxXp) {
+                this.level++; this.xp -= this.maxXp;
                 this.maxXp = Math.floor(this.maxXp * TALENT_XP_GROWTH);
                 this.tp += TP_PER_LEVEL;
+                gained++;
+            }
+            if (gained > 0) {
                 this.recalcStats(); this.hp = this.maxHp; this.mp = this.maxMp; playSound('levelup');
-                entities.texts.push(new FloatingText(this.x, this.y - 40, "LEVEL UP!", '#ffcc00'));
+                entities.texts.push(new FloatingText(this.x, this.y - 40,
+                    gained > 1 ? "LEVEL UP x" + gained + "!" : "LEVEL UP!", '#ffcc00'));
             }
         }
         update(dt) {
