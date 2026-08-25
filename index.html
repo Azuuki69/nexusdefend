@@ -836,7 +836,9 @@
     }
     // Get close and they come for you rather than walking past to the nexus. Aggro sticks for
     // a few seconds so they do not flip target every step, and hitting something aggros it.
-    const AGGRO_RANGE = 300, AGGRO_RANGE_GOLEM = 140, AGGRO_HOLD = 4.0, AGGRO_DROP = 1.7;
+    // Widened with the towers gone: intercepting a column before it reaches the nexus is the
+    // only defence left, so the player needs to be able to actually pull one.
+    const AGGRO_RANGE = 360, AGGRO_RANGE_GOLEM = 140, AGGRO_HOLD = 4.0, AGGRO_DROP = 1.7;
     const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
     const chestSprite = new Image(); chestSprite.src = 'assets/textures/chest.png';
     const forgeSprite = new Image(); forgeSprite.src = 'assets/textures/buildings/forge.png';
@@ -890,8 +892,16 @@
     // A flat 500hp nexus died in about 1.3s at wave 10 and 0.3s at wave 20, so losing was a
     // tripwire rather than attrition. Growing the pool with the wave gives leakage somewhere
     // to land, which is what makes repairs and the brazier worth having.
-    const NEXUS_BASE_HP = 500, NEXUS_HP_PER_WAVE = 60, FORGE_MAX_LEVEL = 5;
-    function nexusMaxHpFor(w) { return NEXUS_BASE_HP + NEXUS_HP_PER_WAVE * w + 100 * (forgeUpgrades.nexus ? forgeUpgrades.nexus.level : 0); }
+    // The nexus is the whole failure condition now: towers used to intercept whatever walked
+    // past you, and nothing does, so anything you cannot personally reach lands on it.
+    //
+    // It used to gain a flat 60 HP a wave while enemy damage climbed 1.1x a wave. Geometric
+    // beats linear, so the number of leakers it could survive fell every night - by wave 20 a
+    // single enemy chewing on it for the night was lethal, and no amount of flat HP fixes that
+    // shape. It now compounds at 1.09 against their 1.10, so it very slowly loses ground
+    // instead of falling off a cliff, and the late game stays playable.
+    const NEXUS_BASE_HP = 700, NEXUS_HP_GROWTH = 1.09, FORGE_MAX_LEVEL = 5;
+    function nexusMaxHpFor(w) { return Math.floor(NEXUS_BASE_HP * Math.pow(NEXUS_HP_GROWTH, w - 1)) + 100 * (forgeUpgrades.nexus ? forgeUpgrades.nexus.level : 0); }
     function bearLoot() { return BEAR_LOOT_BASE + BEAR_LOOT_PER_WAVE * wave; }
     const terrainSprites = { trees: new Image(), rocks: new Image() };
     terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
@@ -1160,7 +1170,7 @@
             ]},
             { id: 'p3', name: 'Warlord', desc: 'Plunder and execution', talents: [
                 { id: 'w_c_1', name: 'Spoils of War', desc: 'Gather 25% more wood and stone', max: 3, apply: () => playerBuffs.gatherYield += 0.25 },
-                { id: 'w_c_2', name: 'Efficient Builder', desc: 'Build costs -15%', max: 2, apply: r => player.buildCostMod = Math.pow(0.85, r) },
+                { id: 'w_c_2', name: 'Efficient Builder', desc: 'Build costs -15%, and extractors yield +1 each', max: 2, apply: r => { player.buildCostMod = Math.pow(0.85, r); player.extractorBonus = r; } },
                 { id: 'w_c_3', name: 'Executioner', desc: '+7% critical strike chance', max: 3, apply: () => playerBuffs.critChance += 0.07 },
                 { id: 'w_c_4', name: 'Brutal Impact', desc: 'Critical strikes hit 50% harder', max: 2, apply: () => playerBuffs.critMult += 0.5 },
                 { id: 'w_c_5', name: 'Battle Trance', desc: 'Heal 6 HP for every kill', max: 2, apply: () => playerBuffs.lifeOnKill += 6 },
@@ -1207,7 +1217,7 @@
                 { id: 'a_t_2', name: 'Barbed Arrows', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
                 { id: 'a_t_3', name: 'Skinner', desc: 'Gather 25% more wood and stone', max: 2, apply: () => playerBuffs.gatherYield += 0.25 },
                 { id: 'a_t_4', name: "Hunter's Instinct", desc: 'Heal 5 HP for every kill', max: 2, apply: () => playerBuffs.lifeOnKill += 5 },
-                { id: 'a_t_5', name: 'Quick Hands', desc: 'Build costs -15%', max: 2, apply: r => player.buildCostMod = Math.pow(0.85, r) },
+                { id: 'a_t_5', name: 'Quick Hands', desc: 'Build costs -15%, and extractors yield +1 each', max: 2, apply: r => { player.buildCostMod = Math.pow(0.85, r); player.extractorBonus = r; } },
                 { id: 'a_t_6', name: 'Crippling Shot (Ult)', desc: 'Attacks slow, and slowed targets take triple damage', max: 1, apply: () => { player.attackSlows = true; player.shatter = true; } }
             ]},
             { id: 'p3', name: 'Ranger', desc: 'Mobility and Rain of Arrows', talents: [
@@ -1240,7 +1250,7 @@
                 { id: 'p_i_1', name: 'Fervor', desc: '+8% attack speed', max: 2, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
                 { id: 'p_i_2', name: 'Wrath', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
                 { id: 'p_i_3', name: 'Consecration', desc: 'Reflect 15% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.15 },
-                { id: 'p_i_4', name: 'Zealotry', desc: '+10% damage', max: 2, apply: () => { player.talentAtkBonus += 0.10; player.recalcStats(); } },
+                { id: 'p_i_4', name: 'Zealotry', desc: '+7% critical strike chance', max: 2, apply: () => playerBuffs.critChance += 0.07 },
                 { id: 'p_i_5', name: 'Judgment', desc: 'Holy Nova calls down beams', max: 1, apply: () => player.novaBeams = true },
                 { id: 'p_i_6', name: 'Prismatic Judgment (Ult)', desc: "Holy Nova's beams strike three times as hard", max: 1, apply: () => player.novaBeamMult = 3.0 }
             ]}
@@ -1620,11 +1630,16 @@
         document.getElementById('trinketList').innerHTML = t;
     }
 
+    // Attack values were set when every class had two towers doing a share of the killing, and
+    // the two classes whose third path was built entirely on towers - the mage's Archmage and
+    // the priest's Inquisitor - were also the two carrying the smallest weapons. On foot alone
+    // they were a third of the archer's damage, so both come up. The archer stays the ceiling
+    // and the warrior stays the multi-target bruiser; this closes a gap, it does not level it.
     const classDataInfo = {
         warrior: { hp: 200, mp: 50, spd: 4, atk: 35, range: 80, cd: 0.6, type: 'melee', color: '#ff4d4d', abCost: 20, abCd: 5.0 },
-        mage: { hp: 120, mp: 150, spd: 3.5, atk: 20, range: 400, cd: 0.8, type: 'ranged', color: '#5ce1e6', abCost: 40, abCd: 6.0 },
+        mage: { hp: 120, mp: 150, spd: 3.5, atk: 26, range: 400, cd: 0.8, type: 'ranged', color: '#5ce1e6', abCost: 40, abCd: 6.0 },
         archer: { hp: 120, mp: 90, spd: 5.5, atk: 25, range: 600, cd: 0.35, type: 'ranged', color: '#4dff4d', abCost: 25, abCd: 7.0 },
-        priest: { hp: 140, mp: 120, spd: 4, atk: 15, range: 350, cd: 0.6, type: 'ranged', color: '#ffe666', abCost: 35, abCd: 8.0 }
+        priest: { hp: 140, mp: 120, spd: 4, atk: 22, range: 350, cd: 0.6, type: 'ranged', color: '#ffe666', abCost: 35, abCd: 8.0 }
     };
 
     class Obstacle {
@@ -2236,8 +2251,10 @@
                         entities.texts.push(new FloatingText(this.x, this.y, "+" + loot + " EACH!", '#ffcc00'));
                         playSound('levelup');
                     } else {
+                        // Trash pays 14 rather than 10. Levels are the only power you accumulate
+                        // now, and there are fewer bodies per wave to earn them from.
                         let xpDrop = this.type === 'orcking' ? 600 : (this.type === 'boss' ? 200 : (this.type === 'cyclop' ? 140 :
-                                     (this.type === 'troll' ? 100 : (this.type === 'orcrider' ? 55 : (this.type === 'golem' ? 30 : (this.type === 'bomber'? 20 : 10))))));
+                                     (this.type === 'troll' ? 100 : (this.type === 'orcrider' ? 55 : (this.type === 'golem' ? 34 : (this.type === 'bomber'? 24 : 14))))));
                         player.gainXp(xpDrop * (currentWeather==='bloodmoon'?3:1));
                         
                         // Trash mana creeps up with the waves. Raising forge and shop prices without
@@ -2324,6 +2341,7 @@
             this.level = 1; this.xp = 0; this.maxXp = 150; 
             this.tp = 0; this.chosenPath = null; this.talents = []; this.paragonPoints = 0;
             this.hasDaySpeed = false;
+            this.wasOvercharged = false;
             this.shiftCd = 0;
             this.dashTimer = 0;
             this.dashAngle = 0;
@@ -2337,7 +2355,7 @@
         resetTalents(initial = false) {
             if (!initial) { this.tp += this.talents.length + this.paragonPoints; }
             this.talents = []; this.paragonPoints = 0; this.chosenPath = null;
-            this.whirlMod = 1.0; this.talentDmgReduc = 1.0; this.buildCostMod = 1.0;
+            this.whirlMod = 1.0; this.talentDmgReduc = 1.0; this.buildCostMod = 1.0; this.extractorBonus = 0;
             // Accumulated by talent ranks; read back in recalcStats so ranks stack cleanly.
             this.talentAtkBonus = 0; this.talentHpBonus = 0; this.talentMpBonus = 0;
             this.hpRegen = 0; this.burnBonus = 0; this.slowPower = 0.5;
@@ -2355,7 +2373,9 @@
             this.recalcStats();
         }
         recalcStats() {
-            let baseA = this.data.atk * Math.pow(1.1, this.level - 1); let baseH = this.data.hp * Math.pow(1.15, this.level - 1);
+            // 1.12 rather than 1.10: with the towers gone the player's own weapon is the only
+            // damage curve in the game, so it has to climb closer to the horde's own 1.13.
+            let baseA = this.data.atk * Math.pow(1.12, this.level - 1); let baseH = this.data.hp * Math.pow(1.15, this.level - 1);
             // Forge damage is additive off the class's base attack, not a multiplier on the
             // level-scaled value, so it no longer compounds with levels, talents and crit.
             this.atk = baseA + this.data.atk * (playerBuffs.forgeAtkMult - 1);
@@ -2367,7 +2387,14 @@
             this.atk = Math.floor(this.atk); this.maxHp = Math.floor(this.maxHp); this.maxMp = Math.floor(this.maxMp);
             this.hp = Math.min(this.hp, this.maxHp); this.mp = Math.min(this.mp, this.maxMp);
             this.attackCd = this.data.cd * playerBuffs.hasteMod;
-            
+            // Overcharge's five second window used to halve tower cooldowns and nothing else,
+            // so with the towers gone it was a ring drawn on the ground. It now drives the only
+            // weapon left: half the swing time and half again the damage while it burns.
+            if (typeof base !== 'undefined' && base && base.overchargeActive > 0) {
+                this.atk = Math.floor(this.atk * 1.5);
+                this.attackCd *= 0.5;
+            }
+
             this.dmgReduc = (this.cls === 'warrior' ? Math.max(0.5, 1.0 - (this.level * 0.02)) : 1.0) * this.talentDmgReduc * playerBuffs.dmgReducMult;
         }
         gainXp(amount) {
@@ -2448,12 +2475,18 @@
                 this.shiftCd = 3.0 * playerBuffs.hasteMod;
             }
 
+            // Overcharge only changes the numbers through recalcStats, so catch both edges of
+            // the window - switching it on and letting it lapse - and rebuild the stats there.
+            let ocNow = base && base.overchargeActive > 0;
+            if (ocNow !== this.wasOvercharged) { this.wasOvercharged = ocNow; this.recalcStats(); }
+
             if (keys['q'] && base.overchargeCd <= 0 && gameState === 'NIGHT') {
                 base.overchargeActive = 5.0;
                 base.overchargeCd = 45.0;
                 entities.effects.push(new Effect(base.x, base.y, 400, '#00ffff', 0.5, player.atk * 3, false, false, 'none', 'player'));
                 addShake(20); playSound('explosion');
                 entities.texts.push(new FloatingText(base.x, base.y - 80, "NEXUS OVERCHARGE!", '#00ffff'));
+                this.wasOvercharged = true; this.recalcStats();   // take effect on this frame, not the next
                 keys['q'] = false;
             }
 
@@ -2692,8 +2725,9 @@
         update(dt) {
             this.tick -= dt;
             if (gameState === 'DAY' && this.tick <= 0) {
-                inventory.wood += 2; inventory.stone += 2;
-                entities.texts.push(new FloatingText(this.x, this.y - 20, "+4 Res", '#ffcc00'));
+                let n = 2 + (player ? player.extractorBonus : 0);
+                inventory.wood += n; inventory.stone += n;
+                entities.texts.push(new FloatingText(this.x, this.y - 20, "+" + (n * 2) + " Res", '#ffcc00'));
                 playSound('pickup');
                 this.tick = 4.0;
             }
@@ -2787,7 +2821,9 @@
 
     class Enemy extends Entity {
         constructor(x, y, type) {
-            let baseHPMult = Math.pow(1.15, wave - 1);
+            // 1.15 compounded against a tower line that grew every wave. On foot alone it ran
+            // away from the player's own curve, so it is 1.13 - the same shape, a slower climb.
+            let baseHPMult = Math.pow(1.13, wave - 1);
             let startHp = Math.floor(35 * baseHPMult);
             super(x, y, type==='orcking'? KING_RADIUS : (type==='cyclop'? CYCLOP_RADIUS : (type==='troll'? TROLL_RADIUS : (type==='orcrider'? RIDER_RADIUS :
                 (type==='goblinarcher'? GOB_RADIUS : (type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15))))))), startHp);
@@ -3788,7 +3824,10 @@
                 playSound('explosion'); addShake(30);
             } else addShake(15);
         }
-        let count = wave * 3 + 5;
+        // Was wave*3+5, tuned when eight-plus towers were thinning the column before it ever
+        // reached you. Wave one is unchanged at 8; the cut only bites later, where the missing
+        // tower damage compounds worst - 26 at wave ten instead of 35.
+        let count = wave * 2 + 6;
         if (currentWeather === 'bloodmoon') count = Math.floor(count * 1.5);
         if (currentModifier === 'swarm') count *= 2;
         
