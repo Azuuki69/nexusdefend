@@ -848,7 +848,6 @@
     const FORGE_COST_GROWTH = 1.65;
     const FORGE_COSTS = {
         weapon:    { w: 25, s: 25 },
-        towerHp:   { s: 35, m: 14 },
         mining:    { w: 45, m: 18 },
         speed:     { w: 20, m: 20 },
         whetstone: { w: 30, m: 30 },
@@ -1083,10 +1082,10 @@
         { id: 'builder', name: 'Architect', desc: 'Build 5 Towers.', unlocked: false }
     ];
     
-    let playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, forgeTowerHpMult: 1.0, hasteMod: 1.0, vampirism: false,
+    let playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: false,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
-    
-    let forgeUpgrades = { weapon: { level: 0 }, towerHp: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
+
+    let forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
 
     const keys = {}; let mouse = { x: 0, y: 0, sx: 0, sy: 0, clicked: false, rightClicked: false };
     
@@ -1359,10 +1358,9 @@
     function openForge() { updateForgeUI(); document.getElementById('forgeOverlay').classList.remove('hidden'); }
 
     function updateForgeUI() {
-        let wc = forgeCost('weapon'), tc = forgeCost('towerHp'), mc = forgeCost('mining');
+        let wc = forgeCost('weapon'), mc = forgeCost('mining');
         let sc = forgeCost('speed'), whc = forgeCost('whetstone'), nxc = forgeCost('nexus');
         let wCostW = wc.w, wCostS = wc.s;
-        let tCostS = tc.s, tCostM = tc.m;
         let mCostW = mc.w, mCostM = mc.m;
         let sCostW = sc.w, sCostM = sc.m;
         let whCostW = whc.w, whCostM = whc.m;
@@ -1372,7 +1370,6 @@
         const pips = (lvl, max=5) => { let h = '<span class="lvl-pips">'; for(let i=0;i<max;i++){ h += `<span class="${i<lvl?'filled':''}"></span>`; } return h + '</span>'; };
         let html = `
             <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(forgeUpgrades.weapon.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.weapon.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')" ${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
-            <div class="upgrade-row"><span class="row-icon">🛡️</span><div class="row-body"><strong>Tower Reinforcement (+15% HP)</strong> ${pips(forgeUpgrades.towerHp.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.towerHp.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${tCostS} Stone, ${tCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('towerHp')" ${forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+30% Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.mining.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')" ${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(forgeUpgrades.speed.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.speed.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')" ${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             
@@ -1381,10 +1378,8 @@
 
             <hr style="border-color: #3a3a34; margin: 20px 0;">
             
-            <div class="upgrade-row" style="border-color:#5ce1e6;"><span class="row-icon">🗼</span><div class="row-body"><strong style="color:#5ce1e6;">Base: The Magic Spire</strong><br><span style="font-size:13px; color:#aaa;">Fires auto-lasers. Cost: 50 Wood, 50 Stone, 20 Mana</span></div><button class="upgrade-btn" id="btn-spire" onclick="buyForge('spire')" ${base && base.hasSpire ? 'disabled' : ''}>${base && base.hasSpire ? 'Built' : 'Build'}</button></div>
             <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🔧</span><div class="row-body"><strong style="color:#7ef7d8;">Nexus Repairs (+${repairAmt} HP)</strong><br><span style="font-size:13px; color:#aaa;">${base && base.repairedToday ? 'Crew is spent - available again tomorrow.' : (base && base.hp >= base.maxHp ? 'Nexus is at full strength.' : `Once per day • Cost: ${REPAIR_W} Wood, ${REPAIR_S} Stone, ${REPAIR_M} Mana`)}</span></div><button class="upgrade-btn" id="btn-repair" onclick="buyForge('repair')" ${base && (base.repairedToday || base.hp >= base.maxHp) ? 'disabled' : ''}>${base && base.repairedToday ? 'Used' : (base && base.hp >= base.maxHp ? 'Full' : 'Repair')}</button></div>
             <div class="upgrade-row" style="border-color:#ffaa55;"><span class="row-icon">🔥</span><div class="row-body"><strong style="color:#ffaa55;">Base: Brazier of Renewal</strong><br><span style="font-size:13px; color:#aaa;">Nexus mends 12 HP every 2s. Cost: 70 Wood, 40 Stone, 30 Mana</span></div><button class="upgrade-btn" id="btn-brazier" onclick="buyForge('brazier')" ${base && base.hasBrazier ? 'disabled' : ''}>${base && base.hasBrazier ? 'Built' : 'Build'}</button></div>
-            <div class="upgrade-row" style="border-color:#5ce1e6;"><span class="row-icon">🚧</span><div class="row-body"><strong style="color:#5ce1e6;">Base: Iron Gates</strong><br><span style="font-size:13px; color:#aaa;">Spawns 4 Huge Walls. Cost: 60 Wood, 60 Stone</span></div><button class="upgrade-btn" id="btn-gates" onclick="buyForge('gates')" ${base && base.hasGates ? 'disabled' : ''}>${base && base.hasGates ? 'Built' : 'Build'}</button></div>
         `;
         document.getElementById('forgeContent').innerHTML = html;
     }
@@ -1491,14 +1486,6 @@
                 forgeUpgrades.weapon.level++; playerBuffs.forgeAtkMult += 0.10; player.recalcStats(); addShake(5); playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         } 
-        else if (type === 'towerHp') {
-            if (forgeUpgrades.towerHp.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
-            let c = forgeCost('towerHp'); let cs = c.s, cm = c.m;
-            if (inventory.stone >= cs && inventory.mana >= cm) {
-                inventory.stone -= cs; inventory.mana -= cm;
-                forgeUpgrades.towerHp.level++; playerBuffs.forgeTowerHpMult += 0.15; entities.towers.forEach(t => t.recalcHp()); addShake(5); playSound('pickup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
-        }
         else if (type === 'mining') {
             if (forgeUpgrades.mining.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let c = forgeCost('mining'); let cw = c.w, cm = c.m;
@@ -1550,17 +1537,6 @@
                 forgeUpgrades.speed.level++; playerBuffs.speedMult += 0.05; playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
-        else if (type === 'spire' && !base.hasSpire && inventory.wood >= 50 && inventory.stone >= 50 && inventory.mana >= 20) {
-            inventory.wood -= 50; inventory.stone -= 50; inventory.mana -= 20; base.hasSpire = true; addShake(10); playSound('levelup'); updateForgeUI();
-        } 
-        else if (type === 'gates' && !base.hasGates && inventory.wood >= 60 && inventory.stone >= 60) {
-            inventory.wood -= 60; inventory.stone -= 60; base.hasGates = true; addShake(15); playSound('levelup');
-            [[0,-205],[0,205],[-205,0],[205,0]].forEach(o => {
-                let g = new Tower(base.x + o[0], base.y + o[1], 1, 'warrior');
-                g.maxHp = 1000; g.hp = 1000; entities.towers.push(g);
-            });
-            updateForgeUI();
-        } 
         else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
     }
 
@@ -2245,7 +2221,7 @@
     }
 
     class Base extends Entity {
-        constructor() { super(WORLD_CX, WORLD_CY, NEXUS_RADIUS, nexusMaxHpFor(wave)); this.repairedToday = false; this.regenTimer = 0;this.hasSpire = false; this.hasGates = false; this.hasBrazier = false;this.spireCd = 0; this.overchargeCd = 0; this.overchargeActive = 0; }
+        constructor() { super(WORLD_CX, WORLD_CY, NEXUS_RADIUS, nexusMaxHpFor(wave)); this.repairedToday = false; this.regenTimer = 0; this.hasBrazier = false; this.overchargeCd = 0; this.overchargeActive = 0; }
         // Called when the wave advances: the structure hardens without erasing existing damage.
         recalcMaxHp() {
             let want = nexusMaxHpFor(wave);
@@ -2258,18 +2234,6 @@
             if (this.overchargeActive > 0) this.overchargeActive -= dt;
         
             if (player.baseRegen || this.hasBrazier) { this.regenTimer += dt; if (this.regenTimer >= 2.0) { this.hp = Math.min(this.maxHp, this.hp + (this.hasBrazier ? 12 : 5)); this.regenTimer = 0; } }
-            if (this.hasSpire && gameState === 'NIGHT') {
-                this.spireCd -= dt;
-                if (this.spireCd <= 0) {
-                    let bestEn = null; let maxH = 0;
-                    entities.enemies.forEach(e => { if (e.type !== 'assassin' || !e.isInvisible) { if (e.hp > maxH) { maxH = e.hp; bestEn = e; } } });
-                    if (bestEn) {
-                        playSound('laser');
-                        entities.effects.push(new Effect(bestEn.x, bestEn.y, 20, '#00ffff', 0.5, 150, false, false, 'none', 'tower'));
-                        this.spireCd = 5.0;
-                    }
-                }
-            }
         }
         draw(ctx) {
             let pulse = Math.abs(Math.sin(performance.now() / 400)) * 10;
@@ -2288,7 +2252,7 @@
                     ctx.fillRect(this.x - 55, this.y - 45 + i*35 + 5, 10, 15); ctx.fillRect(this.x + 45, this.y - 45 + i*35 + 5, 10, 15);
                 }
                 ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10 + pulse;
-                ctx.beginPath(); ctx.moveTo(this.x, this.y-30 + (this.hasSpire?-30:0)); ctx.lineTo(this.x+20, this.y); ctx.lineTo(this.x, this.y+30); ctx.lineTo(this.x-20, this.y); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(this.x, this.y-30); ctx.lineTo(this.x+20, this.y); ctx.lineTo(this.x, this.y+30); ctx.lineTo(this.x-20, this.y); ctx.fill();
                 ctx.shadowBlur = 0;
                 ctx.restore();
             }
@@ -2701,7 +2665,7 @@
             this.type = type; this.pClass = pClass; this.cd = 0; this.tick = 0; this.facing = 'down';
             this.baseMaxHp = this.maxHp; this.recalcHp(); this.hp = this.maxHp;
         }
-        recalcHp() { let r = this.hp ? this.hp / this.maxHp : 1.0; this.maxHp = this.baseMaxHp * playerBuffs.forgeTowerHpMult * player.talentTowerHpMult; this.hp = this.maxHp * r; }
+        recalcHp() { let r = this.hp ? this.hp / this.maxHp : 1.0; this.maxHp = this.baseMaxHp * player.talentTowerHpMult; this.hp = this.maxHp * r; }
         update(dt) {
             this.cd -= dt; this.tick -= dt;
             if (this.type === 1) {
@@ -3865,9 +3829,9 @@
         campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
         campOneOffs = { skinning: false, beastcall: false }; campRationsDay = -1;
         achievements.forEach(a => a.unlocked = false);
-        playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, forgeTowerHpMult: 1.0, hasteMod: 1.0, vampirism: false,
+        playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: false,
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
-        forgeUpgrades = { weapon: { level: 0 }, towerHp: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
+        forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
         entities = { enemies: [], towers: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
         globalTowerHpMult = 1.0; currentWeather = 'clear'; currentModifier = 'none'; setWeather();
         
@@ -4058,10 +4022,9 @@
                                 if (!player.hasDaySpeed) { player.hasDaySpeed = true; playerBuffs.speedMult += 1.0; }
                                 entities.texts.push(new FloatingText(r.x, r.y - 20, "SPEED BUFF", '#00ffcc'));
                             } else {
-                                let upgs = ['weapon', 'towerHp', 'mining', 'speed']; let chosen = upgs[Math.floor(Math.random()*upgs.length)];
+                                let upgs = ['weapon', 'mining', 'speed']; let chosen = upgs[Math.floor(Math.random()*upgs.length)];
                                 forgeUpgrades[chosen].level++;
                                 if (chosen === 'weapon') { playerBuffs.forgeAtkMult += 0.1; player.recalcStats(); }
-                                if (chosen === 'towerHp') { playerBuffs.forgeTowerHpMult += 0.15; entities.towers.forEach(t=>t.recalcHp()); }
                                 if (chosen === 'mining') { playerBuffs.gatherYield += MINING_YIELD_STEP; }
                                 if (chosen === 'speed') { playerBuffs.speedMult += 0.05; }
                                 entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); updateForgeUI();
