@@ -152,6 +152,21 @@
         .modal-title::before, .modal-title::after { content: '❖'; color: var(--gold); font-size: 14px; margin: 0 12px; vertical-align: middle; }
         .modal-sub { text-align: center; color: #999; font-size: 13px; margin: 0 0 18px; letter-spacing: 0.3px; }
 
+        .bld-tabs { display: flex; gap: 8px; justify-content: center; margin: 0 0 18px; }
+        .bld-tab { font-family: var(--font-head); display: flex; align-items: center; gap: 7px; padding: 9px 20px; background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.4)); border: 1px solid #3a3a34; border-radius: 7px; color: #9a9a90; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; cursor: pointer; transition: 0.15s; }
+        .bld-tab:hover { border-color: var(--panel-border); color: #d8d8cc; }
+        .bld-tab.active { border-color: var(--panel-border); color: var(--gold-bright); background: linear-gradient(180deg, rgba(217,178,92,0.16), rgba(0,0,0,0.4)); box-shadow: inset 0 0 0 1px rgba(255,238,190,0.12); }
+        .bld-tab .tab-count { font-size: 11px; color: #7f7f76; }
+        .bld-tab.active .tab-count { color: #c9a227; }
+        .bld-detail { display: flex; gap: 18px; align-items: flex-start; background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.35)); padding: 18px; border-radius: 8px; border: 1px solid #3a3a34; }
+        .bld-detail .bld-icon { font-size: 44px; width: 68px; text-align: center; flex-shrink: 0; filter: drop-shadow(0 0 6px rgba(0,0,0,0.6)); }
+        .bld-detail .bld-body { flex: 1; }
+        .bld-detail h3 { font-family: var(--font-head); margin: 0 0 6px; color: var(--gold-bright); font-size: 17px; letter-spacing: 0.5px; }
+        .bld-detail p { margin: 0 0 12px; color: #9a9a90; font-size: 13px; line-height: 1.5; }
+        .bld-costs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .bld-cost { padding: 3px 10px; border-radius: 5px; font-family: var(--font-head); font-size: 12.5px; font-weight: 700; background: rgba(0,0,0,0.45); border: 1px solid var(--panel-border-dim); }
+        .bld-cost.short { border-color: #a33; color: #ff8080; }
+        .bld-note { margin-top: 12px; font-size: 12.5px; color: #7f7f76; font-style: italic; }
         .upgrade-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.35)); margin: 10px 0; padding: 12px 16px; border-radius: 8px; border: 1px solid #3a3a34; transition: 0.15s; }
         .upgrade-row:hover { border-color: var(--panel-border); background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(0,0,0,0.35)); }
         .upgrade-row .row-icon { font-size: 24px; width: 40px; text-align: center; flex-shrink: 0; filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); }
@@ -305,7 +320,7 @@
         </div>
         
         <div id="controlHint">
-            <b>[WASD]</b> Move &nbsp;&nbsp; <b>[L-Click]</b> Attack / Mine &nbsp;&nbsp; <b>[R-Click]</b> Build
+            <b>[WASD]</b> Move &nbsp;&nbsp; <b>[L-Click]</b> Attack / Mine &nbsp;&nbsp; <b>[B]</b> Buildings &nbsp;&nbsp; <b>[R-Click]</b> Place
         </div>
 
         <div id="talentAlert" class="hidden"><span class="tkey">T</span><span class="tstar">✦</span><span id="talent-count">0</span> <span class="tword">TALENT</span></div>
@@ -334,9 +349,9 @@
         </div>
 
         <div id="buildMenu">
-            <div id="build-extractor" class="build-item selected-build" data-icon="⛏️">
-                <span class="build-key">RMB</span>
-                <strong style="color:#ffcc00;" id="build-3-label">Extractor</strong><span>50W 50S</span>
+            <div id="build-buildings" class="build-item selected-build" data-icon="🏗️" onclick="openBuildings()">
+                <span class="build-key">B</span>
+                <strong style="color:#ffcc00;" id="build-3-label">Buildings</strong><span id="build-hint">open</span>
             </div>
         </div>
     </div>
@@ -349,6 +364,17 @@
             <p class="modal-sub" style="font-style: italic;">"Wood and stone. Keep your mana for the wizards."</p>
             <div id="campContent"></div>
             <div style="text-align: center;"><button class="close-btn" onclick="closeModal('campOverlay')">Leave Camp</button></div>
+        </div>
+    </div>
+
+    <!-- Buildings: pick a structure, then right-click the ground to raise it -->
+    <div id="buildingsOverlay" class="overlay hidden">
+        <div class="hud-panel menu-modal">
+            <h2 class="modal-title" style="color:#c9a227;">Buildings</h2>
+            <p class="modal-sub">Everything here is raised by hand. Gather the wood and stone first.</p>
+            <div id="buildingTabs" class="bld-tabs"></div>
+            <div id="buildingsContent"></div>
+            <div style="text-align: center;"><button class="close-btn" onclick="closeModal('buildingsOverlay')">Close</button></div>
         </div>
     </div>
 
@@ -414,12 +440,22 @@
     window.addEventListener('resize', resize); resize();
 
     function updateBuildUI() {
-        let lbl = document.getElementById('build-3-label');
-        if (lbl && typeof entities !== 'undefined') {
-            let n = extractorCount();
-            lbl.innerText = `Extractor ${n}/${MAX_EXTRACTORS}`;
-            lbl.style.color = n >= MAX_EXTRACTORS ? '#ff6b6b' : '#ffcc00';
+        let lbl = document.getElementById('build-3-label'), hint = document.getElementById('build-hint');
+        let item = document.getElementById('build-buildings');
+        if (!lbl || !hint || typeof entities === 'undefined') return;
+        if (placingBuilding) {
+            lbl.innerText = BUILDINGS[placingBuilding].name;
+            lbl.style.color = '#7ef7d8';
+            hint.innerText = 'right-click';
+            if (item) item.classList.add('selected-build');
+        } else {
+            lbl.innerText = 'Buildings';
+            lbl.style.color = '#ffcc00';
+            hint.innerText = forgeBuilding ? `${extractorCount()}/${MAX_EXTRACTORS} rigs` : 'no forge';
+            if (item) item.classList.remove('selected-build');
         }
+        // Prices and affordability shift as you gather, so keep an open window honest.
+        if (!document.getElementById('buildingsOverlay').classList.contains('hidden')) updateBuildingsUI();
     }
 
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
@@ -888,9 +924,6 @@
     const RES_START = 48, RES_PER_DAY = 8, RES_MAX = 130;
     const MINING_YIELD_STEP = 0.3;      // five levels = 2.5x total, not 6x
     function resourceCountFor(day) { return Math.min(RES_MAX, RES_START + (day - 1) * RES_PER_DAY); }
-    // The forge stands just west of the nexus - a few seconds' walk, clear of the merchant's
-    // pitch to the north and of the player's spawn to the south.
-    const FORGE_OFF_X = -330, FORGE_OFF_Y = -30;
     // The nexus is the thing the whole game is named after, so it is drawn at proper
     // landmark scale. Everything pinned to its footprint scales from these two numbers.
     const NEXUS_IMG = 285, NEXUS_RADIUS = 85;
@@ -898,9 +931,35 @@
     const REPAIR_FRACTION = 0.25, REPAIR_W = 40, REPAIR_S = 40, REPAIR_M = 20;
     const FORGE_CROP = { sx: 112, sy: 38, sw: 475, sh: 296 };
     const FORGE_H = 132, FORGE_FEET = 46, FORGE_RANGE = 165;
-    function forgeX() { return WORLD_CX + FORGE_OFF_X; }
-    function forgeY() { return WORLD_CY + FORGE_OFF_Y; }
-    function playerAtForge() { return gameState === 'DAY' && Math.hypot(player.x - forgeX(), player.y - forgeY()) < FORGE_RANGE; }
+    // The forge is no longer scenery the map hands you: it is raised from gathered wood and
+    // stone like anything else, so until it is built there is nowhere to upgrade at.
+    let forgeBuilding = null;
+    function forgeX() { return forgeBuilding ? forgeBuilding.x : 0; }
+    function forgeY() { return forgeBuilding ? forgeBuilding.y : 0; }
+    function playerAtForge() { return forgeBuilding && gameState === 'DAY' && Math.hypot(player.x - forgeBuilding.x, player.y - forgeBuilding.y) < FORGE_RANGE; }
+
+    // --- PLACEABLE BUILDINGS ---
+    // Both are raised by hand from gathered resources. Costs sit above the 50/50 you start
+    // with on purpose: the first thing every run makes you do is go and gather.
+    const BUILDINGS = {
+        forge: {
+            name: 'The Forge', icon: '🔥', max: 1,
+            cost: { w: 60, s: 60, m: 0 },
+            desc: 'Unlocks weapon, gear and Nexus upgrades. Walk to it and press [R].',
+            count: () => forgeBuilding ? 1 : 0
+        },
+        extractor: {
+            name: 'Extractor', icon: '⛏️', max: MAX_EXTRACTORS,
+            cost: { w: EXTRACTOR_COST, s: EXTRACTOR_COST, m: 0 },
+            desc: 'Pulls 2 wood and 2 stone from the ground every 4s, daylight only.',
+            count: () => entities.extractors.length
+        }
+    };
+    function buildingCost(key) {
+        let c = BUILDINGS[key].cost, mod = player ? player.buildCostMod : 1;
+        return { w: Math.floor(c.w * mod), s: Math.floor(c.s * mod), m: Math.floor(c.m * mod) };
+    }
+    function canAfford(c) { return inventory.wood >= c.w && inventory.stone >= c.s && inventory.mana >= c.m; }
 
     // The chest sits in the middle of its 677x369 sheet; crop to the art itself.
     const CHEST_SX = 0.2777, CHEST_SY = 0.1707, CHEST_SW = 0.4431, CHEST_SH = 0.6450;
@@ -1005,6 +1064,8 @@
             // If a shop/forge/talent window is up, ESC backs out of that first.
             let openModal = MODAL_IDS.find(id => !document.getElementById(id).classList.contains('hidden'));
             if (openModal) { closeModal(openModal); return; }
+            // Then out of a pending placement, before it reaches the pause menu.
+            if (placingBuilding) { cancelPlacement(); return; }
             if (isPaused) closeSettings(); else openSettings();
         }
     });
@@ -1258,6 +1319,72 @@
             campOneOffs.beastcall = true; playSound('levelup'); addShake(4);
         }
         updateCampUI(); updateTrinkets();
+    }
+
+    // --- BUILDINGS WINDOW (B) ---
+    // Picking a building here only arms it. Nothing is paid for and nothing exists until you
+    // right-click a spot on the ground, so a misclick in the menu costs you nothing.
+    let buildingTab = 'forge';
+    let placingBuilding = null;
+
+    function openBuildings() {
+        if (!player) return;
+        buildingTab = forgeBuilding ? 'extractor' : 'forge';
+        updateBuildingsUI();
+        document.getElementById('buildingsOverlay').classList.remove('hidden');
+    }
+    function selectBuildingTab(key) { buildingTab = key; updateBuildingsUI(); }
+
+    function updateBuildingsUI() {
+        let tabs = '';
+        for (let key in BUILDINGS) {
+            let b = BUILDINGS[key];
+            tabs += `<div class="bld-tab ${key === buildingTab ? 'active' : ''}" onclick="selectBuildingTab('${key}')">`
+                 +  `<span>${b.icon}</span><span>${b.name}</span>`
+                 +  `<span class="tab-count">${b.count()}/${b.max}</span></div>`;
+        }
+        document.getElementById('buildingTabs').innerHTML = tabs;
+
+        let b = BUILDINGS[buildingTab], c = buildingCost(buildingTab);
+        let atMax = b.count() >= b.max;
+        let costs = '';
+        if (c.w) costs += `<span class="bld-cost ${inventory.wood  < c.w ? 'short' : ''}">🪵 ${c.w} Wood</span>`;
+        if (c.s) costs += `<span class="bld-cost ${inventory.stone < c.s ? 'short' : ''}">🪨 ${c.s} Stone</span>`;
+        if (c.m) costs += `<span class="bld-cost ${inventory.mana  < c.m ? 'short' : ''}">🔮 ${c.m} Mana</span>`;
+
+        let note = atMax ? (b.max === 1 ? 'Already standing.' : 'You have raised as many as you can hold.')
+                 : (!canAfford(c) ? 'Not enough gathered yet - chop and mine, then come back.'
+                 : (gameState !== 'DAY' ? 'Nothing gets built after dark.'
+                 : 'Right-click the ground to place it.'));
+        let label = atMax ? 'Built' : 'Place';
+
+        document.getElementById('buildingsContent').innerHTML = `
+            <div class="bld-detail">
+                <span class="bld-icon">${b.icon}</span>
+                <div class="bld-body">
+                    <h3>${b.name} <span style="font-size:12px;color:#7f7f76;">${b.count()}/${b.max}</span></h3>
+                    <p>${b.desc}</p>
+                    <div class="bld-costs">${costs}</div>
+                    <div class="bld-note">${note}</div>
+                </div>
+                <button class="upgrade-btn" onclick="armBuilding('${buildingTab}')"
+                    ${atMax || !canAfford(c) || gameState !== 'DAY' ? 'disabled' : ''}>${label}</button>
+            </div>`;
+    }
+
+    function armBuilding(key) {
+        let b = BUILDINGS[key];
+        if (b.count() >= b.max || gameState !== 'DAY' || !canAfford(buildingCost(key))) { playSound('error'); return; }
+        placingBuilding = key;
+        closeModal('buildingsOverlay');
+        playSound('pickup');
+        entities.texts.push(new FloatingText(player.x, player.y - 50, 'RIGHT-CLICK TO PLACE', '#ffcc66'));
+        updateBuildUI();
+    }
+    function cancelPlacement() {
+        if (!placingBuilding) return;
+        placingBuilding = null; updateBuildUI();
+        entities.texts.push(new FloatingText(player.x, player.y - 50, 'CANCELLED', '#9a9a90'));
     }
 
     function openForge() { updateForgeUI(); document.getElementById('forgeOverlay').classList.remove('hidden'); }
@@ -2333,7 +2460,7 @@
             if (keys['e'] && this.mp >= this.data.abCost && this.abTimer <= 0 && this.abilityCooldownTimer <= 0) {
                 this.useAbility(); this.abilityCooldownTimer = this.data.abCd * playerBuffs.hasteMod; keys['e'] = false;
             }
-            if (mouse.rightClicked && gameState === 'DAY') { this.buildExtractor(); mouse.rightClicked = false; }
+            if (mouse.rightClicked && gameState === 'DAY') { this.placeBuilding(); mouse.rightClicked = false; }
             
             if (this.abTimer > 0 && this.cls === 'warrior') {
                 this.angle += dt * 15; this.whirlTick -= dt;
@@ -2437,29 +2564,32 @@
             this.lastAttack = this.attackCd;
         }
 
-        buildExtractor() {
-            let costW = Math.floor(EXTRACTOR_COST * this.buildCostMod);
-            let costS = Math.floor(EXTRACTOR_COST * this.buildCostMod);
-            let costM = 0;
+        // Places whatever the Buildings window armed. Every rejection happens before a single
+        // resource is spent, so a blocked spot never costs you the materials.
+        placeBuilding() {
+            if (!placingBuilding) return;
+            let key = placingBuilding, b = BUILDINGS[key], c = buildingCost(key);
+            let mx = mouse.x, my = mouse.y;
+            let deny = (msg) => { playSound('error'); entities.texts.push(new FloatingText(mx, my - 20, msg, '#ff4d4d')); };
 
-            // Extractors are big buildings, so they need room between them.
-            let overlapping = entities.extractors.some(t => Math.hypot(t.x - mouse.x, t.y - mouse.y) < EXTRACTOR_SPACING);
-            if (extractorCount() >= MAX_EXTRACTORS) {
-                playSound('error');
-                entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "EXTRACTOR LIMIT " + MAX_EXTRACTORS + "/" + MAX_EXTRACTORS, '#ff4d4d'));
-                return;
-            }
-            let nearBase = Math.hypot(base.x - mouse.x, base.y - mouse.y) < NEXUS_KEEPOUT;
-            let onForge = Math.hypot(forgeX() - mouse.x, forgeY() - mouse.y) < 90;
-            if (onForge) { playSound('error'); entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "BLOCKED", '#ff4d4d')); return; }
-            if (overlapping || nearBase || isCollidingWithObstacle(mouse.x, mouse.y, 30)) { playSound('error'); entities.texts.push(new FloatingText(mouse.x, mouse.y - 20, "BLOCKED", '#ff4d4d')); return; }
+            if (b.count() >= b.max) { deny(b.name.toUpperCase() + " LIMIT " + b.count() + "/" + b.max); return; }
+            if (!canAfford(c)) { deny("NOT ENOUGH RESOURCES!"); return; }
 
-            if (inventory.wood >= costW && inventory.stone >= costS && inventory.mana >= costM) {
-                inventory.wood -= costW; inventory.stone -= costS; inventory.mana -= costM;
-                entities.extractors.push(new Extractor(mouse.x, mouse.y));
-                spawnParticles(mouse.x, mouse.y, '#fff', 15); playSound('pickup'); updateBuildUI();
+            // Everything already standing needs elbow room, and nothing goes inside the Nexus.
+            let clash = entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
+                     || (forgeBuilding && Math.hypot(forgeBuilding.x - mx, forgeBuilding.y - my) < EXTRACTOR_SPACING);
+            if (clash || Math.hypot(base.x - mx, base.y - my) < NEXUS_KEEPOUT || isCollidingWithObstacle(mx, my, 30)) { deny("BLOCKED"); return; }
+
+            inventory.wood -= c.w; inventory.stone -= c.s; inventory.mana -= c.m;
+            if (key === 'extractor') {
+                entities.extractors.push(new Extractor(mx, my));
                 gameStats.extractors++; if (gameStats.extractors === 3) checkAchievement('builder');
-            } else { playSound('error'); entities.texts.push(new FloatingText(this.x, this.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            } else {
+                forgeBuilding = { x: mx, y: my };
+                entities.texts.push(new FloatingText(mx, my - 60, "THE FORGE IS LIT", '#ffcc66'));
+            }
+            placingBuilding = null;
+            spawnParticles(mx, my, '#fff', 18); playSound('levelup'); addShake(6); updateBuildUI();
         }
 
         draw(ctx) {
@@ -3367,7 +3497,7 @@
         lastResVals[id] = val;
     }
 
-    const MODAL_IDS = ['forgeOverlay', 'talentOverlay', 'merchantOverlay'];
+    const MODAL_IDS = ['forgeOverlay', 'talentOverlay', 'merchantOverlay', 'buildingsOverlay'];
 
     function resetGameToMenu() {
         // Stop the run properly - without this the loop kept simulating behind the menu.
@@ -3489,7 +3619,6 @@
             for (let attempt = 0; attempt < 20 && !placed; attempt++) {
                 let x = Math.random() * (WORLD_W - 120) + 60; let y = Math.random() * (WORLD_H - 120) + 60;
                 if (Math.hypot(x-WORLD_CX, y-WORLD_CY) < 260) continue;
-                if (Math.hypot(x-forgeX(), y-forgeY()) < 150) continue;
                 if (Math.hypot(x-CAMP_X, y-CAMP_Y) < 220) continue;
                 if (tooCloseToActor(actorSpots, x, y)) continue;
                 if (isCollidingWithObstacle(x, y, 45)) continue;
@@ -3516,7 +3645,6 @@
             let dx = Math.random() * WORLD_W, dy = Math.random() * WORLD_H;
             if (isCollidingWithObstacle(dx, dy, 20)) continue;
             if (Math.hypot(dx - WORLD_CX, dy - WORLD_CY) < 230) continue;
-            if (Math.hypot(dx - forgeX(), dy - forgeY()) < 150) continue;
             if (Math.hypot(dx - CAMP_X, dy - CAMP_Y) < 220) continue;
             if (tooCloseToActor(actorSpots, dx, dy)) continue;
             let g = rollScenery();
@@ -3594,6 +3722,7 @@
         dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
         forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
         entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
+        forgeBuilding = null; placingBuilding = null; buildingTab = 'forge';
         currentWeather = 'clear'; currentModifier = 'none'; setWeather();
         
         player = new Player(selectedClass); base = new Base();
@@ -3707,6 +3836,7 @@
         if (screenShake > 0) screenShake -= dt * 30;
 
         if (keys['t']) { openTalentMenu(); keys['t'] = false; }
+        if (keys['b']) { if (placingBuilding) cancelPlacement(); else openBuildings(); keys['b'] = false; }
         if (keys['r'] && gameState === 'DAY') {
             let shop = entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
             let wayfarer = entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
@@ -3749,7 +3879,8 @@
                     }
                 });
                 
-                closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('campOverlay'); closeModal('talentOverlay'); spawnWave();
+                closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('campOverlay'); closeModal('talentOverlay');
+                closeModal('buildingsOverlay'); placingBuilding = null; updateBuildUI(); spawnWave();
             } else {
                 gameState = 'DAY'; wave++; phaseTimer = 60; setWeather();
                 document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
@@ -4016,7 +4147,8 @@
     }
 
     function drawForge(ctx) {
-        let fx = forgeX(), fy = forgeY();
+        if (!forgeBuilding) return;
+        let fx = forgeBuilding.x, fy = forgeBuilding.y;
         if (!inView(fx, fy, 200)) return;
         let dw = FORGE_H * (FORGE_CROP.sw / FORGE_CROP.sh), dh = FORGE_H;
         // The furnace is lit, so it throws a warm flicker - and doubles as a night landmark.
@@ -4068,7 +4200,23 @@
 
         entities.obstacles.forEach(o => o.draw(ctx));
 
-        if (gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) {
+        // While a building is armed, show its footprint and whether the spot will take it.
+        if (gameState === 'DAY' && placingBuilding) {
+            let mx = mouse.x, my = mouse.y;
+            let clash = entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
+                     || (forgeBuilding && Math.hypot(forgeBuilding.x - mx, forgeBuilding.y - my) < EXTRACTOR_SPACING);
+            let ok = !clash && Math.hypot(base.x - mx, base.y - my) >= NEXUS_KEEPOUT && !isCollidingWithObstacle(mx, my, 30);
+            ctx.save();
+            ctx.strokeStyle = ok ? 'rgba(126,247,216,0.85)' : 'rgba(255,77,77,0.85)';
+            ctx.fillStyle   = ok ? 'rgba(126,247,216,0.14)' : 'rgba(255,77,77,0.14)';
+            ctx.lineWidth = 2; ctx.setLineDash([9, 7]);
+            ctx.beginPath(); ctx.ellipse(mx, my, EXTRACTOR_SPACING/2, EXTRACTOR_SPACING/5, 0, 0, Math.PI*2);
+            ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = ok ? '#7ef7d8' : '#ff8080';
+            ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
+            ctx.fillText(ok ? BUILDINGS[placingBuilding].name : 'BLOCKED', mx, my - EXTRACTOR_SPACING/5 - 12);
+            ctx.restore();
+        } else if (gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) {
             ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(mouse.x - 20, mouse.y - 20, 40, 40);
         }
 
