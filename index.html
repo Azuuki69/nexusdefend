@@ -2074,21 +2074,6 @@
 
     class Obstacle {
         constructor(x, y, w, h, type) { this.x = x; this.y = y; this.w = w; this.h = h; this.type = type; }
-        draw(ctx) {
-            if (this.type === 'lake' && waterSprite.complete && waterSprite.naturalWidth !== 0) {
-                ctx.drawImage(waterSprite, this.x, this.y, this.w, this.h);
-            } else {
-                let cx = this.x + this.w * POND_CX, cy = this.y + this.h * POND_CY;
-                let rx = this.w * POND_RX, ry = this.h * POND_RY;
-                ctx.fillStyle = this.type === 'lake' ? '#c2b280' : '#3a1c1c';
-                ctx.beginPath(); ctx.ellipse(cx, cy, rx + 10, ry + 10, 0, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = this.type === 'lake' ? '#26547c' : '#7c2626';
-                ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); ctx.fill();
-                let offset = Math.sin(performance.now()/500 + this.x) * 5;
-                ctx.fillStyle = this.type === 'lake' ? '#326f9e' : '#9e3232';
-                ctx.beginPath(); ctx.ellipse(cx + offset, cy, rx*0.7, ry*0.65, 0, 0, Math.PI*2); ctx.fill();
-            }
-        }
     }
 
     class Merchant {
@@ -2104,29 +2089,6 @@
                 if (this.frameTimer > 0.11) { this.frameTimer = 0; this.frame = (this.frame + 1) % MERCHANT_FRAMES.length; }
             } else { this.frame = 0; this.frameTimer = 0; }
             if (world.gameState === 'NIGHT' && Math.hypot(this.x - WORLD_CX, this.y - WORLD_CY) > 1800) this.markedForDeletion = true;
-        }
-        draw(ctx) {
-            const feetY = this.y + 20;
-            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, feetY - 2, 24, 7, 0, 0, Math.PI*2); ctx.fill();
-            if (merchantSprite.complete && merchantSprite.naturalWidth !== 0) {
-                const dh = 96, dw = dh * MERCHANT_CELL.w / MERCHANT_CELL.h;
-                const bob = this.moving ? 0 : Math.sin(performance.now() / 500) * 1.5;
-                ctx.save();
-                ctx.translate(this.x, feetY + bob);
-                ctx.scale(this.facing, 1);
-                ctx.drawImage(merchantSprite, MERCHANT_FRAMES[this.frame], MERCHANT_CELL.y, MERCHANT_CELL.w, MERCHANT_CELL.h, -dw/2, -dh, dw, dh);
-                ctx.restore();
-            } else {
-                ctx.fillStyle = '#0066cc'; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = '#7a3e14'; ctx.fillRect(this.x-10, this.y-25, 20, 15);
-                ctx.fillStyle = '#f5d0b5'; ctx.beginPath(); ctx.arc(this.x, this.y-5, 8, 0, Math.PI*2); ctx.fill();
-            }
-            // Deliberately the local player: each client draws its own prompt for its own
-            // character. This is rendering, and never runs on the server.
-            if (world.gameState === 'DAY' && player && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
-                ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke();
-                ctx.fillStyle = '#00ffcc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("Press [R] to Shop", this.x, this.y + 55);
-            } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y - 82); }
         }
     }
 
@@ -2196,61 +2158,6 @@
             if (!moved) this.pickWaypoint();             // hemmed in, try somewhere else
             this.frameTimer += dt;
             if (this.frameTimer > 0.17) { this.frameTimer = 0; this.frame = this.frame === 1 ? 2 : 1; }
-        }
-        draw(ctx) {
-            // Local player on purpose - this prompt belongs to whoever is looking at the screen.
-            let inRange = player && Math.hypot(player.x - this.x, player.y - this.y) < TALK_RANGE;
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
-            ctx.fillStyle = 'rgba(0,0,0,0.26)';
-            ctx.beginPath(); ctx.ellipse(0, NPC1_FEET - 6, 24, 8, 0, 0, Math.PI*2); ctx.fill();
-            ctx.scale(this.facing, 1);
-            if (npc1Sprite.complete && npc1Sprite.naturalWidth !== 0) {
-                drawSheetFrame(ctx, npc1Sprite, NPC1_FRAMES, this.moving ? this.frame : 0, 0, NPC1_DRAW_H, NPC1_FEET, 'baseline');
-            } else {
-                ctx.fillStyle = '#6b5a3e'; ctx.fillRect(-12, -60, 24, 60);
-            }
-            ctx.restore();
-
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#e8d8a8'; ctx.font = 'bold 13px Arial';
-            ctx.fillText('WAYFARER', this.x, this.y - NPC1_DRAW_H + 12);
-            if (inRange) {
-                ctx.strokeStyle = 'rgba(232, 216, 168, 0.45)'; ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.arc(this.x, this.y + 10, 42, 0, Math.PI*2); ctx.stroke();
-                ctx.fillStyle = '#e8d8a8'; ctx.font = 'bold 14px Arial';
-                ctx.fillText('Press [R] to Talk', this.x, this.y + NPC1_FEET + 28);
-            }
-            if (this.bubble > 0 && this.line) this.drawBubble(ctx);
-        }
-        drawBubble(ctx) {
-            // Wrapped by hand: measureText is the only honest way to size the box, and a
-            // fixed-width guess clips the longer lines.
-            ctx.font = '15px Arial';
-            let words = this.line.split(' '), lines = [], cur = '';
-            for (let w of words) {
-                let t = cur ? cur + ' ' + w : w;
-                if (ctx.measureText(t).width > 300 && cur) { lines.push(cur); cur = w; } else cur = t;
-            }
-            if (cur) lines.push(cur);
-            let wBox = 20 + Math.max(...lines.map(l => ctx.measureText(l).width));
-            let hBox = 16 + lines.length * 20;
-            let bx = this.x - wBox / 2, by = this.y - NPC1_DRAW_H - hBox - 12;
-            let a = Math.min(1, this.bubble / 0.4);              // fade out at the end
-            ctx.save();
-            ctx.globalAlpha = a;
-            ctx.fillStyle = 'rgba(24, 22, 16, 0.92)';
-            ctx.strokeStyle = '#e8d8a8'; ctx.lineWidth = 2;
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(bx, by, wBox, hBox, 8); else ctx.rect(bx, by, wBox, hBox);
-            ctx.fill(); ctx.stroke();
-            ctx.beginPath();                                     // tail
-            ctx.moveTo(this.x - 8, by + hBox); ctx.lineTo(this.x, by + hBox + 12); ctx.lineTo(this.x + 8, by + hBox);
-            ctx.fillStyle = 'rgba(24, 22, 16, 0.92)'; ctx.fill();
-            ctx.fillStyle = '#f0e6cc'; ctx.textAlign = 'center'; ctx.font = '15px Arial';
-            lines.forEach((l, i) => ctx.fillText(l, this.x, by + 24 + i * 20));
-            ctx.restore();
         }
     }
 
@@ -2421,25 +2328,6 @@
                 this.frame = this.frame === CRITTER_WALK1 ? CRITTER_WALK2 : CRITTER_WALK1;
             }
         }
-        draw(ctx) {
-            let d = this.def;
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
-            // boar, deer and rabbit all has a shadow baked into the sprite already.
-            ctx.scale(this.facing, 1);
-            if (d.sprite.complete && d.sprite.naturalWidth !== 0) {
-                drawSheetFrame(ctx, d.sprite, d.frames, this.frame, 0, d.h, d.feet, 'baseline');
-            } else {
-                ctx.fillStyle = '#7a6a4a'; ctx.fillRect(-d.h*0.3, d.feet - d.h*0.55, d.h*0.6, d.h*0.55);
-            }
-            ctx.restore();
-            if (this.hp < this.maxHp) {
-                let bw = Math.max(26, d.h * 0.42);
-                ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(this.x - bw/2, this.y + d.feet - d.h - 10, bw, 4);
-                ctx.fillStyle = '#c8503c'; ctx.fillRect(this.x - bw/2, this.y + d.feet - d.h - 10, bw * (this.hp / this.maxHp), 4);
-            }
-        }
     }
 
     // Keeps the wilds stocked without letting the population creep up day after day.
@@ -2473,43 +2361,16 @@
                 playSound('pickup'); this.markedForDeletion = true;
             }
         }
-        draw(ctx) {
-            // Blink out the last few seconds so a potion about to vanish says so.
-            let fading = this.life < POTION_WARN;
-            let alpha = fading ? 0.35 + Math.abs(Math.sin(this.life * 9)) * 0.65 : 1;
-            let bobY = Math.sin(performance.now() / 420 + this.bob) * 2.5;
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.beginPath(); ctx.ellipse(this.x, this.y + 15, 11, 4, 0, 0, Math.PI*2); ctx.fill();
-            if (potionSprite.complete && potionSprite.naturalWidth !== 0) {
-                let f = POTION_FRAMES[this.type] || POTION_FRAMES.hp;
-                let dh = POTION_DRAW_H, dw = dh * (f.sw / f.sh);
-                // A soft glow keeps it findable in grass and at night.
-                let gr = ctx.createRadialGradient(this.x, this.y + bobY, 2, this.x, this.y + bobY, 26);
-                let tint = this.type === 'hp' ? 'rgba(255,90,90,' : 'rgba(90,160,255,';
-                gr.addColorStop(0, tint + '0.40)'); gr.addColorStop(1, tint + '0)');
-                ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(this.x, this.y + bobY, 26, 0, Math.PI*2); ctx.fill();
-                ctx.drawImage(potionSprite, f.sx, f.sy, f.sw, f.sh, this.x - dw/2, this.y + bobY + 14 - dh, dw, dh);
-            } else {
-                ctx.fillStyle = this.type === 'hp' ? '#ff4d4d' : '#4d94ff';
-                ctx.beginPath(); ctx.arc(this.x, this.y + bobY, this.radius, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-            }
-            ctx.restore();
-        }
     }
 
     class Particle {
         constructor(x, y, vx, vy, color) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.color = color; this.life = 0.5 + Math.random() * 0.5; this.markedForDeletion = false; }
         update(dt) { this.x += this.vx * dt * 60; this.y += this.vy * dt * 60; this.vx *= 0.9; this.vy *= 0.9; this.life -= dt; if(this.life <= 0) this.markedForDeletion = true; }
-        draw(ctx) { ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color; ctx.fillRect(this.x-3, this.y-3, 6, 6); ctx.globalAlpha = 1.0; }
     }
 
     class FloatingText {
         constructor(x, y, text, color) { fx.text(x, y, text, color); this.x = x; this.y = y; this.text = text; this.color = color; this.life = 1.0; this.vy = -30; this.markedForDeletion = false; }
         update(dt) { this.y += this.vy * dt; this.life -= dt; if (this.life <= 0) this.markedForDeletion = true; }
-        draw(ctx) { ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color; ctx.font = "bold 20px Arial"; ctx.textAlign = "center"; ctx.shadowColor = '#000'; ctx.shadowBlur = 4; ctx.fillText(this.text, this.x, this.y); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; }
     }
 
     class Effect {
@@ -2557,116 +2418,6 @@
                 this.dmg = 0; 
             }
             if(this.life <= 0) this.markedForDeletion = true;
-        }
-        draw(ctx) {
-            if (this.style === 'scorched' && scorchedSprite.complete && scorchedSprite.naturalWidth !== 0) {
-                let q = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
-                let a = q < SCORCHED_IN_START ? 0
-                      : q < SCORCHED_IN_END   ? (q - SCORCHED_IN_START) / (SCORCHED_IN_END - SCORCHED_IN_START)
-                      : q > SCORCHED_FADE_FROM ? Math.max(0, 1 - (q - SCORCHED_FADE_FROM) / (1 - SCORCHED_FADE_FROM))
-                      : 1;
-                if (a > 0) {
-                    let f = SCORCHED_CRATER;
-                    // The burnt ground spans the radius that burns, so what you see is what stands
-                    // in it. Height follows the art's own aspect, and the anchor is the ground line
-                    // rather than the middle of the box, so the flames rise out of the crater
-                    // instead of dragging it down the screen.
-                    let dw = this.radius * 2, dh = dw * (f[3] / f[2]);
-                    ctx.save();
-                    ctx.globalAlpha = a;
-                    ctx.drawImage(scorchedSprite, f[0], f[1], f[2], f[3],
-                                  this.x - dw/2, this.y - dh * SCORCHED_GROUND_Y, dw, dh);
-                    ctx.restore();
-                }
-                return;
-            }
-            if (this.style === 'meteor' && meteorSprite.complete && meteorSprite.naturalWidth !== 0) {
-                // One scale for the whole sequence, pinned to the blast so it spans the radius that
-                // actually deals the damage. The falling frames come out proportionally smaller off
-                // that same scale, which is what sells the rock closing on you.
-                let p = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
-                let scale = (this.radius * 2) / METEOR_FRAMES[4][2];
-                let f, cx, cy, alpha = 1;
-                if (p < METEOR_IMPACT) {
-                    let t = p / METEOR_IMPACT;
-                    f = METEOR_FRAMES[Math.min(3, Math.floor(t * 4))];
-                    let away = this.radius * METEOR_APPROACH * (1 - t);
-                    cx = this.x - METEOR_DIR[0] * away;
-                    cy = this.y - METEOR_DIR[1] * away;
-                } else {
-                    f = METEOR_FRAMES[4];
-                    cx = this.x; cy = this.y;
-                    let q = (p - METEOR_IMPACT) / (1 - METEOR_IMPACT);
-                    alpha = q > 0.6 ? Math.max(0, 1 - (q - 0.6) / 0.4) : 1;
-                }
-                let dw = f[2] * scale, dh = f[3] * scale;
-                ctx.save();
-                ctx.globalAlpha = alpha;
-                ctx.drawImage(meteorSprite, f[0], f[1], f[2], f[3], cx - f[4]*dw, cy - f[5]*dh, dw, dh);
-                ctx.restore();
-                return;
-            }
-            if (this.style === 'holynova' && holyNovaSprite.complete && holyNovaSprite.naturalWidth !== 0) {
-                // The last frame is drawn at the effect's own diameter, so the circle you see is
-                // the circle that heals and hits. The earlier stages come out proportionally
-                // smaller off the same scale, which is what makes the nova bloom outward.
-                let p = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
-                let n = HOLYNOVA_FRAMES.length;
-                let idx = p < HOLYNOVA_GROW
-                    ? Math.min(n - 2, Math.floor((p / HOLYNOVA_GROW) * (n - 1)))
-                    : n - 1;
-                let f = HOLYNOVA_FRAMES[idx];
-                let scale = (this.radius * 2) / HOLYNOVA_FRAMES[n - 1][2];
-                let dw = f[2] * scale, dh = f[3] * scale;
-                ctx.save();
-                ctx.globalAlpha = p > HOLYNOVA_FADE_FROM
-                    ? Math.max(0, 1 - (p - HOLYNOVA_FADE_FROM) / (1 - HOLYNOVA_FADE_FROM)) : 1;
-                ctx.drawImage(holyNovaSprite, f[0], f[1], f[2], f[3], this.x - dw/2, this.y - dh/2, dw, dh);
-                ctx.restore();
-                return;
-            }
-            if (this.style === 'arrowrain') {
-                let fade = Math.min(1, this.life / 0.4);
-                ctx.save();
-                ctx.globalAlpha = 0.28 * fade;
-                ctx.fillStyle = '#2f6b1f';
-                ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, Math.PI*2); ctx.fill();
-                ctx.globalAlpha = 0.8 * fade; ctx.strokeStyle = '#4dff4d'; ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, Math.PI*2); ctx.stroke();
-                let t = this.maxLife - this.life;
-                ctx.globalAlpha = fade;
-                this.shafts.forEach(sh => {
-                    let prog = ((t / sh.dur) + sh.delay) % 1;
-                    let gx = this.x + sh.ox, gy = this.y + sh.oy;
-                    let ty = gy - 300 * (1 - prog);
-                    if (arrowSprite.complete && arrowSprite.naturalWidth !== 0) {
-                        // The old shaft ran from ty-16 to the head's tip at ty+6, 22px nock to
-                        // point - centring a 22-long sprite on ty-5 reproduces that same span
-                        // exactly. Rotated a quarter turn so the sprite's own right-pointing head
-                        // ends up pointing straight down, the way a dropping arrow actually falls.
-                        ctx.save(); ctx.translate(gx, ty - 5); ctx.rotate(Math.PI / 2);
-                        drawArrowSprite(ctx, 22);
-                        ctx.restore();
-                    } else {
-                        ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2;
-                        ctx.beginPath(); ctx.moveTo(gx, ty - 16); ctx.lineTo(gx, ty); ctx.stroke();
-                        ctx.fillStyle = '#4dff4d';
-                        ctx.beginPath(); ctx.moveTo(gx, ty + 6); ctx.lineTo(gx - 3, ty - 1); ctx.lineTo(gx + 3, ty - 1); ctx.fill();
-                    }
-                });
-                ctx.restore();
-                return;
-            }
-            if (this.color === '#00ffff' && this.radius < 50 && this.maxLife < 1) { // Laser
-                ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(world.base.x, world.base.y); ctx.lineTo(this.x, this.y); ctx.stroke();
-            } else {
-                // Fallback path for Scorched Earth when its sheet has not loaded. Its zone lives 5s,
-                // so life/maxLife alone left it at ~97% opacity for most of that - a solid disc of
-                // paint that buried the meteor's blast and the ground with it. Held down to a
-                // fraction so even the fallback stays readable; other blobs are brief and unaffected.
-                ctx.globalAlpha = (this.isScorched ? 0.3 : 1) * (this.life / this.maxLife);
-                ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0;
-            }
         }
     }
 
@@ -2840,37 +2591,6 @@
             if (this.overchargeActive > 0) this.overchargeActive -= dt;
         
             if (world.players.some(p => p.baseRegen) || this.hasBrazier) { this.regenTimer += dt; if (this.regenTimer >= 2.0) { this.hp = Math.min(this.maxHp, this.hp + (this.hasBrazier ? 12 : 5)); this.regenTimer = 0; } }
-        }
-        draw(ctx) {
-            let pulse = Math.abs(Math.sin(performance.now() / 400)) * 10;
-            
-            const imgSize = NEXUS_IMG;
-            const offset = -imgSize / 2;
-
-            if (nexusSprite.complete && nexusSprite.naturalWidth !== 0) {
-                ctx.drawImage(nexusSprite, this.x + offset, this.y + offset, imgSize, imgSize);
-            } else {
-                // Fallback art was drawn for a 150px nexus; scale it rather than re-tune every point.
-                ctx.save(); ctx.translate(this.x, this.y); ctx.scale(imgSize/150, imgSize/150); ctx.translate(-this.x, -this.y);
-                ctx.fillStyle = '#444'; ctx.fillRect(this.x - 45, this.y - 45, 90, 90); ctx.fillStyle = '#222';
-                for(let i=0; i<3; i++) {
-                    ctx.fillRect(this.x - 45 + i*35 + 5, this.y - 55, 15, 10); ctx.fillRect(this.x - 45 + i*35 + 5, this.y + 45, 15, 10);
-                    ctx.fillRect(this.x - 55, this.y - 45 + i*35 + 5, 10, 15); ctx.fillRect(this.x + 45, this.y - 45 + i*35 + 5, 10, 15);
-                }
-                ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10 + pulse;
-                ctx.beginPath(); ctx.moveTo(this.x, this.y-30); ctx.lineTo(this.x+20, this.y); ctx.lineTo(this.x, this.y+30); ctx.lineTo(this.x-20, this.y); ctx.fill();
-                ctx.shadowBlur = 0;
-                ctx.restore();
-            }
-
-            let barW = imgSize * 0.55, barY = this.y - imgSize/2 - 16;
-            ctx.fillStyle = '#b30000'; ctx.fillRect(this.x - barW/2, barY, barW, 11);
-            ctx.fillStyle = '#00cc44'; ctx.fillRect(this.x - barW/2, barY, barW * (Math.max(0, this.hp)/this.maxHp), 11);
-            ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.strokeRect(this.x - barW/2, barY, barW, 11);
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
-            ctx.fillText(Math.max(0, Math.ceil(this.hp)) + ' / ' + this.maxHp, this.x, barY - 4);
-            if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, imgSize*0.42, 0, Math.PI*2); ctx.stroke(); }
-            if (this.overchargeActive > 0) { ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 4; ctx.setLineDash([10, 10]); ctx.beginPath(); ctx.arc(this.x, this.y, imgSize*0.47 + pulse, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
         }
     }
 
@@ -3244,104 +2964,6 @@
             spawnParticles(mx, my, '#fff', 18); playSound('levelup'); addShake(6); ui.buildPalette();
         }
 
-        draw(ctx) {
-            ctx.save(); ctx.translate(this.x, this.y); 
-            if (this.chosenPath) {
-                if (this.chosenPath === 'p1') { ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 15; if (Math.random() < 0.1) spawnParticles(this.x, this.y + 10, '#ff3300', 1); } 
-                else if (this.chosenPath === 'p2') { ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)'; ctx.lineWidth = 2; ctx.rotate(performance.now() / 500); ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI); ctx.stroke(); ctx.rotate(-performance.now() / 500); } 
-                else if (this.chosenPath === 'p3') { ctx.strokeStyle = 'rgba(255, 200, 0, 0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, -25, 15, 5, 0, 0, Math.PI*2); ctx.stroke(); }
-            }
-
-            let isWhirling = this.cls === 'warrior' && this.abTimer > 0;
-
-            if (this.invincible) ctx.globalAlpha = 0.5;
-            
-            if (isWhirling) {
-                ctx.save();
-                // Progress through the ability, 0 at cast -> 1 at the end. Drives the ramps below
-                // so the effect grows and dissipates instead of popping in and out at full size.
-                let wp = 1 - Math.max(0, Math.min(1, this.abTimer / this.abMaxTimer));
-                let ramp = Math.min(1, wp / 0.12);                       // quick spin-up
-                let fade = Math.min(1, (1 - wp) / 0.25);                 // dissipate at the end
-                let pulse = 1 + this.whirlPulse * 0.06;                  // small kick on each damage tick
-                let scale = (0.55 + 0.45 * ramp) * (1 + 0.12 * (1 - fade)) * pulse;
-                let alpha = ramp * fade;
-
-                // Damage reaches 100 * whirlMod. The sprite carries ~8% padding and its outer
-                // spiral is sparse, so a 200 box only reads solid to ~78. 240 puts the solid
-                // edge on the actual hitbox - what you see is what you hit.
-                let whirlDia = 240 * this.whirlMod * scale;
-                ctx.globalAlpha = (this.invincible ? 0.5 : 1) * alpha;
-
-                if (whirlwindSprite.complete && whirlwindSprite.naturalWidth !== 0) {
-                    // Three trailing copies at decreasing alpha read as motion blur, which smooths
-                    // the spin far more than raising the rotation rate would.
-                    for (let i = 2; i >= 0; i--) {
-                        ctx.save();
-                        ctx.rotate(this.whirlSpin - i * 0.22);
-                        ctx.globalAlpha = ctx.globalAlpha * (i === 0 ? 1 : (i === 1 ? 0.45 : 0.2));
-                        ctx.drawImage(whirlwindSprite, -whirlDia/2, -whirlDia/2, whirlDia, whirlDia);
-                        ctx.restore();
-                    }
-                } else {
-                    ctx.rotate(this.whirlSpin);
-                    ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
-                    ctx.beginPath(); ctx.arc(0, 0, whirlDia/2, 0, Math.PI*2); ctx.fill();
-                }
-                ctx.restore();
-            }
-
-            // DRAW CLASS SPRITE
-            if (!isWhirling) ctx.rotate(this.angle); // Rotate to face mouse only if not whirling
-            
-            let flip = (this.intent.aimX < this.x && !isWhirling) ? -1 : 1;
-            
-            // To keep the character upright and just flipped left/right when pointing
-            if (!isWhirling) {
-                ctx.rotate(-this.angle); // Undo rotation to keep sprite upright
-                ctx.scale(flip, 1);
-            } else {
-                 ctx.scale((this.intent.aimX < this.x) ? -1 : 1, 1);
-            }
-            
-            // Determine which sprite to use based on chosen class
-            let activeSprite = archerSprite; // fallback
-            if (this.cls === 'warrior') activeSprite = warriorSprite;
-            else if (this.cls === 'mage') activeSprite = mageSprite;
-            else if (this.cls === 'priest') activeSprite = priestSprite;
-            
-            // frameX 1 is walking and 2 is attacking - the two the old sheets only had a single
-            // drawing of each. Whichever a class has a real sequence for is played here; anything
-            // without one falls through to its original single pose, so a class with no drawn
-            // sequence (and a sheet that has not loaded yet) looks exactly as it always did.
-            let walkSet = HERO_WALK[this.cls], walkImg = walkSprites[this.cls];
-            let atkSet = HERO_ATTACK[this.cls];
-            if (this.frameX === 2 && atkSet && swingSprite.complete && swingSprite.naturalWidth !== 0) {
-                drawHeroFrames(ctx, atkSet, swingSheet(), this.attackFrame(atkSet.frames.length));
-            } else if (this.frameX === 1 && walkSet && walkImg.complete && walkImg.naturalWidth !== 0) {
-                drawHeroWalk(ctx, this.cls, Math.floor(this.walkDist / WALK_STEP));
-            } else if (activeSprite.width > 0) {
-                let sW = Math.floor(activeSprite.width / 3); // 3 columns per image
-                let sH = Math.floor(activeSprite.height * 0.75); // Crop text at bottom
-                
-                // Drawn at the cell's true aspect ratio so the class stands as tall as the
-                // merchant; HERO_DRAW_Y keeps the feet on the same spot as the old 110x110 box.
-                ctx.drawImage(
-                    activeSprite,
-                    this.frameX * sW,
-                    0,
-                    sW,
-                    sH,
-                    HERO_DRAW_X,
-                    HERO_DRAW_Y,
-                    HERO_DRAW_W,
-                    HERO_DRAW_H
-                );
-            }
-            
-            ctx.restore();
-            if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 30, 0, Math.PI*2); ctx.stroke(); }
-        }
     }
 
     // The last buildable structure. It is economy, not defence: it produces during the day,
@@ -3361,30 +2983,6 @@
                 playSound('pickup');
                 this.tick = 4.0;
             }
-        }
-        draw(ctx) {
-            ctx.save(); ctx.translate(this.x, this.y);
-            let dh = EXTRACTOR_H, dw = dh * (EXTRACTOR_CROP.sw / EXTRACTOR_CROP.sh);
-            ctx.fillStyle = 'rgba(0,0,0,0.3)';
-            ctx.beginPath(); ctx.ellipse(0, EXTRACTOR_FEET - 6, dw * 0.4, dw * 0.11, 0, 0, Math.PI*2); ctx.fill();
-            if (extractorSprite.complete && extractorSprite.naturalWidth !== 0) {
-                // The rig glows while it is actually producing, i.e. during the day.
-                if (world.gameState === 'DAY') {
-                    let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 520)) * 0.3;
-                    let grad = ctx.createRadialGradient(-dw*0.06, -8, 4, -dw*0.06, -8, 70);
-                    grad.addColorStop(0, 'rgba(120, 255, 190, ' + (0.22 * pulse).toFixed(3) + ')');
-                    grad.addColorStop(1, 'rgba(90, 220, 160, 0)');
-                    ctx.fillStyle = grad;
-                    ctx.beginPath(); ctx.arc(-dw*0.06, -8, 70, 0, Math.PI*2); ctx.fill();
-                }
-                ctx.drawImage(extractorSprite, EXTRACTOR_CROP.sx, EXTRACTOR_CROP.sy, EXTRACTOR_CROP.sw, EXTRACTOR_CROP.sh,
-                              -dw/2, EXTRACTOR_FEET - dh, dw, dh);
-            } else {
-                ctx.fillStyle = '#996633'; ctx.fillRect(-15, -15, 30, 30);
-                ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
-            }
-            ctx.restore();
-            if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke(); }
         }
     }
 
@@ -3442,16 +3040,6 @@
                 if (struck) { struck.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); } 
                 else if (Math.hypot(world.base.x - this.x, world.base.y - this.y) < world.base.radius + 5) { world.base.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); }
             }
-        }
-        draw(ctx) { 
-            ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(Math.atan2(this.vy, this.vx));
-            if (this.isExplosive && this.vx === 0) { ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(0,0, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffaa00'; ctx.fillRect(-3, -10, 6, 6); } 
-            else if (this.color === '#4dff4d' || this.color === '#ff0000' || this.color === '#ffaa00') {
-                if (arrowSprite.complete && arrowSprite.naturalWidth !== 0) drawArrowSprite(ctx, 30);
-                else { ctx.fillStyle = '#8B4513'; ctx.fillRect(-10, -1, 20, 2); ctx.fillStyle = this.color; ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(15, 0); ctx.lineTo(10, 3); ctx.fill(); }
-            }
-            else { ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0,0, 8, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0, 4, 0, Math.PI*2); ctx.fill(); }
-            ctx.restore();
         }
     }
 
@@ -3841,266 +3429,6 @@
                 }
             }
         }
-        draw(ctx) { 
-            if (this.type === 'assassin' && this.isInvisible) return;
-
-            ctx.save(); ctx.translate(this.x, this.y); 
-            if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
-            const facingTarget = nearestPlayer(this.x, this.y);
-            let target = (this.type === 'golem' || !facingTarget) ? world.base
-                       : (Math.hypot(world.base.x - this.x, world.base.y - this.y) < Math.hypot(facingTarget.x - this.x, facingTarget.y - this.y) ? world.base : facingTarget);
-            
-            if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
-            else if (this.type === 'goblin') ctx.fillStyle = '#5b9e32';
-            else if (this.type === 'orcarcher') ctx.fillStyle = '#6b8f4e';
-            else if (this.type === 'golem') ctx.fillStyle = '#666';
-            else if (this.type === 'boss') ctx.fillStyle = '#992222';
-            else if (this.type === 'orcking') ctx.fillStyle = '#5e7a3a';
-            else if (this.type === 'harpy') ctx.fillStyle = '#7a6a3a';
-            else if (this.type === 'goblinarcher') ctx.fillStyle = '#6e7d4a';
-            else if (this.type === 'cyclop') ctx.fillStyle = '#5f7d3e';
-            else if (this.type === 'troll') ctx.fillStyle = '#6b8a55';
-            else if (this.type === 'orcrider') ctx.fillStyle = '#4a5a3a';
-            else if (this.type === 'bomber') ctx.fillStyle = Math.sin(this.flashAnim) > 0 ? '#ffaa00' : '#5b9e32';
-            else if (this.type === 'predator') ctx.fillStyle = this.isAsleep ? '#335533' : '#aa0000';
-            else if (this.type === 'assassin') ctx.fillStyle = '#222';
-            else if (this.type === 'necromancer') ctx.fillStyle = '#4b0082';
-            else if (this.type === 'wolf') ctx.fillStyle = '#7a7a6e';
-
-            let isCustomSprite = false;
-
-            if (this.type === 'golem' && golemSprite.complete && golemSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                ctx.scale((target.x < this.x) ? -1 : 1, 1);
-                // The golem has a shadow baked into the sprite already.
-                drawSheetFrame(ctx, golemSprite, GOLEM_FRAMES, this.frameX, 0, GOLEM_H, GOLEM_FEET, 'baseline');
-            }
-            else if (this.type === 'boss' && minotaurSprite.complete && minotaurSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                ctx.scale((target.x < this.x) ? -1 : 1, 1);
-                // The minotaur has a shadow baked into the sprite already.
-                if (this.bossPhaseTriggered) {
-                    let pulse = 0.3 + Math.abs(Math.sin(performance.now()/180)) * 0.3;
-                    ctx.save(); ctx.globalAlpha = pulse;
-                    let gr = ctx.createRadialGradient(0, -MINOTAUR_H*0.35, 10, 0, -MINOTAUR_H*0.35, MINOTAUR_H*0.6);
-                    gr.addColorStop(0, 'rgba(255,90,40,0.55)'); gr.addColorStop(1, 'rgba(255,90,40,0)');
-                    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, -MINOTAUR_H*0.35, MINOTAUR_H*0.6, 0, Math.PI*2); ctx.fill();
-                    ctx.restore();
-                }
-                drawSheetFrame(ctx, minotaurSprite, MINOTAUR_FRAMES, this.frameX, 0, MINOTAUR_H, MINOTAUR_FEET, 'baseline');
-            }
-            else if (this.type === 'bomber' && bomberSprite.complete && bomberSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                ctx.scale((target.x < this.x) ? -1 : 1, 1);
-                ctx.fillStyle = 'rgba(0,0,0,0.26)';
-                ctx.beginPath(); ctx.ellipse(0, BOMBER_FEET - 5, 20, 7, 0, 0, Math.PI*2); ctx.fill();
-                drawSheetFrame(ctx, bomberSprite, BOMBER_FRAMES, this.frameX, 0, BOMBER_H, BOMBER_FEET, 'baseline');
-            }
-            else if (this.type === 'assassin' && assassinSprite.complete && assassinSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                ctx.scale((target.x < this.x) ? -1 : 1, 1);
-                // The assassin has a shadow baked into the sprite already.
-                drawSheetFrame(ctx, assassinSprite, ASSASSIN_FRAMES, this.frameX, 0, ASSASSIN_H, ASSASSIN_FEET, 'baseline');
-            }
-            else if (this.type === 'necromancer' && healerSprite.complete && healerSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                ctx.scale((target.x < this.x) ? -1 : 1, 1);
-                // The healer has a shadow baked into the sprite already.
-                // Its staff is lit while it is channelling, so the thing to shoot is obvious.
-                if (this.frameX === 2) {
-                    ctx.save(); ctx.globalAlpha = 0.35 + Math.abs(Math.sin(performance.now()/160)) * 0.3;
-                    ctx.fillStyle = '#8affc4';
-                    ctx.beginPath(); ctx.ellipse(0, HEALER_FEET - HEALER_H*0.5, 26, 40, 0, 0, Math.PI*2); ctx.fill();
-                    ctx.restore();
-                }
-                drawSheetFrame(ctx, healerSprite, HEALER_FRAMES, this.frameX, 0, HEALER_H, HEALER_FEET, 'baseline');
-            }
-            else if (this.type === 'predator') { 
-                isCustomSprite = true;
-                if (this.isAsleep) {
-                    if (bear3Sprite.complete && bear3Sprite.naturalWidth !== 0) {
-                        let sw = bear3Sprite.naturalWidth * BEAR_SLEEP_SCALE;
-                        let sh = bear3Sprite.naturalHeight * BEAR_SLEEP_SCALE;
-                        // content sits in the lower ~70% of this sheet, so anchor on that
-                        ctx.drawImage(bear3Sprite, -sw/2, BEAR_SLEEP_GROUND - sh * 0.698, sw, sh);
-                    } else {
-                        ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
-                        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
-                        ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
-                    }
-                } else {
-                    let flip = (target.x < this.x) ? -1 : 1;
-                    ctx.scale(flip, 1);
-                    if (bear4Sprite.complete && bear4Sprite.naturalWidth !== 0) {
-                        // bear4.png frames are NOT equal width (walk poses vs rearing pose),
-                        // so we slice at the real boundaries instead of dividing evenly.
-                        const bearFrames = [
-                            { sx: 0,   sw: 205 },
-                            { sx: 205, sw: 166 },
-                            { sx: 371, sw: 169 }
-                        ];
-                        let f = bearFrames[this.frameX] || bearFrames[0];
-                        let sH = bear4Sprite.height;
-                        // Scale every cell by the same factor instead of forcing them all into
-                        // one square - the cells differ in width, so a fixed box made the bear
-                        // change size as it walked.
-                        let dw = f.sw * BEAR_SCALE, dh = sH * BEAR_SCALE;
-                        ctx.drawImage(bear4Sprite, f.sx, 0, f.sw, sH, -dw/2, BEAR_GROUND - dh, dw, dh);
-                    } else {
-                        ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
-                        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
-                        ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
-                    }
-                }
-            }
-            else if (this.type === 'orcking' && orcKingSprite.complete && orcKingSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                let f = KING_FRAMES[this.frameX] || KING_FRAMES[0];
-                let dh = KING_DRAW_H, dw = dh * (f.sw / f.sh);
-                // The Orc King has a shadow baked into the sprite already.
-                if (this.enraged) {
-                    let pulse = 0.35 + Math.abs(Math.sin(performance.now()/220)) * 0.3;
-                    ctx.save(); ctx.globalAlpha = pulse;
-                    let g = ctx.createRadialGradient(0, -dh*0.35, 10, 0, -dh*0.35, dw*0.8);
-                    g.addColorStop(0, 'rgba(255,70,40,0.5)'); g.addColorStop(1, 'rgba(255,70,40,0)');
-                    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -dh*0.35, dw*0.8, 0, Math.PI*2); ctx.fill();
-                    ctx.restore();
-                }
-                ctx.drawImage(orcKingSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, KING_FEET - dh, dw, dh);
-            }
-            else if (this.type === 'orcarcher' && orcArcherSprite.complete && orcArcherSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                let f = ORC_FRAMES[this.frameX] || ORC_FRAMES[0];
-                let dh = ORC_DRAW_H, dw = dh * (f.sw / f.sh);
-                ctx.drawImage(orcArcherSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, ORC_FEET - dh, dw, dh);
-            }
-            else if (this.type === 'cyclop' && cyclopSprite.complete && cyclopSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                ctx.fillStyle = 'rgba(0,0,0,0.30)';
-                ctx.beginPath(); ctx.ellipse(0, CYCLOP_FEET - 8, 40, 13, 0, 0, Math.PI*2); ctx.fill();
-                drawSheetFrame(ctx, cyclopSprite, CYCLOP_FRAMES, this.frameX, 0, CYCLOP_DRAW_H, CYCLOP_FEET, 'baseline');
-            }
-            else if (this.type === 'troll' && trollSprite.complete && trollSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                // The troll has a shadow baked into the sprite already.
-                // A wounded troll glows while it knits itself back up; fire snuffs that out,
-                // so the glow doubles as the tell for whether your damage is sticking.
-                if (this.hp < this.maxHp && this.burningTimer <= 0) {
-                    ctx.save(); ctx.globalAlpha = 0.22 + Math.abs(Math.sin(performance.now()/300)) * 0.18;
-                    ctx.fillStyle = '#4dff88';
-                    ctx.beginPath(); ctx.ellipse(0, TROLL_FEET - TROLL_DRAW_H*0.45, 26, 44, 0, 0, Math.PI*2); ctx.fill();
-                    ctx.restore();
-                }
-                drawSheetFrame(ctx, trollSprite, TROLL_FRAMES, this.frameX, 0, TROLL_DRAW_H, TROLL_FEET, 'baseline');
-            }
-            else if (this.type === 'orcrider' && orcRiderSprite.complete && orcRiderSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                // The warg rider has a shadow baked into the sprite already.
-                // Speed lines trailing the warg while it is up to pace, so a charge coming at
-                // you is readable before it lands rather than after.
-                if (this.charge > 0.45) {
-                    ctx.save(); ctx.globalAlpha = (this.charge - 0.45) * 1.1;
-                    ctx.strokeStyle = '#e8dcc0'; ctx.lineWidth = 2;
-                    for (let i = 0; i < 3; i++) {
-                        let ly = RIDER_FEET - 26 - i * 20, lx = -34 - i * 9;
-                        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - 20 - this.charge * 16, ly); ctx.stroke();
-                    }
-                    ctx.restore();
-                }
-                drawSheetFrame(ctx, orcRiderSprite, RIDER_FRAMES, this.frameX, 0, RIDER_DRAW_H, RIDER_FEET, 'baseline');
-            }
-            else if (this.type === 'goblinarcher' && gobRiderSprite.complete && gobRiderSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                ctx.fillStyle = 'rgba(0,0,0,0.26)';
-                ctx.beginPath(); ctx.ellipse(0, GOB_FEET - 6, 30, 10, 0, 0, Math.PI*2); ctx.fill();
-                drawSheetFrame(ctx, gobRiderSprite, GOB_FRAMES, this.frameX, 0, GOB_DRAW_H, GOB_FEET, 'baseline');
-            }
-            else if (this.type === 'harpy' && harpySprite.complete && harpySprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                // Shadow stays on the ground while the harpy bobs above it, so it reads as
-                // airborne. The phase is per-enemy or a flock beats its wings in lockstep.
-                ctx.fillStyle = 'rgba(0,0,0,0.22)';
-                ctx.beginPath(); ctx.ellipse(0, 32, 19, 6, 0, 0, Math.PI*2); ctx.fill();
-                let bob = Math.sin(performance.now() / 190 + this.spawnPhase) * 5;
-                drawSheetFrame(ctx, harpySprite, HARPY_FRAMES, this.frameX, HARPY_REF, HARPY_DRAW_H, -HARPY_HOVER + bob, 'center');
-            }
-            else if (this.type === 'goblin' && goblinSprite.complete && goblinSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                // The goblin was the one enemy with no shadow at all - none baked into its
-                // sprite and none drawn - so it read as floating next to everything else.
-                ctx.fillStyle = 'rgba(0,0,0,0.26)';
-                ctx.beginPath(); ctx.ellipse(0, 33, 19, 6, 0, 0, Math.PI*2); ctx.fill();
-                ctx.scale(flip, 1);
-                // goblin_clean.png frames are NOT equal width, so slice at the real boundaries.
-                const goblinFrames = [
-                    { sx: 0,   sw: 174 },
-                    { sx: 174, sw: 140 },
-                    { sx: 314, sw: 186 }
-                ];
-                let f = goblinFrames[this.frameX] || goblinFrames[0];
-                let sH = goblinSprite.height;
-                ctx.drawImage(goblinSprite, f.sx, 0, f.sw, sH, -40, -40, 80, 80);
-            }
-            else if (this.type === 'wolf' && wolfSprite.complete && wolfSprite.naturalWidth !== 0) {
-                isCustomSprite = true;
-                let flip = (target.x < this.x) ? -1 : 1;
-                ctx.scale(flip, 1);
-                // wolf_walk.png frames are NOT equal width (walk poses vs the attack pose),
-                // so slice at the real per-frame boundaries instead of dividing evenly.
-                const wolfFrames = [
-                    { sx: 0,   sw: 188 },
-                    { sx: 188, sw: 145 },
-                    { sx: 333, sw: 167 }
-                ];
-                let f = wolfFrames[this.frameX] || wolfFrames[0];
-                let sH = wolfSprite.height;
-                ctx.drawImage(wolfSprite, f.sx, 0, f.sw, sH, -40, -40, 80, 80);
-            }
-            else { ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x)); ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); }
-
-            if (this.burningTimer > 0) {
-                ctx.fillStyle = 'rgba(255, 100, 0, 0.4)';
-                ctx.beginPath(); ctx.arc(0, 0, this.radius + 4, 0, Math.PI*2); ctx.fill();
-            }
-
-            if (!isCustomSprite) {
-                if (this.type === 'goblin' || this.type === 'bomber') { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(5, -6, 3, 0, Math.PI*2); ctx.arc(5, 6, 3, 0, Math.PI*2); ctx.fill(); }
-                if (this.type === 'goblin') { ctx.fillStyle = '#5c3a21'; ctx.fillRect(8, 10, 20, 5); }
-            }
-
-            if (this.type === 'orcarcher' && !isCustomSprite) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -5, 3, 0, Math.PI*2); ctx.arc(5, 5, 3, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(12, 0, 10, -Math.PI/2, Math.PI/2); ctx.stroke(); }
-            if (this.type === 'boss' && !isCustomSprite) { 
-                ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(15, -12, 6, 0, Math.PI*2); ctx.arc(15, 12, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#444'; ctx.fillRect(20, 20, 40, 10); 
-                if (this.bossPhaseTriggered) { ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, this.radius + 10 + Math.sin(performance.now()/100)*5, 0, Math.PI*2); ctx.stroke(); }
-            }
-            if (this.type === 'bomber' && !isCustomSprite) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(12, 0, 8, 0, Math.PI*2); ctx.fill(); }
-            if (this.type === 'assassin' && !isCustomSprite) { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, 10); ctx.lineTo(-5, -10); ctx.fill(); }
-            if (this.type === 'necromancer' && !isCustomSprite) { ctx.fillStyle = '#00ff00'; ctx.fillRect(0, -5, 10, 10); }
-
-            ctx.restore();
-            
-            if (this.aura && this.aura !== 'none') {
-                ctx.strokeStyle = this.aura === 'heal' ? 'rgba(0, 255, 0, 0.4)' : 'rgba(0, 200, 255, 0.4)';
-                ctx.lineWidth = 4; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.arc(this.x, this.y, 200, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
-            }
-            
-            let barW = this.radius * 2; ctx.fillStyle = '#660000'; ctx.fillRect(this.x - barW/2, this.y - this.radius - 12, barW, 4); ctx.fillStyle = '#00ff00'; ctx.fillRect(this.x - barW/2, this.y - this.radius - 12, barW * (Math.max(0, this.hp)/this.maxHp), 4);
-        }
     }
 
     class Resource extends Entity {
@@ -4114,63 +3442,6 @@
             this.solidRadius = type === 'wood' ? 14 : (type === 'stone' ? 13 : 0);
         }
         update(dt) { if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt; }
-        draw(ctx) {
-            if (this.type === 'wood') {
-                // Ground shadow for grounding, then the tree drawn at its real aspect ratio (no more squish)
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 39, 34, 12, 0, 0, Math.PI*2); ctx.fill();
-                if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
-                    let dh = 126; let dw = dh * (treeSprite.width / treeSprite.height);
-                    if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 42, dw, dh);
-                    ctx.filter = 'none';
-                    drawGatherMark(ctx, this.x, this.y - 92);
-                } else {
-                    ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
-                    ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
-                    ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
-                }
-            } else if (this.type === 'stone') {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 28, 14, 5, 0, 0, Math.PI*2); ctx.fill();
-                if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
-                    let dh = 46; let dw = dh * (stoneSprite.width / stoneSprite.height);
-                    if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 30, dw, dh);
-                    ctx.filter = 'none';
-                    drawGatherMark(ctx, this.x, this.y - 26);
-                    ctx.filter = 'none';
-                } else {
-                    ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
-                    ctx.fillStyle = '#888'; ctx.beginPath(); ctx.moveTo(this.x-10, this.y+10); ctx.lineTo(this.x, this.y-5); ctx.lineTo(this.x+10, this.y+10); ctx.fill();
-                }
-            } else if (this.type === 'mana') {
-                ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-20); ctx.lineTo(this.x+15, this.y); ctx.lineTo(this.x, this.y+20); ctx.lineTo(this.x-15, this.y); ctx.fill();
-                ctx.fillStyle = '#ccffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-10); ctx.lineTo(this.x+5, this.y); ctx.lineTo(this.x, this.y+10); ctx.lineTo(this.x-5, this.y); ctx.fill();
-            } else if (this.type === 'cache') {
-                let bob = Math.sin(performance.now() / 420 + this.x) * 3;
-                ctx.fillStyle = 'rgba(0,0,0,0.28)';
-                ctx.beginPath(); ctx.ellipse(this.x, this.y + 26, 30, 10, 0, 0, Math.PI*2); ctx.fill();
-                // Keep a golden glow so a chest still reads as loot from across the map.
-                let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 600)) * 0.35;
-                ctx.save();
-                ctx.globalAlpha = pulse;
-                let grad = ctx.createRadialGradient(this.x, this.y + 2, 4, this.x, this.y + 2, 62);
-                grad.addColorStop(0, 'rgba(255, 214, 92, 0.55)'); grad.addColorStop(1, 'rgba(255, 190, 40, 0)');
-                ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(this.x, this.y + 2, 62, 0, Math.PI*2); ctx.fill();
-                ctx.restore();
-                if (chestSprite.complete && chestSprite.naturalWidth !== 0) {
-                    let nw = chestSprite.naturalWidth, nh = chestSprite.naturalHeight;
-                    let sx = nw * CHEST_SX, sy = nh * CHEST_SY, sw = nw * CHEST_SW, sh = nh * CHEST_SH;
-                    let dh = 64, dw = dh * (sw / sh);
-                    if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
-                    ctx.drawImage(chestSprite, sx, sy, sw, sh, this.x - dw/2, this.y + 26 - dh + bob, dw, dh);
-                    ctx.filter = 'none';
-                } else {
-                    ctx.fillStyle = '#ffd700'; ctx.fillRect(this.x-15, this.y-10 + bob, 30, 20);
-                    ctx.fillStyle = '#ccaa00'; ctx.fillRect(this.x-15, this.y-5 + bob, 30, 5);
-                    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(this.x, this.y + bob, 4, 0, Math.PI*2); ctx.fill();
-                }
-            }
-        }
     }
 
     let lastResVals = {};
@@ -5225,6 +4496,762 @@
         else loopRunning = false;
     }
     applyAudioSettings();
+
+    // --- Renderer -------------------------------------------------------------------
+    // Every draw method in the game, put back onto the simulation classes from outside.
+    //
+    // They used to live in the class bodies, which meant the classes could not move into a
+    // module: a Durable Object has no canvas, no sprite sheets and nothing to draw on. Off
+    // the classes, the simulation carries no rendering at all, and `e.draw(ctx)` still
+    // resolves exactly as it did - no call site changed.
+    //
+    // This block has to come after the class declarations, which is why it sits down here.
+
+    Obstacle.prototype.draw = function(ctx) {
+        if (this.type === 'lake' && waterSprite.complete && waterSprite.naturalWidth !== 0) {
+            ctx.drawImage(waterSprite, this.x, this.y, this.w, this.h);
+        } else {
+            let cx = this.x + this.w * POND_CX, cy = this.y + this.h * POND_CY;
+            let rx = this.w * POND_RX, ry = this.h * POND_RY;
+            ctx.fillStyle = this.type === 'lake' ? '#c2b280' : '#3a1c1c';
+            ctx.beginPath(); ctx.ellipse(cx, cy, rx + 10, ry + 10, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = this.type === 'lake' ? '#26547c' : '#7c2626';
+            ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); ctx.fill();
+            let offset = Math.sin(performance.now()/500 + this.x) * 5;
+            ctx.fillStyle = this.type === 'lake' ? '#326f9e' : '#9e3232';
+            ctx.beginPath(); ctx.ellipse(cx + offset, cy, rx*0.7, ry*0.65, 0, 0, Math.PI*2); ctx.fill();
+        }
+    };
+
+    Merchant.prototype.draw = function(ctx) {
+        const feetY = this.y + 20;
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, feetY - 2, 24, 7, 0, 0, Math.PI*2); ctx.fill();
+        if (merchantSprite.complete && merchantSprite.naturalWidth !== 0) {
+            const dh = 96, dw = dh * MERCHANT_CELL.w / MERCHANT_CELL.h;
+            const bob = this.moving ? 0 : Math.sin(performance.now() / 500) * 1.5;
+            ctx.save();
+            ctx.translate(this.x, feetY + bob);
+            ctx.scale(this.facing, 1);
+            ctx.drawImage(merchantSprite, MERCHANT_FRAMES[this.frame], MERCHANT_CELL.y, MERCHANT_CELL.w, MERCHANT_CELL.h, -dw/2, -dh, dw, dh);
+            ctx.restore();
+        } else {
+            ctx.fillStyle = '#0066cc'; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#7a3e14'; ctx.fillRect(this.x-10, this.y-25, 20, 15);
+            ctx.fillStyle = '#f5d0b5'; ctx.beginPath(); ctx.arc(this.x, this.y-5, 8, 0, Math.PI*2); ctx.fill();
+        }
+        // Deliberately the local player: each client draws its own prompt for its own
+        // character. This is rendering, and never runs on the server.
+        if (world.gameState === 'DAY' && player && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
+            ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke();
+            ctx.fillStyle = '#00ffcc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("Press [R] to Shop", this.x, this.y + 55);
+        } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y - 82); }
+    };
+
+    Wanderer.prototype.draw = function(ctx) {
+        // Local player on purpose - this prompt belongs to whoever is looking at the screen.
+        let inRange = player && Math.hypot(player.x - this.x, player.y - this.y) < TALK_RANGE;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        ctx.fillStyle = 'rgba(0,0,0,0.26)';
+        ctx.beginPath(); ctx.ellipse(0, NPC1_FEET - 6, 24, 8, 0, 0, Math.PI*2); ctx.fill();
+        ctx.scale(this.facing, 1);
+        if (npc1Sprite.complete && npc1Sprite.naturalWidth !== 0) {
+            drawSheetFrame(ctx, npc1Sprite, NPC1_FRAMES, this.moving ? this.frame : 0, 0, NPC1_DRAW_H, NPC1_FEET, 'baseline');
+        } else {
+            ctx.fillStyle = '#6b5a3e'; ctx.fillRect(-12, -60, 24, 60);
+        }
+        ctx.restore();
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#e8d8a8'; ctx.font = 'bold 13px Arial';
+        ctx.fillText('WAYFARER', this.x, this.y - NPC1_DRAW_H + 12);
+        if (inRange) {
+            ctx.strokeStyle = 'rgba(232, 216, 168, 0.45)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(this.x, this.y + 10, 42, 0, Math.PI*2); ctx.stroke();
+            ctx.fillStyle = '#e8d8a8'; ctx.font = 'bold 14px Arial';
+            ctx.fillText('Press [R] to Talk', this.x, this.y + NPC1_FEET + 28);
+        }
+        if (this.bubble > 0 && this.line) this.drawBubble(ctx);
+    };
+
+    Wanderer.prototype.drawBubble = function(ctx) {
+        // Wrapped by hand: measureText is the only honest way to size the box, and a
+        // fixed-width guess clips the longer lines.
+        ctx.font = '15px Arial';
+        let words = this.line.split(' '), lines = [], cur = '';
+        for (let w of words) {
+            let t = cur ? cur + ' ' + w : w;
+            if (ctx.measureText(t).width > 300 && cur) { lines.push(cur); cur = w; } else cur = t;
+        }
+        if (cur) lines.push(cur);
+        let wBox = 20 + Math.max(...lines.map(l => ctx.measureText(l).width));
+        let hBox = 16 + lines.length * 20;
+        let bx = this.x - wBox / 2, by = this.y - NPC1_DRAW_H - hBox - 12;
+        let a = Math.min(1, this.bubble / 0.4);              // fade out at the end
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.fillStyle = 'rgba(24, 22, 16, 0.92)';
+        ctx.strokeStyle = '#e8d8a8'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(bx, by, wBox, hBox, 8); else ctx.rect(bx, by, wBox, hBox);
+        ctx.fill(); ctx.stroke();
+        ctx.beginPath();                                     // tail
+        ctx.moveTo(this.x - 8, by + hBox); ctx.lineTo(this.x, by + hBox + 12); ctx.lineTo(this.x + 8, by + hBox);
+        ctx.fillStyle = 'rgba(24, 22, 16, 0.92)'; ctx.fill();
+        ctx.fillStyle = '#f0e6cc'; ctx.textAlign = 'center'; ctx.font = '15px Arial';
+        lines.forEach((l, i) => ctx.fillText(l, this.x, by + 24 + i * 20));
+        ctx.restore();
+    };
+
+    Critter.prototype.draw = function(ctx) {
+        let d = this.def;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        // boar, deer and rabbit all has a shadow baked into the sprite already.
+        ctx.scale(this.facing, 1);
+        if (d.sprite.complete && d.sprite.naturalWidth !== 0) {
+            drawSheetFrame(ctx, d.sprite, d.frames, this.frame, 0, d.h, d.feet, 'baseline');
+        } else {
+            ctx.fillStyle = '#7a6a4a'; ctx.fillRect(-d.h*0.3, d.feet - d.h*0.55, d.h*0.6, d.h*0.55);
+        }
+        ctx.restore();
+        if (this.hp < this.maxHp) {
+            let bw = Math.max(26, d.h * 0.42);
+            ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(this.x - bw/2, this.y + d.feet - d.h - 10, bw, 4);
+            ctx.fillStyle = '#c8503c'; ctx.fillRect(this.x - bw/2, this.y + d.feet - d.h - 10, bw * (this.hp / this.maxHp), 4);
+        }
+    };
+
+    Item.prototype.draw = function(ctx) {
+        // Blink out the last few seconds so a potion about to vanish says so.
+        let fading = this.life < POTION_WARN;
+        let alpha = fading ? 0.35 + Math.abs(Math.sin(this.life * 9)) * 0.65 : 1;
+        let bobY = Math.sin(performance.now() / 420 + this.bob) * 2.5;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.ellipse(this.x, this.y + 15, 11, 4, 0, 0, Math.PI*2); ctx.fill();
+        if (potionSprite.complete && potionSprite.naturalWidth !== 0) {
+            let f = POTION_FRAMES[this.type] || POTION_FRAMES.hp;
+            let dh = POTION_DRAW_H, dw = dh * (f.sw / f.sh);
+            // A soft glow keeps it findable in grass and at night.
+            let gr = ctx.createRadialGradient(this.x, this.y + bobY, 2, this.x, this.y + bobY, 26);
+            let tint = this.type === 'hp' ? 'rgba(255,90,90,' : 'rgba(90,160,255,';
+            gr.addColorStop(0, tint + '0.40)'); gr.addColorStop(1, tint + '0)');
+            ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(this.x, this.y + bobY, 26, 0, Math.PI*2); ctx.fill();
+            ctx.drawImage(potionSprite, f.sx, f.sy, f.sw, f.sh, this.x - dw/2, this.y + bobY + 14 - dh, dw, dh);
+        } else {
+            ctx.fillStyle = this.type === 'hp' ? '#ff4d4d' : '#4d94ff';
+            ctx.beginPath(); ctx.arc(this.x, this.y + bobY, this.radius, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        }
+        ctx.restore();
+    };
+
+    Particle.prototype.draw = function(ctx) {
+    };
+
+    FloatingText.prototype.draw = function(ctx) {
+    };
+
+    Effect.prototype.draw = function(ctx) {
+        if (this.style === 'scorched' && scorchedSprite.complete && scorchedSprite.naturalWidth !== 0) {
+            let q = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
+            let a = q < SCORCHED_IN_START ? 0
+                  : q < SCORCHED_IN_END   ? (q - SCORCHED_IN_START) / (SCORCHED_IN_END - SCORCHED_IN_START)
+                  : q > SCORCHED_FADE_FROM ? Math.max(0, 1 - (q - SCORCHED_FADE_FROM) / (1 - SCORCHED_FADE_FROM))
+                  : 1;
+            if (a > 0) {
+                let f = SCORCHED_CRATER;
+                // The burnt ground spans the radius that burns, so what you see is what stands
+                // in it. Height follows the art's own aspect, and the anchor is the ground line
+                // rather than the middle of the box, so the flames rise out of the crater
+                // instead of dragging it down the screen.
+                let dw = this.radius * 2, dh = dw * (f[3] / f[2]);
+                ctx.save();
+                ctx.globalAlpha = a;
+                ctx.drawImage(scorchedSprite, f[0], f[1], f[2], f[3],
+                              this.x - dw/2, this.y - dh * SCORCHED_GROUND_Y, dw, dh);
+                ctx.restore();
+            }
+            return;
+        }
+        if (this.style === 'meteor' && meteorSprite.complete && meteorSprite.naturalWidth !== 0) {
+            // One scale for the whole sequence, pinned to the blast so it spans the radius that
+            // actually deals the damage. The falling frames come out proportionally smaller off
+            // that same scale, which is what sells the rock closing on you.
+            let p = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
+            let scale = (this.radius * 2) / METEOR_FRAMES[4][2];
+            let f, cx, cy, alpha = 1;
+            if (p < METEOR_IMPACT) {
+                let t = p / METEOR_IMPACT;
+                f = METEOR_FRAMES[Math.min(3, Math.floor(t * 4))];
+                let away = this.radius * METEOR_APPROACH * (1 - t);
+                cx = this.x - METEOR_DIR[0] * away;
+                cy = this.y - METEOR_DIR[1] * away;
+            } else {
+                f = METEOR_FRAMES[4];
+                cx = this.x; cy = this.y;
+                let q = (p - METEOR_IMPACT) / (1 - METEOR_IMPACT);
+                alpha = q > 0.6 ? Math.max(0, 1 - (q - 0.6) / 0.4) : 1;
+            }
+            let dw = f[2] * scale, dh = f[3] * scale;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(meteorSprite, f[0], f[1], f[2], f[3], cx - f[4]*dw, cy - f[5]*dh, dw, dh);
+            ctx.restore();
+            return;
+        }
+        if (this.style === 'holynova' && holyNovaSprite.complete && holyNovaSprite.naturalWidth !== 0) {
+            // The last frame is drawn at the effect's own diameter, so the circle you see is
+            // the circle that heals and hits. The earlier stages come out proportionally
+            // smaller off the same scale, which is what makes the nova bloom outward.
+            let p = 1 - Math.max(0, Math.min(1, this.life / this.maxLife));
+            let n = HOLYNOVA_FRAMES.length;
+            let idx = p < HOLYNOVA_GROW
+                ? Math.min(n - 2, Math.floor((p / HOLYNOVA_GROW) * (n - 1)))
+                : n - 1;
+            let f = HOLYNOVA_FRAMES[idx];
+            let scale = (this.radius * 2) / HOLYNOVA_FRAMES[n - 1][2];
+            let dw = f[2] * scale, dh = f[3] * scale;
+            ctx.save();
+            ctx.globalAlpha = p > HOLYNOVA_FADE_FROM
+                ? Math.max(0, 1 - (p - HOLYNOVA_FADE_FROM) / (1 - HOLYNOVA_FADE_FROM)) : 1;
+            ctx.drawImage(holyNovaSprite, f[0], f[1], f[2], f[3], this.x - dw/2, this.y - dh/2, dw, dh);
+            ctx.restore();
+            return;
+        }
+        if (this.style === 'arrowrain') {
+            let fade = Math.min(1, this.life / 0.4);
+            ctx.save();
+            ctx.globalAlpha = 0.28 * fade;
+            ctx.fillStyle = '#2f6b1f';
+            ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 0.8 * fade; ctx.strokeStyle = '#4dff4d'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, Math.PI*2); ctx.stroke();
+            let t = this.maxLife - this.life;
+            ctx.globalAlpha = fade;
+            this.shafts.forEach(sh => {
+                let prog = ((t / sh.dur) + sh.delay) % 1;
+                let gx = this.x + sh.ox, gy = this.y + sh.oy;
+                let ty = gy - 300 * (1 - prog);
+                if (arrowSprite.complete && arrowSprite.naturalWidth !== 0) {
+                    // The old shaft ran from ty-16 to the head's tip at ty+6, 22px nock to
+                    // point - centring a 22-long sprite on ty-5 reproduces that same span
+                    // exactly. Rotated a quarter turn so the sprite's own right-pointing head
+                    // ends up pointing straight down, the way a dropping arrow actually falls.
+                    ctx.save(); ctx.translate(gx, ty - 5); ctx.rotate(Math.PI / 2);
+                    drawArrowSprite(ctx, 22);
+                    ctx.restore();
+                } else {
+                    ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(gx, ty - 16); ctx.lineTo(gx, ty); ctx.stroke();
+                    ctx.fillStyle = '#4dff4d';
+                    ctx.beginPath(); ctx.moveTo(gx, ty + 6); ctx.lineTo(gx - 3, ty - 1); ctx.lineTo(gx + 3, ty - 1); ctx.fill();
+                }
+            });
+            ctx.restore();
+            return;
+        }
+        if (this.color === '#00ffff' && this.radius < 50 && this.maxLife < 1) { // Laser
+            ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(world.base.x, world.base.y); ctx.lineTo(this.x, this.y); ctx.stroke();
+        } else {
+            // Fallback path for Scorched Earth when its sheet has not loaded. Its zone lives 5s,
+            // so life/maxLife alone left it at ~97% opacity for most of that - a solid disc of
+            // paint that buried the meteor's blast and the ground with it. Held down to a
+            // fraction so even the fallback stays readable; other blobs are brief and unaffected.
+            ctx.globalAlpha = (this.isScorched ? 0.3 : 1) * (this.life / this.maxLife);
+            ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0;
+        }
+    };
+
+    Base.prototype.draw = function(ctx) {
+        let pulse = Math.abs(Math.sin(performance.now() / 400)) * 10;
+        
+        const imgSize = NEXUS_IMG;
+        const offset = -imgSize / 2;
+
+        if (nexusSprite.complete && nexusSprite.naturalWidth !== 0) {
+            ctx.drawImage(nexusSprite, this.x + offset, this.y + offset, imgSize, imgSize);
+        } else {
+            // Fallback art was drawn for a 150px nexus; scale it rather than re-tune every point.
+            ctx.save(); ctx.translate(this.x, this.y); ctx.scale(imgSize/150, imgSize/150); ctx.translate(-this.x, -this.y);
+            ctx.fillStyle = '#444'; ctx.fillRect(this.x - 45, this.y - 45, 90, 90); ctx.fillStyle = '#222';
+            for(let i=0; i<3; i++) {
+                ctx.fillRect(this.x - 45 + i*35 + 5, this.y - 55, 15, 10); ctx.fillRect(this.x - 45 + i*35 + 5, this.y + 45, 15, 10);
+                ctx.fillRect(this.x - 55, this.y - 45 + i*35 + 5, 10, 15); ctx.fillRect(this.x + 45, this.y - 45 + i*35 + 5, 10, 15);
+            }
+            ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10 + pulse;
+            ctx.beginPath(); ctx.moveTo(this.x, this.y-30); ctx.lineTo(this.x+20, this.y); ctx.lineTo(this.x, this.y+30); ctx.lineTo(this.x-20, this.y); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        let barW = imgSize * 0.55, barY = this.y - imgSize/2 - 16;
+        ctx.fillStyle = '#b30000'; ctx.fillRect(this.x - barW/2, barY, barW, 11);
+        ctx.fillStyle = '#00cc44'; ctx.fillRect(this.x - barW/2, barY, barW * (Math.max(0, this.hp)/this.maxHp), 11);
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.strokeRect(this.x - barW/2, barY, barW, 11);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(Math.max(0, Math.ceil(this.hp)) + ' / ' + this.maxHp, this.x, barY - 4);
+        if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, imgSize*0.42, 0, Math.PI*2); ctx.stroke(); }
+        if (this.overchargeActive > 0) { ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 4; ctx.setLineDash([10, 10]); ctx.beginPath(); ctx.arc(this.x, this.y, imgSize*0.47 + pulse, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
+    };
+
+    Player.prototype.draw = function(ctx) {
+        ctx.save(); ctx.translate(this.x, this.y); 
+        if (this.chosenPath) {
+            if (this.chosenPath === 'p1') { ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 15; if (Math.random() < 0.1) spawnParticles(this.x, this.y + 10, '#ff3300', 1); } 
+            else if (this.chosenPath === 'p2') { ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)'; ctx.lineWidth = 2; ctx.rotate(performance.now() / 500); ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI); ctx.stroke(); ctx.rotate(-performance.now() / 500); } 
+            else if (this.chosenPath === 'p3') { ctx.strokeStyle = 'rgba(255, 200, 0, 0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, -25, 15, 5, 0, 0, Math.PI*2); ctx.stroke(); }
+        }
+
+        let isWhirling = this.cls === 'warrior' && this.abTimer > 0;
+
+        if (this.invincible) ctx.globalAlpha = 0.5;
+        
+        if (isWhirling) {
+            ctx.save();
+            // Progress through the ability, 0 at cast -> 1 at the end. Drives the ramps below
+            // so the effect grows and dissipates instead of popping in and out at full size.
+            let wp = 1 - Math.max(0, Math.min(1, this.abTimer / this.abMaxTimer));
+            let ramp = Math.min(1, wp / 0.12);                       // quick spin-up
+            let fade = Math.min(1, (1 - wp) / 0.25);                 // dissipate at the end
+            let pulse = 1 + this.whirlPulse * 0.06;                  // small kick on each damage tick
+            let scale = (0.55 + 0.45 * ramp) * (1 + 0.12 * (1 - fade)) * pulse;
+            let alpha = ramp * fade;
+
+            // Damage reaches 100 * whirlMod. The sprite carries ~8% padding and its outer
+            // spiral is sparse, so a 200 box only reads solid to ~78. 240 puts the solid
+            // edge on the actual hitbox - what you see is what you hit.
+            let whirlDia = 240 * this.whirlMod * scale;
+            ctx.globalAlpha = (this.invincible ? 0.5 : 1) * alpha;
+
+            if (whirlwindSprite.complete && whirlwindSprite.naturalWidth !== 0) {
+                // Three trailing copies at decreasing alpha read as motion blur, which smooths
+                // the spin far more than raising the rotation rate would.
+                for (let i = 2; i >= 0; i--) {
+                    ctx.save();
+                    ctx.rotate(this.whirlSpin - i * 0.22);
+                    ctx.globalAlpha = ctx.globalAlpha * (i === 0 ? 1 : (i === 1 ? 0.45 : 0.2));
+                    ctx.drawImage(whirlwindSprite, -whirlDia/2, -whirlDia/2, whirlDia, whirlDia);
+                    ctx.restore();
+                }
+            } else {
+                ctx.rotate(this.whirlSpin);
+                ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
+                ctx.beginPath(); ctx.arc(0, 0, whirlDia/2, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // DRAW CLASS SPRITE
+        if (!isWhirling) ctx.rotate(this.angle); // Rotate to face mouse only if not whirling
+        
+        let flip = (this.intent.aimX < this.x && !isWhirling) ? -1 : 1;
+        
+        // To keep the character upright and just flipped left/right when pointing
+        if (!isWhirling) {
+            ctx.rotate(-this.angle); // Undo rotation to keep sprite upright
+            ctx.scale(flip, 1);
+        } else {
+             ctx.scale((this.intent.aimX < this.x) ? -1 : 1, 1);
+        }
+        
+        // Determine which sprite to use based on chosen class
+        let activeSprite = archerSprite; // fallback
+        if (this.cls === 'warrior') activeSprite = warriorSprite;
+        else if (this.cls === 'mage') activeSprite = mageSprite;
+        else if (this.cls === 'priest') activeSprite = priestSprite;
+        
+        // frameX 1 is walking and 2 is attacking - the two the old sheets only had a single
+        // drawing of each. Whichever a class has a real sequence for is played here; anything
+        // without one falls through to its original single pose, so a class with no drawn
+        // sequence (and a sheet that has not loaded yet) looks exactly as it always did.
+        let walkSet = HERO_WALK[this.cls], walkImg = walkSprites[this.cls];
+        let atkSet = HERO_ATTACK[this.cls];
+        if (this.frameX === 2 && atkSet && swingSprite.complete && swingSprite.naturalWidth !== 0) {
+            drawHeroFrames(ctx, atkSet, swingSheet(), this.attackFrame(atkSet.frames.length));
+        } else if (this.frameX === 1 && walkSet && walkImg.complete && walkImg.naturalWidth !== 0) {
+            drawHeroWalk(ctx, this.cls, Math.floor(this.walkDist / WALK_STEP));
+        } else if (activeSprite.width > 0) {
+            let sW = Math.floor(activeSprite.width / 3); // 3 columns per image
+            let sH = Math.floor(activeSprite.height * 0.75); // Crop text at bottom
+            
+            // Drawn at the cell's true aspect ratio so the class stands as tall as the
+            // merchant; HERO_DRAW_Y keeps the feet on the same spot as the old 110x110 box.
+            ctx.drawImage(
+                activeSprite,
+                this.frameX * sW,
+                0,
+                sW,
+                sH,
+                HERO_DRAW_X,
+                HERO_DRAW_Y,
+                HERO_DRAW_W,
+                HERO_DRAW_H
+            );
+        }
+        
+        ctx.restore();
+        if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 30, 0, Math.PI*2); ctx.stroke(); }
+    };
+
+    Extractor.prototype.draw = function(ctx) {
+        ctx.save(); ctx.translate(this.x, this.y);
+        let dh = EXTRACTOR_H, dw = dh * (EXTRACTOR_CROP.sw / EXTRACTOR_CROP.sh);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath(); ctx.ellipse(0, EXTRACTOR_FEET - 6, dw * 0.4, dw * 0.11, 0, 0, Math.PI*2); ctx.fill();
+        if (extractorSprite.complete && extractorSprite.naturalWidth !== 0) {
+            // The rig glows while it is actually producing, i.e. during the day.
+            if (world.gameState === 'DAY') {
+                let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 520)) * 0.3;
+                let grad = ctx.createRadialGradient(-dw*0.06, -8, 4, -dw*0.06, -8, 70);
+                grad.addColorStop(0, 'rgba(120, 255, 190, ' + (0.22 * pulse).toFixed(3) + ')');
+                grad.addColorStop(1, 'rgba(90, 220, 160, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.arc(-dw*0.06, -8, 70, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.drawImage(extractorSprite, EXTRACTOR_CROP.sx, EXTRACTOR_CROP.sy, EXTRACTOR_CROP.sw, EXTRACTOR_CROP.sh,
+                          -dw/2, EXTRACTOR_FEET - dh, dw, dh);
+        } else {
+            ctx.fillStyle = '#996633'; ctx.fillRect(-15, -15, 30, 30);
+            ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+        if (this.shield > 0) { ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke(); }
+    };
+
+    Projectile.prototype.draw = function(ctx) {
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(Math.atan2(this.vy, this.vx));
+        if (this.isExplosive && this.vx === 0) { ctx.fillStyle = '#cc0000'; ctx.beginPath(); ctx.arc(0,0, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffaa00'; ctx.fillRect(-3, -10, 6, 6); } 
+        else if (this.color === '#4dff4d' || this.color === '#ff0000' || this.color === '#ffaa00') {
+            if (arrowSprite.complete && arrowSprite.naturalWidth !== 0) drawArrowSprite(ctx, 30);
+            else { ctx.fillStyle = '#8B4513'; ctx.fillRect(-10, -1, 20, 2); ctx.fillStyle = this.color; ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(15, 0); ctx.lineTo(10, 3); ctx.fill(); }
+        }
+        else { ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0,0, 8, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0, 4, 0, Math.PI*2); ctx.fill(); }
+        ctx.restore();
+    };
+
+    Enemy.prototype.draw = function(ctx) {
+        if (this.type === 'assassin' && this.isInvisible) return;
+
+        ctx.save(); ctx.translate(this.x, this.y); 
+        if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        const facingTarget = nearestPlayer(this.x, this.y);
+        let target = (this.type === 'golem' || !facingTarget) ? world.base
+                   : (Math.hypot(world.base.x - this.x, world.base.y - this.y) < Math.hypot(facingTarget.x - this.x, facingTarget.y - this.y) ? world.base : facingTarget);
+        
+        if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
+        else if (this.type === 'goblin') ctx.fillStyle = '#5b9e32';
+        else if (this.type === 'orcarcher') ctx.fillStyle = '#6b8f4e';
+        else if (this.type === 'golem') ctx.fillStyle = '#666';
+        else if (this.type === 'boss') ctx.fillStyle = '#992222';
+        else if (this.type === 'orcking') ctx.fillStyle = '#5e7a3a';
+        else if (this.type === 'harpy') ctx.fillStyle = '#7a6a3a';
+        else if (this.type === 'goblinarcher') ctx.fillStyle = '#6e7d4a';
+        else if (this.type === 'cyclop') ctx.fillStyle = '#5f7d3e';
+        else if (this.type === 'troll') ctx.fillStyle = '#6b8a55';
+        else if (this.type === 'orcrider') ctx.fillStyle = '#4a5a3a';
+        else if (this.type === 'bomber') ctx.fillStyle = Math.sin(this.flashAnim) > 0 ? '#ffaa00' : '#5b9e32';
+        else if (this.type === 'predator') ctx.fillStyle = this.isAsleep ? '#335533' : '#aa0000';
+        else if (this.type === 'assassin') ctx.fillStyle = '#222';
+        else if (this.type === 'necromancer') ctx.fillStyle = '#4b0082';
+        else if (this.type === 'wolf') ctx.fillStyle = '#7a7a6e';
+
+        let isCustomSprite = false;
+
+        if (this.type === 'golem' && golemSprite.complete && golemSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            ctx.scale((target.x < this.x) ? -1 : 1, 1);
+            // The golem has a shadow baked into the sprite already.
+            drawSheetFrame(ctx, golemSprite, GOLEM_FRAMES, this.frameX, 0, GOLEM_H, GOLEM_FEET, 'baseline');
+        }
+        else if (this.type === 'boss' && minotaurSprite.complete && minotaurSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            ctx.scale((target.x < this.x) ? -1 : 1, 1);
+            // The minotaur has a shadow baked into the sprite already.
+            if (this.bossPhaseTriggered) {
+                let pulse = 0.3 + Math.abs(Math.sin(performance.now()/180)) * 0.3;
+                ctx.save(); ctx.globalAlpha = pulse;
+                let gr = ctx.createRadialGradient(0, -MINOTAUR_H*0.35, 10, 0, -MINOTAUR_H*0.35, MINOTAUR_H*0.6);
+                gr.addColorStop(0, 'rgba(255,90,40,0.55)'); gr.addColorStop(1, 'rgba(255,90,40,0)');
+                ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, -MINOTAUR_H*0.35, MINOTAUR_H*0.6, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+            drawSheetFrame(ctx, minotaurSprite, MINOTAUR_FRAMES, this.frameX, 0, MINOTAUR_H, MINOTAUR_FEET, 'baseline');
+        }
+        else if (this.type === 'bomber' && bomberSprite.complete && bomberSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            ctx.scale((target.x < this.x) ? -1 : 1, 1);
+            ctx.fillStyle = 'rgba(0,0,0,0.26)';
+            ctx.beginPath(); ctx.ellipse(0, BOMBER_FEET - 5, 20, 7, 0, 0, Math.PI*2); ctx.fill();
+            drawSheetFrame(ctx, bomberSprite, BOMBER_FRAMES, this.frameX, 0, BOMBER_H, BOMBER_FEET, 'baseline');
+        }
+        else if (this.type === 'assassin' && assassinSprite.complete && assassinSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            ctx.scale((target.x < this.x) ? -1 : 1, 1);
+            // The assassin has a shadow baked into the sprite already.
+            drawSheetFrame(ctx, assassinSprite, ASSASSIN_FRAMES, this.frameX, 0, ASSASSIN_H, ASSASSIN_FEET, 'baseline');
+        }
+        else if (this.type === 'necromancer' && healerSprite.complete && healerSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            ctx.scale((target.x < this.x) ? -1 : 1, 1);
+            // The healer has a shadow baked into the sprite already.
+            // Its staff is lit while it is channelling, so the thing to shoot is obvious.
+            if (this.frameX === 2) {
+                ctx.save(); ctx.globalAlpha = 0.35 + Math.abs(Math.sin(performance.now()/160)) * 0.3;
+                ctx.fillStyle = '#8affc4';
+                ctx.beginPath(); ctx.ellipse(0, HEALER_FEET - HEALER_H*0.5, 26, 40, 0, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+            drawSheetFrame(ctx, healerSprite, HEALER_FRAMES, this.frameX, 0, HEALER_H, HEALER_FEET, 'baseline');
+        }
+        else if (this.type === 'predator') { 
+            isCustomSprite = true;
+            if (this.isAsleep) {
+                if (bear3Sprite.complete && bear3Sprite.naturalWidth !== 0) {
+                    let sw = bear3Sprite.naturalWidth * BEAR_SLEEP_SCALE;
+                    let sh = bear3Sprite.naturalHeight * BEAR_SLEEP_SCALE;
+                    // content sits in the lower ~70% of this sheet, so anchor on that
+                    ctx.drawImage(bear3Sprite, -sw/2, BEAR_SLEEP_GROUND - sh * 0.698, sw, sh);
+                } else {
+                    ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
+                    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
+                }
+            } else {
+                let flip = (target.x < this.x) ? -1 : 1;
+                ctx.scale(flip, 1);
+                if (bear4Sprite.complete && bear4Sprite.naturalWidth !== 0) {
+                    // bear4.png frames are NOT equal width (walk poses vs rearing pose),
+                    // so we slice at the real boundaries instead of dividing evenly.
+                    const bearFrames = [
+                        { sx: 0,   sw: 205 },
+                        { sx: 205, sw: 166 },
+                        { sx: 371, sw: 169 }
+                    ];
+                    let f = bearFrames[this.frameX] || bearFrames[0];
+                    let sH = bear4Sprite.height;
+                    // Scale every cell by the same factor instead of forcing them all into
+                    // one square - the cells differ in width, so a fixed box made the bear
+                    // change size as it walked.
+                    let dw = f.sw * BEAR_SCALE, dh = sH * BEAR_SCALE;
+                    ctx.drawImage(bear4Sprite, f.sx, 0, f.sw, sH, -dw/2, BEAR_GROUND - dh, dw, dh);
+                } else {
+                    ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); 
+                    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.arc(10, 10, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#ffcc00'; ctx.fillRect(15, -12, 4, 4); ctx.fillRect(15, 8, 4, 4);
+                }
+            }
+        }
+        else if (this.type === 'orcking' && orcKingSprite.complete && orcKingSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            let f = KING_FRAMES[this.frameX] || KING_FRAMES[0];
+            let dh = KING_DRAW_H, dw = dh * (f.sw / f.sh);
+            // The Orc King has a shadow baked into the sprite already.
+            if (this.enraged) {
+                let pulse = 0.35 + Math.abs(Math.sin(performance.now()/220)) * 0.3;
+                ctx.save(); ctx.globalAlpha = pulse;
+                let g = ctx.createRadialGradient(0, -dh*0.35, 10, 0, -dh*0.35, dw*0.8);
+                g.addColorStop(0, 'rgba(255,70,40,0.5)'); g.addColorStop(1, 'rgba(255,70,40,0)');
+                ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -dh*0.35, dw*0.8, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+            ctx.drawImage(orcKingSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, KING_FEET - dh, dw, dh);
+        }
+        else if (this.type === 'orcarcher' && orcArcherSprite.complete && orcArcherSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            let f = ORC_FRAMES[this.frameX] || ORC_FRAMES[0];
+            let dh = ORC_DRAW_H, dw = dh * (f.sw / f.sh);
+            ctx.drawImage(orcArcherSprite, f.sx, f.sy, f.sw, f.sh, -dw/2, ORC_FEET - dh, dw, dh);
+        }
+        else if (this.type === 'cyclop' && cyclopSprite.complete && cyclopSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            ctx.fillStyle = 'rgba(0,0,0,0.30)';
+            ctx.beginPath(); ctx.ellipse(0, CYCLOP_FEET - 8, 40, 13, 0, 0, Math.PI*2); ctx.fill();
+            drawSheetFrame(ctx, cyclopSprite, CYCLOP_FRAMES, this.frameX, 0, CYCLOP_DRAW_H, CYCLOP_FEET, 'baseline');
+        }
+        else if (this.type === 'troll' && trollSprite.complete && trollSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            // The troll has a shadow baked into the sprite already.
+            // A wounded troll glows while it knits itself back up; fire snuffs that out,
+            // so the glow doubles as the tell for whether your damage is sticking.
+            if (this.hp < this.maxHp && this.burningTimer <= 0) {
+                ctx.save(); ctx.globalAlpha = 0.22 + Math.abs(Math.sin(performance.now()/300)) * 0.18;
+                ctx.fillStyle = '#4dff88';
+                ctx.beginPath(); ctx.ellipse(0, TROLL_FEET - TROLL_DRAW_H*0.45, 26, 44, 0, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+            drawSheetFrame(ctx, trollSprite, TROLL_FRAMES, this.frameX, 0, TROLL_DRAW_H, TROLL_FEET, 'baseline');
+        }
+        else if (this.type === 'orcrider' && orcRiderSprite.complete && orcRiderSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            // The warg rider has a shadow baked into the sprite already.
+            // Speed lines trailing the warg while it is up to pace, so a charge coming at
+            // you is readable before it lands rather than after.
+            if (this.charge > 0.45) {
+                ctx.save(); ctx.globalAlpha = (this.charge - 0.45) * 1.1;
+                ctx.strokeStyle = '#e8dcc0'; ctx.lineWidth = 2;
+                for (let i = 0; i < 3; i++) {
+                    let ly = RIDER_FEET - 26 - i * 20, lx = -34 - i * 9;
+                    ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - 20 - this.charge * 16, ly); ctx.stroke();
+                }
+                ctx.restore();
+            }
+            drawSheetFrame(ctx, orcRiderSprite, RIDER_FRAMES, this.frameX, 0, RIDER_DRAW_H, RIDER_FEET, 'baseline');
+        }
+        else if (this.type === 'goblinarcher' && gobRiderSprite.complete && gobRiderSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            ctx.fillStyle = 'rgba(0,0,0,0.26)';
+            ctx.beginPath(); ctx.ellipse(0, GOB_FEET - 6, 30, 10, 0, 0, Math.PI*2); ctx.fill();
+            drawSheetFrame(ctx, gobRiderSprite, GOB_FRAMES, this.frameX, 0, GOB_DRAW_H, GOB_FEET, 'baseline');
+        }
+        else if (this.type === 'harpy' && harpySprite.complete && harpySprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            // Shadow stays on the ground while the harpy bobs above it, so it reads as
+            // airborne. The phase is per-enemy or a flock beats its wings in lockstep.
+            ctx.fillStyle = 'rgba(0,0,0,0.22)';
+            ctx.beginPath(); ctx.ellipse(0, 32, 19, 6, 0, 0, Math.PI*2); ctx.fill();
+            let bob = Math.sin(performance.now() / 190 + this.spawnPhase) * 5;
+            drawSheetFrame(ctx, harpySprite, HARPY_FRAMES, this.frameX, HARPY_REF, HARPY_DRAW_H, -HARPY_HOVER + bob, 'center');
+        }
+        else if (this.type === 'goblin' && goblinSprite.complete && goblinSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            // The goblin was the one enemy with no shadow at all - none baked into its
+            // sprite and none drawn - so it read as floating next to everything else.
+            ctx.fillStyle = 'rgba(0,0,0,0.26)';
+            ctx.beginPath(); ctx.ellipse(0, 33, 19, 6, 0, 0, Math.PI*2); ctx.fill();
+            ctx.scale(flip, 1);
+            // goblin_clean.png frames are NOT equal width, so slice at the real boundaries.
+            const goblinFrames = [
+                { sx: 0,   sw: 174 },
+                { sx: 174, sw: 140 },
+                { sx: 314, sw: 186 }
+            ];
+            let f = goblinFrames[this.frameX] || goblinFrames[0];
+            let sH = goblinSprite.height;
+            ctx.drawImage(goblinSprite, f.sx, 0, f.sw, sH, -40, -40, 80, 80);
+        }
+        else if (this.type === 'wolf' && wolfSprite.complete && wolfSprite.naturalWidth !== 0) {
+            isCustomSprite = true;
+            let flip = (target.x < this.x) ? -1 : 1;
+            ctx.scale(flip, 1);
+            // wolf_walk.png frames are NOT equal width (walk poses vs the attack pose),
+            // so slice at the real per-frame boundaries instead of dividing evenly.
+            const wolfFrames = [
+                { sx: 0,   sw: 188 },
+                { sx: 188, sw: 145 },
+                { sx: 333, sw: 167 }
+            ];
+            let f = wolfFrames[this.frameX] || wolfFrames[0];
+            let sH = wolfSprite.height;
+            ctx.drawImage(wolfSprite, f.sx, 0, f.sw, sH, -40, -40, 80, 80);
+        }
+        else { ctx.rotate(Math.atan2(target.y - this.y, target.x - this.x)); ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2); ctx.fill(); }
+
+        if (this.burningTimer > 0) {
+            ctx.fillStyle = 'rgba(255, 100, 0, 0.4)';
+            ctx.beginPath(); ctx.arc(0, 0, this.radius + 4, 0, Math.PI*2); ctx.fill();
+        }
+
+        if (!isCustomSprite) {
+            if (this.type === 'goblin' || this.type === 'bomber') { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(5, -6, 3, 0, Math.PI*2); ctx.arc(5, 6, 3, 0, Math.PI*2); ctx.fill(); }
+            if (this.type === 'goblin') { ctx.fillStyle = '#5c3a21'; ctx.fillRect(8, 10, 20, 5); }
+        }
+
+        if (this.type === 'orcarcher' && !isCustomSprite) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -5, 3, 0, Math.PI*2); ctx.arc(5, 5, 3, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(12, 0, 10, -Math.PI/2, Math.PI/2); ctx.stroke(); }
+        if (this.type === 'boss' && !isCustomSprite) { 
+            ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(15, -12, 6, 0, Math.PI*2); ctx.arc(15, 12, 6, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#444'; ctx.fillRect(20, 20, 40, 10); 
+            if (this.bossPhaseTriggered) { ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, this.radius + 10 + Math.sin(performance.now()/100)*5, 0, Math.PI*2); ctx.stroke(); }
+        }
+        if (this.type === 'bomber' && !isCustomSprite) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(12, 0, 8, 0, Math.PI*2); ctx.fill(); }
+        if (this.type === 'assassin' && !isCustomSprite) { ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, 10); ctx.lineTo(-5, -10); ctx.fill(); }
+        if (this.type === 'necromancer' && !isCustomSprite) { ctx.fillStyle = '#00ff00'; ctx.fillRect(0, -5, 10, 10); }
+
+        ctx.restore();
+        
+        if (this.aura && this.aura !== 'none') {
+            ctx.strokeStyle = this.aura === 'heal' ? 'rgba(0, 255, 0, 0.4)' : 'rgba(0, 200, 255, 0.4)';
+            ctx.lineWidth = 4; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.arc(this.x, this.y, 200, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+        }
+        
+        let barW = this.radius * 2; ctx.fillStyle = '#660000'; ctx.fillRect(this.x - barW/2, this.y - this.radius - 12, barW, 4); ctx.fillStyle = '#00ff00'; ctx.fillRect(this.x - barW/2, this.y - this.radius - 12, barW * (Math.max(0, this.hp)/this.maxHp), 4);
+    };
+
+    Resource.prototype.draw = function(ctx) {
+        if (this.type === 'wood') {
+            // Ground shadow for grounding, then the tree drawn at its real aspect ratio (no more squish)
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 39, 34, 12, 0, 0, Math.PI*2); ctx.fill();
+            if (treeSprite.complete && treeSprite.naturalHeight !== 0) {
+                let dh = 126; let dw = dh * (treeSprite.width / treeSprite.height);
+                if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
+                ctx.drawImage(treeSprite, this.x - dw/2, this.y - dh + 42, dw, dh);
+                ctx.filter = 'none';
+                drawGatherMark(ctx, this.x, this.y - 92);
+            } else {
+                ctx.fillStyle = '#5c3a21'; ctx.fillRect(this.x - 6, this.y, 12, 20); ctx.fillStyle = '#1e591e'; 
+                ctx.beginPath(); ctx.arc(this.x, this.y - 10, 20, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#276b27'; 
+                ctx.beginPath(); ctx.arc(this.x - 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(this.x + 10, this.y - 5, 15, 0, Math.PI*2); ctx.fill();
+            }
+        } else if (this.type === 'stone') {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(this.x, this.y + 28, 14, 5, 0, 0, Math.PI*2); ctx.fill();
+            if (stoneSprite.complete && stoneSprite.naturalHeight !== 0) {
+                let dh = 46; let dw = dh * (stoneSprite.width / stoneSprite.height);
+                if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
+                ctx.drawImage(stoneSprite, this.x - dw/2, this.y - dh + 30, dw, dh);
+                ctx.filter = 'none';
+                drawGatherMark(ctx, this.x, this.y - 26);
+                ctx.filter = 'none';
+            } else {
+                ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(this.x-20, this.y+10); ctx.lineTo(this.x-10, this.y-15); ctx.lineTo(this.x+15, this.y-10); ctx.lineTo(this.x+25, this.y+10); ctx.fill();
+                ctx.fillStyle = '#888'; ctx.beginPath(); ctx.moveTo(this.x-10, this.y+10); ctx.lineTo(this.x, this.y-5); ctx.lineTo(this.x+10, this.y+10); ctx.fill();
+            }
+        } else if (this.type === 'mana') {
+            ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-20); ctx.lineTo(this.x+15, this.y); ctx.lineTo(this.x, this.y+20); ctx.lineTo(this.x-15, this.y); ctx.fill();
+            ctx.fillStyle = '#ccffff'; ctx.beginPath(); ctx.moveTo(this.x, this.y-10); ctx.lineTo(this.x+5, this.y); ctx.lineTo(this.x, this.y+10); ctx.lineTo(this.x-5, this.y); ctx.fill();
+        } else if (this.type === 'cache') {
+            let bob = Math.sin(performance.now() / 420 + this.x) * 3;
+            ctx.fillStyle = 'rgba(0,0,0,0.28)';
+            ctx.beginPath(); ctx.ellipse(this.x, this.y + 26, 30, 10, 0, 0, Math.PI*2); ctx.fill();
+            // Keep a golden glow so a chest still reads as loot from across the map.
+            let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 600)) * 0.35;
+            ctx.save();
+            ctx.globalAlpha = pulse;
+            let grad = ctx.createRadialGradient(this.x, this.y + 2, 4, this.x, this.y + 2, 62);
+            grad.addColorStop(0, 'rgba(255, 214, 92, 0.55)'); grad.addColorStop(1, 'rgba(255, 190, 40, 0)');
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(this.x, this.y + 2, 62, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+            if (chestSprite.complete && chestSprite.naturalWidth !== 0) {
+                let nw = chestSprite.naturalWidth, nh = chestSprite.naturalHeight;
+                let sx = nw * CHEST_SX, sy = nh * CHEST_SY, sw = nw * CHEST_SW, sh = nh * CHEST_SH;
+                let dh = 64, dw = dh * (sw / sh);
+                if (this.hitFlashTimer > 0) ctx.filter = 'brightness(1.8)';
+                ctx.drawImage(chestSprite, sx, sy, sw, sh, this.x - dw/2, this.y + 26 - dh + bob, dw, dh);
+                ctx.filter = 'none';
+            } else {
+                ctx.fillStyle = '#ffd700'; ctx.fillRect(this.x-15, this.y-10 + bob, 30, 20);
+                ctx.fillStyle = '#ccaa00'; ctx.fillRect(this.x-15, this.y-5 + bob, 30, 5);
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(this.x, this.y + bob, 4, 0, Math.PI*2); ctx.fill();
+            }
+        }
+    };
 
     // --- Test handle ---------------------------------------------------------------
     // The replay harness drives the game from outside the module: start a run, step the loop
