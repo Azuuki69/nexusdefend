@@ -1,0 +1,15 @@
+name = "nexusdefend"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+
+# One Durable Object per match. It holds the authoritative world and is the only thing
+# allowed to change it; clients send intents and receive snapshots.
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "MatchRoom"
+
+# SQLite-backed Durable Objects, which is what makes this workable without a paid plan.
+# The older KV-backed classes (`new_classes`) are paid-only.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MatchRoom"]

@@ -5,6 +5,11 @@
   "type": "module",
   "description": "Co-op survival defence. Client renders; the simulation in src/sim runs headless so the same code can be the authority on a Cloudflare Durable Object.",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test --test-force-exit",
+    "dev:server": "wrangler dev --port 8787 --local",
+    "deploy:server": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.126.0"
   }
 }
