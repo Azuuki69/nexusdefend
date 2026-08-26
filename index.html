@@ -1320,6 +1320,45 @@
 
     // --- GAME STATE ---
     let gameState = 'MENU', lastTime = 0, player, base;
+
+    // --- Who is in the match ------------------------------------------------------
+    // `players` is everyone; single player is simply a match with one. `player` is THIS
+    // client's own - the camera follows it, the HUD reads it, and the shop windows spend on
+    // its behalf. Simulation code must never reach for it, because on a server there is no
+    // "this client": the horde asks nearestPlayer() who to walk towards, and anything with
+    // an area of effect asks playersInRange() who is standing in it.
+    let players = [];
+
+    function livingPlayers() { return players.filter(p => p.hp > 0); }
+
+    // Who gets the experience, the lifesteal and the loot for a kill.
+    //
+    // takeDamage cannot answer this yet: its `attacker` argument is the enemy that hit you,
+    // not the player who hit it. Until damage carries the player who dealt it, credit goes
+    // to this client - correct for a single-player match, and wrong in co-op. This is
+    // deliberately the only place that assumption lives, so there is one thing to fix.
+    function killCredit() { return player; }
+
+    function nearestPlayer(x, y) {
+        let best = null, bestD = Infinity;
+        for (const p of players) {
+            if (p.hp <= 0) continue;
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d < bestD) { bestD = d; best = p; }
+        }
+        // Never null while anyone is in the match. The horde has to have something to walk
+        // at, and a party that is entirely down ends the run anyway.
+        return best || players[0] || null;
+    }
+
+    function nearestPlayerDist(x, y) {
+        const p = nearestPlayer(x, y);
+        return p ? Math.hypot(p.x - x, p.y - y) : Infinity;
+    }
+
+    function playersInRange(x, y, r) {
+        return players.filter(p => p.hp > 0 && Math.hypot(p.x - x, p.y - y) < r);
+    }
     let entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
     let inventory = { wood: 50, stone: 50, mana: 20 }, wave = 1, phaseTimer = 60, totalKills = 0;
     let screenShake = 0; 
@@ -1980,7 +2019,9 @@
                 ctx.fillStyle = '#7a3e14'; ctx.fillRect(this.x-10, this.y-25, 20, 15);
                 ctx.fillStyle = '#f5d0b5'; ctx.beginPath(); ctx.arc(this.x, this.y-5, 8, 0, Math.PI*2); ctx.fill();
             }
-            if (gameState === 'DAY' && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
+            // Deliberately the local player: each client draws its own prompt for its own
+            // character. This is rendering, and never runs on the server.
+            if (gameState === 'DAY' && player && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
                 ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke();
                 ctx.fillStyle = '#00ffcc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("Press [R] to Shop", this.x, this.y + 55);
             } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y - 82); }
@@ -2055,7 +2096,8 @@
             if (this.frameTimer > 0.17) { this.frameTimer = 0; this.frame = this.frame === 1 ? 2 : 1; }
         }
         draw(ctx) {
-            let inRange = Math.hypot(player.x - this.x, player.y - this.y) < TALK_RANGE;
+            // Local player on purpose - this prompt belongs to whoever is looking at the screen.
+            let inRange = player && Math.hypot(player.x - this.x, player.y - this.y) < TALK_RANGE;
             ctx.save();
             ctx.translate(this.x, this.y);
             if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
@@ -2240,7 +2282,8 @@
             let tx, ty, moveSpd;
             if (this.fleeTimer > 0) {
                 this.fleeTimer -= dt;
-                let a = Math.atan2(this.y - player.y, this.x - player.x);   // straight away from you
+                    const threat = nearestPlayer(this.x, this.y);            // whoever is closest
+                let a = threat ? Math.atan2(this.y - threat.y, this.x - threat.x) : this.facing * Math.PI;
                 tx = this.x + Math.cos(a) * 500; ty = this.y + Math.sin(a) * 500;
                 moveSpd = this.def.flee;
                 if (this.fleeTimer <= 0) { this.pause = 1.0 + rnd(); this.pickWaypoint(); }
@@ -2320,9 +2363,11 @@
         update(dt) {
             this.life -= dt;
             if (this.life <= 0) { spawnParticles(this.x, this.y, this.type === 'hp' ? '#c8324a' : '#3a7fd5', 6); this.markedForDeletion = true; return; }
-            if (Math.hypot(player.x - this.x, player.y - this.y) < player.radius + this.radius) {
-                if(this.type === 'hp') { player.hp = Math.min(player.maxHp, player.hp + 50); entities.texts.push(new FloatingText(this.x, this.y, "+50 HP", '#00ff00')); }
-                if(this.type === 'mp') { player.mp = Math.min(player.maxMp, player.mp + 50); entities.texts.push(new FloatingText(this.x, this.y, "+50 MP", '#00ffff')); }
+            // Whoever walks over it gets it, not whoever happens to be this client.
+            const taker = players.find(p => p.hp > 0 && Math.hypot(p.x - this.x, p.y - this.y) < p.radius + this.radius);
+            if (taker) {
+                if(this.type === 'hp') { taker.hp = Math.min(taker.maxHp, taker.hp + 50); entities.texts.push(new FloatingText(this.x, this.y, "+50 HP", '#00ff00')); }
+                if(this.type === 'mp') { taker.mp = Math.min(taker.maxMp, taker.mp + 50); entities.texts.push(new FloatingText(this.x, this.y, "+50 MP", '#00ffff')); }
                 playSound('pickup'); this.markedForDeletion = true;
             }
         }
@@ -2395,7 +2440,7 @@
                 // the priest's Smite and the archer's splinters pass 'fire' and so detonated on
                 // their own owner, the Nexus and the extractors.
                 if (this.source === 'enemy') {
-                    if (Math.hypot(player.x - this.x, player.y - this.y) < this.radius) player.takeDamage(this.dmg);
+                    playersInRange(this.x, this.y, this.radius).forEach(p => p.takeDamage(this.dmg));
                     if (Math.hypot(base.x - this.x, base.y - this.y) < this.radius + base.radius) base.takeDamage(this.dmg);
                     entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < this.radius) t.takeDamage(this.dmg); });
                     playSound('explosion');
@@ -2536,7 +2581,8 @@
             }
             
             let dmg = Math.floor(amount * (this.dmgReduc || 1.0));
-            if (this instanceof Enemy && this.burningTimer > 0 && player && player.burnBonus > 0) dmg = Math.floor(dmg * (1 + player.burnBonus));
+            const burner = nearestPlayer(this.x, this.y);
+            if (this instanceof Enemy && this.burningTimer > 0 && burner && burner.burnBonus > 0) dmg = Math.floor(dmg * (1 + burner.burnBonus));
 
             // Critical strikes: only your own hits can crit, not environmental damage.
             let isCrit = false;
@@ -2572,26 +2618,30 @@
                 else { dmg -= this.shield; this.shield = 0; }
             }
 
-            if (dmg > 0 && player && player.manaShield && (this === player || this === base)) {
-                let absorbed = Math.min(Math.floor(dmg * 0.5), player.mp);
-                player.mp -= absorbed; dmg -= absorbed;
+            // Your own shield burns your own mana. The Nexus is covered by anyone who took it.
+            const shielder = players.includes(this) ? (this.manaShield ? this : null)
+                           : (this === base ? players.find(p => p.manaShield && p.mp > 0) : null);
+            if (dmg > 0 && shielder) {
+                let absorbed = Math.min(Math.floor(dmg * 0.5), shielder.mp);
+                shielder.mp -= absorbed; dmg -= absorbed;
             }
 
             this.hp -= dmg;
             
-            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; if (playerBuffs.vampirism > 0) player.hp = Math.min(player.maxHp, player.hp + dmg * playerBuffs.vampirism); }
+            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; if (playerBuffs.vampirism > 0) { const c = killCredit(); if (c) c.hp = Math.min(c.maxHp, c.hp + dmg * playerBuffs.vampirism); } }
             if (isPlayerSource && dmg > 0 && this instanceof Enemy && source === 'player') this.aggroTimer = AGGRO_HOLD;
 
             // Thorns pays back whoever actually swung at you.
-            if (dmg > 0 && playerBuffs.thorns > 0 && attacker && attacker instanceof Enemy && (this === player || this === base)) {
+            if (dmg > 0 && playerBuffs.thorns > 0 && attacker && attacker instanceof Enemy && (players.includes(this) || this === base)) {
                 let back = Math.max(1, Math.floor(dmg * playerBuffs.thorns));
                 attacker.takeDamage(back, true, 'none', 'player');
                 spawnParticles(attacker.x, attacker.y, '#7ef7d8', 3);
                 // Unbreakable: what you throw back, you take in.
-                if (player.reflectHeals) {
+                const reflector = players.includes(this) ? this : players.find(p => p.reflectHeals);
+                if (reflector && reflector.reflectHeals) {
                     let mend = Math.max(1, Math.floor(back * 0.5));
-                    player.hp = Math.min(player.maxHp, player.hp + mend);
-                    entities.texts.push(new FloatingText(player.x, player.y - 50, '+' + mend, '#7ef7d8'));
+                    reflector.hp = Math.min(reflector.maxHp, reflector.hp + mend);
+                    entities.texts.push(new FloatingText(reflector.x, reflector.y - 50, '+' + mend, '#7ef7d8'));
                 }
             }
             
@@ -2607,11 +2657,14 @@
             if ((this instanceof Base || this instanceof Extractor) && dmg > 0) addShake(2);
 
             if (this.hp <= 0 && !this.markedForDeletion && this instanceof Enemy && playerBuffs.lifeOnKill > 0) {
-                player.hp = Math.min(player.maxHp, player.hp + playerBuffs.lifeOnKill);
-                entities.texts.push(new FloatingText(player.x, player.y - 50, '+' + playerBuffs.lifeOnKill, '#4dff88'));
+                const killer = killCredit();
+                if (killer) {
+                    killer.hp = Math.min(killer.maxHp, killer.hp + playerBuffs.lifeOnKill);
+                    entities.texts.push(new FloatingText(killer.x, killer.y - 50, '+' + playerBuffs.lifeOnKill, '#4dff88'));
+                }
             }
             // Warlord's Tribute: the spoils come off the corpse, not the treeline.
-            if (this.hp <= 0 && !this.markedForDeletion && this instanceof Enemy && player.killTribute) {
+            if (this.hp <= 0 && !this.markedForDeletion && this instanceof Enemy && killCredit() && killCredit().killTribute) {
                 inventory.wood += 2; inventory.stone += 2;
                 entities.texts.push(new FloatingText(this.x, this.y - 32, '+2W +2S', '#ffcc00'));
             }
@@ -2638,7 +2691,9 @@
                         // richest - a bloodmoon swarm was worth roughly 900 mana for no fight at
                         // all. They pay a quarter, so it stays a breather rather than a payday.
                         let swarmCut = this.swarmling ? 0.25 : 1;
-                        player.gainXp(Math.max(1, Math.floor(xpDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1));
+                        // Experience is personal, so it goes to the killer rather than the party.
+                        const scorer = killCredit();
+                        if (scorer) scorer.gainXp(Math.max(1, Math.floor(xpDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1));
                         
                         // Trash mana creeps up with the waves. Raising forge and shop prices without
                         // this would leave mana the permanent bottleneck on everything and a long run
@@ -2648,7 +2703,10 @@
                         let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'cyclop' ? 35 :
                                        (this.type === 'troll' ? 25 : (this.type === 'orcrider' ? 12 : (this.type === 'golem' ? 5 : trashMana)))));
                         manaDrop = Math.max(1, Math.floor(manaDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1);
-                        inventory.mana += manaDrop; player.mp = Math.min(player.maxMp, player.mp + 5);
+                        // Mana into the shared pot; the trickle of personal mana to the killer.
+                        inventory.mana += manaDrop;
+                        const gainer = killCredit();
+                        if (gainer) gainer.mp = Math.min(gainer.maxMp, gainer.mp + 5);
 
                         let pColor = this.type === 'golem' ? '#777' : (this.type === 'harpy' ? '#7a6a3a' : '#5b9e32');
                         spawnParticles(this.x, this.y, pColor, this.radius);
@@ -2676,7 +2734,7 @@
             if (this.overchargeCd > 0) this.overchargeCd -= dt;
             if (this.overchargeActive > 0) this.overchargeActive -= dt;
         
-            if (player.baseRegen || this.hasBrazier) { this.regenTimer += dt; if (this.regenTimer >= 2.0) { this.hp = Math.min(this.maxHp, this.hp + (this.hasBrazier ? 12 : 5)); this.regenTimer = 0; } }
+            if (players.some(p => p.baseRegen) || this.hasBrazier) { this.regenTimer += dt; if (this.regenTimer >= 2.0) { this.hp = Math.min(this.maxHp, this.hp + (this.hasBrazier ? 12 : 5)); this.regenTimer = 0; } }
         }
         draw(ctx) {
             let pulse = Math.abs(Math.sin(performance.now() / 400)) * 10;
@@ -3033,7 +3091,7 @@
                 let vx = Math.cos(this.angle) * 12 * this.projSpeedMod, vy = Math.sin(this.angle) * 12 * this.projSpeedMod;
                 if (this.smite) { vx *= 5; vy *= 5; } 
                 let el = (this.cls === 'mage') ? (this.attackSlows ? 'ice' : 'fire') : 'none';
-                entities.projectiles.push(new Projectile(this.x, this.y, vx, vy, this.atk, true, this.data.color, this.chainBounces, this.attackSlows, this.piercingArrows, this.smite, el, 'player'));
+                entities.projectiles.push(new Projectile(this.x, this.y, vx, vy, this.atk, true, this.data.color, this.chainBounces, this.attackSlows, this.piercingArrows, this.smite, el, 'player', this));
             }
             this.lastAttack = this.attackCd;
         }
@@ -3176,7 +3234,8 @@
         update(dt) {
             this.tick -= dt;
             if (gameState === 'DAY' && this.tick <= 0) {
-                let n = 2 + (player ? player.extractorBonus : 0);
+                // Shared building: the party's best prospector sets the yield.
+            let n = 2 + players.reduce((best, p) => Math.max(best, p.extractorBonus || 0), 0);
                 inventory.wood += n; inventory.stone += n;
                 entities.texts.push(new FloatingText(this.x, this.y - 20, "+" + (n * 2) + " Res", '#ffcc00'));
                 playSound('pickup');
@@ -3210,7 +3269,8 @@
     }
 
     class Projectile {
-        constructor(x, y, vx, vy, dmg, isFriendly, color, chainCount=0, slows=false, pierceCount=0, isExplosive=false, element='none', source='player') {
+        constructor(x, y, vx, vy, dmg, isFriendly, color, chainCount=0, slows=false, pierceCount=0, isExplosive=false, element='none', source='player', owner=null) {
+            this.owner = owner || (isFriendly ? nearestPlayer(x, y) : null);
             this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.dmg = dmg; this.isFriendly = isFriendly; this.color = color; this.life = 2.0; this.markedForDeletion = false; this.chain = chainCount; this.slows = slows; this.pierce = pierceCount; this.isExplosive = isExplosive; this.element = element; this.source = source; this.hitList = [];
         }
         update(dt) {
@@ -3226,10 +3286,11 @@
                 entities.enemies.forEach(e => {
                     if (!this.markedForDeletion && Math.hypot(e.x - this.x, e.y - this.y) < e.radius + 10 && !this.hitList.includes(e)) {
                         let dmgDealt = this.dmg;
-                        if (player.shatter && (e.spd < e.baseSpd || e.frozenTimer > 0)) { dmgDealt *= 3; e.spd = e.baseSpd; e.frozenTimer = 0; entities.texts.push(new FloatingText(e.x, e.y, "SHATTER!", '#00ffff')); }
+                        const shooter = this.owner || nearestPlayer(this.x, this.y);
+                        if (shooter && shooter.shatter && (e.spd < e.baseSpd || e.frozenTimer > 0)) { dmgDealt *= 3; e.spd = e.baseSpd; e.frozenTimer = 0; entities.texts.push(new FloatingText(e.x, e.y, "SHATTER!", '#00ffff')); }
                         
                         e.takeDamage(dmgDealt, true, this.element, this.source); this.hitList.push(e); spawnParticles(this.x, this.y, this.color, 4);
-                        if (this.slows) e.spd = e.baseSpd * (player.slowPower || 0.5);if (player.cls === 'mage' && !this.isExplosive) entities.effects.push(new Effect(this.x, this.y, 50, '#ff9900', 0.2, 10, false, false, 'fire', this.source));
+                        if (this.slows) e.spd = e.baseSpd * ((shooter && shooter.slowPower) || 0.5);if (shooter && shooter.cls === 'mage' && !this.isExplosive) entities.effects.push(new Effect(this.x, this.y, 50, '#ff9900', 0.2, 10, false, false, 'fire', this.source));
                         
                         if (this.isExplosive) {
                             entities.effects.push(new Effect(this.x, this.y, 80, '#ffaa00', 0.2, this.dmg, false, false, 'fire', this.source)); playSound('explosion'); addShake(3);
@@ -3257,7 +3318,8 @@
                     }
                 });
             } else {
-                if (Math.hypot(player.x - this.x, player.y - this.y) < player.radius + 5) { player.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); } 
+                const struck = players.find(p => p.hp > 0 && Math.hypot(p.x - this.x, p.y - this.y) < p.radius + 5);
+                if (struck) { struck.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); } 
                 else if (Math.hypot(base.x - this.x, base.y - this.y) < base.radius + 5) { base.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); }
             }
         }
@@ -3358,14 +3420,17 @@
                 return; 
             }
             
-            let distPlayer = Math.hypot(player.x - this.x, player.y - this.y);
+            // The enemy's idea of "the player" is whoever is nearest to it, resolved once a
+            // tick and reused below so every decision in this update agrees on one target.
+            let targetPlayer = nearestPlayer(this.x, this.y);
+            let distPlayer = targetPlayer ? Math.hypot(targetPlayer.x - this.x, targetPlayer.y - this.y) : Infinity;
             if (this.type === 'assassin') {
                 this.isInvisible = distPlayer > 150 && this.frozenTimer <= 0 && this.burningTimer <= 0 && this.flashAnim <= 0;
             }
 
             if (this.type === 'orcking') {
                 this.slamCd -= dt;
-                let slamTarget = Math.hypot(player.x - this.x, player.y - this.y) < KING_SLAM_RANGE ? player
+                let slamTarget = distPlayer < KING_SLAM_RANGE ? targetPlayer
                                : (Math.hypot(base.x - this.x, base.y - this.y) < KING_SLAM_RANGE + base.radius ? base : null);
                 if (this.slamCd <= 0 && slamTarget) {
                     // Axe comes down: everything nearby takes a hit, extractors included.
@@ -3373,7 +3438,7 @@
                     this.frameX = 2; this.animTimer = 0;
                     entities.effects.push(new Effect(this.x, this.y, KING_SLAM_RANGE, '#ff7b2e', 0.45, 0, false, false, 'none', 'enemy'));
                     let slam = Math.floor(this.dmg * KING_SLAM_DMG);
-                    if (Math.hypot(player.x - this.x, player.y - this.y) < KING_SLAM_RANGE) player.takeDamage(slam, false, 'none', 'player', this);
+                    playersInRange(this.x, this.y, KING_SLAM_RANGE).forEach(p => p.takeDamage(slam, false, 'none', 'player', this));
                     if (Math.hypot(base.x - this.x, base.y - this.y) < KING_SLAM_RANGE + base.radius) base.takeDamage(slam);
                     entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < KING_SLAM_RANGE) t.takeDamage(slam); });
                     spawnParticles(this.x, this.y, '#c98a3c', 26);
@@ -3399,7 +3464,7 @@
                     this.frameX = 2; this.animTimer = 0;
                     entities.effects.push(new Effect(this.x, this.y, CYCLOP_SMASH, '#d8a24a', 0.35, 0, false, false, 'none', 'enemy'));
                     let blow = Math.floor(this.dmg * 1.1);
-                    if (hitsPlayer) player.takeDamage(blow, false, 'none', 'player', this);
+                    playersInRange(this.x, this.y, CYCLOP_SMASH).forEach(p => p.takeDamage(blow, false, 'none', 'player', this));
                     if (hitsBase) base.takeDamage(blow);
                     entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < CYCLOP_SMASH) t.takeDamage(blow); });
                     spawnParticles(this.x, this.y, '#c98a3c', 16);
@@ -3429,7 +3494,7 @@
             // Hold the grudge until you break well clear, so they don't flip-flop each step.
             let onPlayer = this.aggroTimer > 0 && distPlayer < aggroRange * AGGRO_DROP;
             if (!onPlayer) this.aggroTimer = 0;
-            let target = onPlayer ? player : (distBase < distPlayer ? base : player);
+            let target = onPlayer ? targetPlayer : (distBase < distPlayer ? base : targetPlayer);
             if (target !== this._lastTarget) { this._lastTarget = target; this.stuckTimer = 0; }
             
             if (this.type === 'necromancer') {
@@ -3449,7 +3514,7 @@
 
 
             let dx = target.x - this.x; let dy = target.y - this.y; let len = Math.hypot(dx, dy);
-            let stopDist = this.type === 'orcarcher' ? 300 : (this.type === 'goblinarcher' ? GOB_RANGE :(this.type === 'necromancer' && target !== player && target !== base ? 200 : this.radius + (target.radius || 0)));
+            let stopDist = this.type === 'orcarcher' ? 300 : (this.type === 'goblinarcher' ? GOB_RANGE :(this.type === 'necromancer' && !players.includes(target) && target !== base ? 200 : this.radius + (target.radius || 0)));
             
             if (len > stopDist) {
                 let speed = this.spd * (dt*60); 
@@ -3492,7 +3557,7 @@
                     auraSpeedMult = 1.5;
                 }
             });
-            this.spd = this.baseSpd * (player.globalSlow ? 0.8 : 1.0) * auraSpeedMult;
+            this.spd = this.baseSpd * (players.some(p => p.globalSlow) ? 0.8 : 1.0) * auraSpeedMult;
 
             if (this.type === 'orcrider') {
                 // A rising stuckTimer means it is jammed against something, and a rider with
@@ -3521,7 +3586,7 @@
                 }
             }
 
-            if (this.type === 'necromancer' && target !== player && target !== base) {
+            if (this.type === 'necromancer' && !players.includes(target) && target !== base) {
                 if (len <= 250) {
                     this.healCd -= dt;
                     if (this.healCd <= 0) {
@@ -3552,14 +3617,15 @@
                     this.attackCd = GOB_SHOT_CD; playSound('shoot');
                 } else if ((distPlayer < this.radius + 20 || orcInMelee || gobInMelee) && this.type !== 'golem' && this.type !== 'necromancer') { 
                     if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else {
-                        player.takeDamage(this.hitPower(), false, 'none', 'player', this);
+                        const victim = targetPlayer;
+                        victim.takeDamage(this.hitPower(), false, 'none', 'player', this);
                         if (this.type === 'orcrider' && this.charge >= RIDER_CHARGE_LAND) {
                             // Ridden down: shoved along the line of the charge, but never into
                             // scenery and never off the map.
-                            let a = Math.atan2(player.y - this.y, player.x - this.x);
-                            let nx = clampWorld(player.x + Math.cos(a) * RIDER_KNOCKBACK, WORLD_W, 40);
-                            let ny = clampWorld(player.y + Math.sin(a) * RIDER_KNOCKBACK, WORLD_H, 40);
-                            if (!isCollidingWithObstacle(nx, ny, player.radius)) { player.x = nx; player.y = ny; }
+                            let a = Math.atan2(victim.y - this.y, victim.x - this.x);
+                            let nx = clampWorld(victim.x + Math.cos(a) * RIDER_KNOCKBACK, WORLD_W, 40);
+                            let ny = clampWorld(victim.y + Math.sin(a) * RIDER_KNOCKBACK, WORLD_H, 40);
+                            if (!isCollidingWithObstacle(nx, ny, victim.radius)) { victim.x = nx; victim.y = ny; }
                         }
                         this.spendCharge();
                         this.attackCd = 1.0; if(this.type === 'boss') addShake(5); playSound('hit'); }
@@ -3615,7 +3681,7 @@
             if (this.type === 'bomber') {
                 // The third frame is the detonation itself, so it is held for the run-in
                 // rather than the moment of death - you get a beat of warning.
-                let near = Math.min(Math.hypot(player.x - this.x, player.y - this.y),
+                let near = Math.min(nearestPlayerDist(this.x, this.y),
                                     Math.hypot(base.x - this.x, base.y - this.y) - base.radius);
                 if (near < BOMBER_FUSE) this.frameX = 2;
                 else this.frameX = Math.floor((this.distanceTraveled || 0) / 28) % 2;
@@ -3657,7 +3723,9 @@
 
             ctx.save(); ctx.translate(this.x, this.y); 
             if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
-            let target = (this.type === 'golem') ? base : (Math.hypot(base.x - this.x, base.y - this.y) < Math.hypot(player.x - this.x, player.y - this.y) ? base : player);
+            const facingTarget = nearestPlayer(this.x, this.y);
+            let target = (this.type === 'golem' || !facingTarget) ? base
+                       : (Math.hypot(base.x - this.x, base.y - this.y) < Math.hypot(facingTarget.x - this.x, facingTarget.y - this.y) ? base : facingTarget);
             
             if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
             else if (this.type === 'goblin') ctx.fillStyle = '#5b9e32';
@@ -4230,7 +4298,9 @@
         gameState = 'DAY';
         currentWeather = 'clear'; currentModifier = 'none'; setWeather();
         
-        player = new Player(selectedClass); base = new Base();
+        players = [];
+        player = new Player(selectedClass); players.push(player);
+        base = new Base();
         document.getElementById('ui-class').innerText = selectedClass;
         updateBuildUI(); updateTrinkets(); restockMerchant();
 
