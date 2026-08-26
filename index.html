@@ -1382,8 +1382,30 @@
     // `vampirism` is the fraction of damage dealt that comes back as health, not a flag: the
     // ring and the warrior's Bloodthirst both feed it, and as a boolean the talent's second
     // rank bought nothing and the tooltip's 3% was really the ring's 5%.
-    let playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: 0,
-        dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
+    // Buffs belong to a player, not to the match. Two players in one co-op run have their own
+    // talents, their own trinkets and their own forge purchases, so vampirism, crit and thorns
+    // cannot live in a single global the way they used to.
+    //
+    // Each player carries two of these:
+    //   shopBuffs - what was *bought* (forge, camp, merchant, caches). Permanent.
+    //   buffs     - the live values: shopBuffs plus every talent rank on top.
+    //
+    // Splitting them is what makes an Amnesia Potion honest. resetTalents rebuilds `buffs` from
+    // `shopBuffs`, so talent contributions vanish and purchases survive. Before this, talents
+    // wrote into the global and nothing ever took them back out: buy Bloodthirst, reset, rebuy,
+    // and the vampirism stacked forever.
+    function makeBuffs(from) {
+        return from ? Object.assign({}, from)
+                    : { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: 0,
+            dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
+    }
+
+    // A purchase writes to both, so it is still there after the next reset.
+    function grantShopBuff(p, field, amount, multiply = false) {
+        if (!p) return;
+        if (multiply) { p.shopBuffs[field] *= amount; p.buffs[field] *= amount; }
+        else          { p.shopBuffs[field] += amount; p.buffs[field] += amount; }
+    }
 
     let forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
 
@@ -1479,106 +1501,106 @@
     const talentData = {
         warrior: [
             { id: 'p1', name: 'Berserker', desc: 'Raw melee damage', talents: [
-                { id: 'w_b_1', name: 'Savage Strikes', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
-                { id: 'w_b_2', name: 'Quick Whirl', desc: 'Whirlwind cooldown -0.8s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 0.8) },
-                { id: 'w_b_3', name: 'Bloodthirst', desc: 'Heal 3% of damage dealt per rank', max: 2, apply: () => { playerBuffs.vampirism += 0.03; } },
-                { id: 'w_b_4', name: 'Giant Cleave', desc: 'Whirlwind radius +25%', max: 2, apply: r => player.whirlMod = 1 + 0.25 * r },
-                { id: 'w_b_5', name: 'Frenzy', desc: '+8% attack speed', max: 3, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
-                { id: 'w_b_6', name: 'Leap Slam (Ult)', desc: 'Whirlwind dashes to the cursor', max: 1, apply: () => player.leapSlam = true }
+                { id: 'w_b_1', name: 'Savage Strikes', desc: '+12% damage', max: 3, apply: (r, p) => { p.talentAtkBonus += 0.12; p.recalcStats(); } },
+                { id: 'w_b_2', name: 'Quick Whirl', desc: 'Whirlwind cooldown -0.8s', max: 2, apply: (r, p) => p.data.abCd = Math.max(1, p.data.abCd - 0.8) },
+                { id: 'w_b_3', name: 'Bloodthirst', desc: 'Heal 3% of damage dealt per rank', max: 2, apply: (r, p) => { p.buffs.vampirism += 0.03; } },
+                { id: 'w_b_4', name: 'Giant Cleave', desc: 'Whirlwind radius +25%', max: 2, apply: (r, p) => p.whirlMod = 1 + 0.25 * r },
+                { id: 'w_b_5', name: 'Frenzy', desc: '+8% attack speed', max: 3, apply: (r, p) => { p.buffs.hasteMod *= 0.92; p.recalcStats(); } },
+                { id: 'w_b_6', name: 'Leap Slam (Ult)', desc: 'Whirlwind dashes to the cursor', max: 1, apply: (r, p) => p.leapSlam = true }
             ]},
             { id: 'p2', name: 'Guardian', desc: 'Survivability and reflect', talents: [
-                { id: 'w_g_1', name: 'Thick Skin', desc: '+60 Max HP', max: 3, apply: () => { player.talentHpBonus += 60; player.recalcStats(); } },
-                { id: 'w_g_2', name: 'Iron Will', desc: 'Take 8% less damage', max: 3, apply: r => { player.talentDmgReduc = Math.pow(0.92, r); player.recalcStats(); } },
-                { id: 'w_g_3', name: 'Retaliate', desc: 'Reflect 15% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.15 },
-                { id: 'w_g_4', name: 'Barbed Plate', desc: 'Reflect 20% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.20 },
-                { id: 'w_g_5', name: 'Second Wind', desc: 'Regenerate 2 HP per second', max: 2, apply: () => player.hpRegen += 2 },
-                { id: 'w_g_6', name: 'Unbreakable (Ult)', desc: 'Reflected damage heals you for half', max: 1, apply: () => player.reflectHeals = true }
+                { id: 'w_g_1', name: 'Thick Skin', desc: '+60 Max HP', max: 3, apply: (r, p) => { p.talentHpBonus += 60; p.recalcStats(); } },
+                { id: 'w_g_2', name: 'Iron Will', desc: 'Take 8% less damage', max: 3, apply: (r, p) => { p.talentDmgReduc = Math.pow(0.92, r); p.recalcStats(); } },
+                { id: 'w_g_3', name: 'Retaliate', desc: 'Reflect 15% of damage taken', max: 2, apply: (r, p) => p.buffs.thorns += 0.15 },
+                { id: 'w_g_4', name: 'Barbed Plate', desc: 'Reflect 20% of damage taken', max: 2, apply: (r, p) => p.buffs.thorns += 0.20 },
+                { id: 'w_g_5', name: 'Second Wind', desc: 'Regenerate 2 HP per second', max: 2, apply: (r, p) => p.hpRegen += 2 },
+                { id: 'w_g_6', name: 'Unbreakable (Ult)', desc: 'Reflected damage heals you for half', max: 1, apply: (r, p) => p.reflectHeals = true }
             ]},
             { id: 'p3', name: 'Warlord', desc: 'Plunder and execution', talents: [
-                { id: 'w_c_1', name: 'Spoils of War', desc: 'Gather 25% more wood and stone', max: 3, apply: () => playerBuffs.gatherYield += 0.25 },
-                { id: 'w_c_2', name: 'Efficient Builder', desc: 'Build costs -15%, and extractors yield +1 each', max: 2, apply: r => { player.buildCostMod = Math.pow(0.85, r); player.extractorBonus = r; } },
-                { id: 'w_c_3', name: 'Executioner', desc: '+7% critical strike chance', max: 3, apply: () => playerBuffs.critChance += 0.07 },
-                { id: 'w_c_4', name: 'Brutal Impact', desc: 'Critical strikes hit 50% harder', max: 2, apply: () => playerBuffs.critMult += 0.5 },
-                { id: 'w_c_5', name: 'Battle Trance', desc: 'Heal 6 HP for every kill', max: 2, apply: () => playerBuffs.lifeOnKill += 6 },
-                { id: 'w_c_6', name: "Warlord's Tribute (Ult)", desc: 'Every kill drops 2 wood and 2 stone', max: 1, apply: () => player.killTribute = true }
+                { id: 'w_c_1', name: 'Spoils of War', desc: 'Gather 25% more wood and stone', max: 3, apply: (r, p) => p.buffs.gatherYield += 0.25 },
+                { id: 'w_c_2', name: 'Efficient Builder', desc: 'Build costs -15%, and extractors yield +1 each', max: 2, apply: (r, p) => { p.buildCostMod = Math.pow(0.85, r); p.extractorBonus = r; } },
+                { id: 'w_c_3', name: 'Executioner', desc: '+7% critical strike chance', max: 3, apply: (r, p) => p.buffs.critChance += 0.07 },
+                { id: 'w_c_4', name: 'Brutal Impact', desc: 'Critical strikes hit 50% harder', max: 2, apply: (r, p) => p.buffs.critMult += 0.5 },
+                { id: 'w_c_5', name: 'Battle Trance', desc: 'Heal 6 HP for every kill', max: 2, apply: (r, p) => p.buffs.lifeOnKill += 6 },
+                { id: 'w_c_6', name: "Warlord's Tribute (Ult)", desc: 'Every kill drops 2 wood and 2 stone', max: 1, apply: (r, p) => p.killTribute = true }
             ]}
         ],
         mage: [
             { id: 'p1', name: 'Pyromancer', desc: 'Fire and burning', talents: [
-                { id: 'm_p_1', name: 'Ignite', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
-                { id: 'm_p_2', name: 'Fast Cast', desc: 'Meteor cooldown -1.0s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 1.0) },
-                { id: 'm_p_3', name: 'Cataclysm', desc: 'Meteor radius +25%', max: 2, apply: r => player.meteorMod = 1 + 0.25 * r },
-                { id: 'm_p_4', name: 'Combustion', desc: 'Burning enemies take +20% damage', max: 2, apply: () => player.burnBonus += 0.20 },
-                { id: 'm_p_5', name: 'Flash Freeze', desc: 'Meteor also freezes', max: 1, apply: () => player.meteorFreezes = true },
-                { id: 'm_p_6', name: 'Scorched Earth (Ult)', desc: 'Meteor leaves a 5s fire zone', max: 1, apply: () => player.scorchedEarth = true }
+                { id: 'm_p_1', name: 'Ignite', desc: '+12% damage', max: 3, apply: (r, p) => { p.talentAtkBonus += 0.12; p.recalcStats(); } },
+                { id: 'm_p_2', name: 'Fast Cast', desc: 'Meteor cooldown -1.0s', max: 2, apply: (r, p) => p.data.abCd = Math.max(1, p.data.abCd - 1.0) },
+                { id: 'm_p_3', name: 'Cataclysm', desc: 'Meteor radius +25%', max: 2, apply: (r, p) => p.meteorMod = 1 + 0.25 * r },
+                { id: 'm_p_4', name: 'Combustion', desc: 'Burning enemies take +20% damage', max: 2, apply: (r, p) => p.burnBonus += 0.20 },
+                { id: 'm_p_5', name: 'Flash Freeze', desc: 'Meteor also freezes', max: 1, apply: (r, p) => p.meteorFreezes = true },
+                { id: 'm_p_6', name: 'Scorched Earth (Ult)', desc: 'Meteor leaves a 5s fire zone', max: 1, apply: (r, p) => p.scorchedEarth = true }
             ]},
             { id: 'p2', name: 'Cryomancer', desc: 'Slow and shatter', talents: [
-                { id: 'm_c_1', name: 'Frostbite', desc: 'Attacks slow enemies', max: 1, apply: () => player.attackSlows = true },
-                { id: 'm_c_2', name: 'Deep Chill', desc: 'Your slows are 15% stronger', max: 3, apply: r => player.slowPower = Math.max(0.2, 0.5 - 0.15 * r) },
-                { id: 'm_c_3', name: 'Glacial Armor', desc: 'Take 8% less damage', max: 3, apply: r => { player.talentDmgReduc = Math.pow(0.92, r); player.recalcStats(); } },
-                { id: 'm_c_4', name: 'Icy Veins', desc: '+8% attack speed', max: 2, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
-                { id: 'm_c_5', name: 'Shatter', desc: 'Triple damage to slowed or frozen targets', max: 1, apply: () => player.shatter = true },
-                { id: 'm_c_6', name: 'Permafrost (Ult)', desc: 'Every enemy on the map is slowed', max: 1, apply: () => player.globalSlow = true }
+                { id: 'm_c_1', name: 'Frostbite', desc: 'Attacks slow enemies', max: 1, apply: (r, p) => p.attackSlows = true },
+                { id: 'm_c_2', name: 'Deep Chill', desc: 'Your slows are 15% stronger', max: 3, apply: (r, p) => p.slowPower = Math.max(0.2, 0.5 - 0.15 * r) },
+                { id: 'm_c_3', name: 'Glacial Armor', desc: 'Take 8% less damage', max: 3, apply: (r, p) => { p.talentDmgReduc = Math.pow(0.92, r); p.recalcStats(); } },
+                { id: 'm_c_4', name: 'Icy Veins', desc: '+8% attack speed', max: 2, apply: (r, p) => { p.buffs.hasteMod *= 0.92; p.recalcStats(); } },
+                { id: 'm_c_5', name: 'Shatter', desc: 'Triple damage to slowed or frozen targets', max: 1, apply: (r, p) => p.shatter = true },
+                { id: 'm_c_6', name: 'Permafrost (Ult)', desc: 'Every enemy on the map is slowed', max: 1, apply: (r, p) => p.globalSlow = true }
             ]},
             { id: 'p3', name: 'Archmage', desc: 'Mana and spellpower', talents: [
-                { id: 'm_a_1', name: 'Mana Pool', desc: '+60 Max Mana', max: 3, apply: () => { player.talentMpBonus += 60; player.recalcStats(); } },
-                { id: 'm_a_2', name: 'Leylines', desc: 'Mana regenerates 50% faster', max: 2, apply: r => player.mpRegenMod = 1 + 0.5 * r },
-                { id: 'm_a_3', name: 'Efficiency', desc: 'Abilities cost 20% less', max: 2, apply: () => player.data.abCost = Math.max(5, Math.floor(player.data.abCost * 0.8)) },
-                { id: 'm_a_4', name: 'Arcane Power', desc: '+10% damage', max: 2, apply: () => { player.talentAtkBonus += 0.10; player.recalcStats(); } },
-                { id: 'm_a_5', name: 'Arcane Focus', desc: '+7% critical strike chance', max: 2, apply: () => playerBuffs.critChance += 0.07 },
-                { id: 'm_a_6', name: 'Mana Shield (Ult)', desc: 'Mana absorbs half of all damage', max: 1, apply: () => player.manaShield = true }
+                { id: 'm_a_1', name: 'Mana Pool', desc: '+60 Max Mana', max: 3, apply: (r, p) => { p.talentMpBonus += 60; p.recalcStats(); } },
+                { id: 'm_a_2', name: 'Leylines', desc: 'Mana regenerates 50% faster', max: 2, apply: (r, p) => p.mpRegenMod = 1 + 0.5 * r },
+                { id: 'm_a_3', name: 'Efficiency', desc: 'Abilities cost 20% less', max: 2, apply: (r, p) => p.data.abCost = Math.max(5, Math.floor(p.data.abCost * 0.8)) },
+                { id: 'm_a_4', name: 'Arcane Power', desc: '+10% damage', max: 2, apply: (r, p) => { p.talentAtkBonus += 0.10; p.recalcStats(); } },
+                { id: 'm_a_5', name: 'Arcane Focus', desc: '+7% critical strike chance', max: 2, apply: (r, p) => p.buffs.critChance += 0.07 },
+                { id: 'm_a_6', name: 'Mana Shield (Ult)', desc: 'Mana absorbs half of all damage', max: 1, apply: (r, p) => p.manaShield = true }
             ]}
         ],
         archer: [
             { id: 'p1', name: 'Sniper', desc: 'Precision and ricochet', talents: [
-                { id: 'a_s_1', name: 'Deadly Aim', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
-                { id: 'a_s_2', name: 'Velocity', desc: 'Arrow speed +25%', max: 2, apply: r => player.projSpeedMod = 1 + 0.25 * r },
-                { id: 'a_s_3', name: 'Ricochet', desc: 'Arrows bounce to 1 more target', max: 3, apply: r => player.chainBounces = r },
-                { id: 'a_s_4', name: 'Keen Eye', desc: '+7% critical strike chance', max: 3, apply: () => playerBuffs.critChance += 0.07 },
-                { id: 'a_s_5', name: 'Deadeye', desc: 'Critical strikes hit 50% harder', max: 2, apply: () => playerBuffs.critMult += 0.5 },
-                { id: 'a_s_6', name: 'Piercing Arrows (Ult)', desc: 'Arrows pierce 3 more targets', max: 1, apply: () => player.piercingArrows = 3 }
+                { id: 'a_s_1', name: 'Deadly Aim', desc: '+12% damage', max: 3, apply: (r, p) => { p.talentAtkBonus += 0.12; p.recalcStats(); } },
+                { id: 'a_s_2', name: 'Velocity', desc: 'Arrow speed +25%', max: 2, apply: (r, p) => p.projSpeedMod = 1 + 0.25 * r },
+                { id: 'a_s_3', name: 'Ricochet', desc: 'Arrows bounce to 1 more target', max: 3, apply: (r, p) => p.chainBounces = r },
+                { id: 'a_s_4', name: 'Keen Eye', desc: '+7% critical strike chance', max: 3, apply: (r, p) => p.buffs.critChance += 0.07 },
+                { id: 'a_s_5', name: 'Deadeye', desc: 'Critical strikes hit 50% harder', max: 2, apply: (r, p) => p.buffs.critMult += 0.5 },
+                { id: 'a_s_6', name: 'Piercing Arrows (Ult)', desc: 'Arrows pierce 3 more targets', max: 1, apply: (r, p) => p.piercingArrows = 3 }
             ]},
             { id: 'p2', name: 'Survivalist', desc: 'Field craft and lethality', talents: [
-                { id: 'a_t_1', name: 'Field Dressing', desc: 'Regenerate 2 HP per second', max: 2, apply: () => player.hpRegen += 2 },
-                { id: 'a_t_2', name: 'Barbed Arrows', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
-                { id: 'a_t_3', name: 'Skinner', desc: 'Gather 25% more wood and stone', max: 2, apply: () => playerBuffs.gatherYield += 0.25 },
-                { id: 'a_t_4', name: "Hunter's Instinct", desc: 'Heal 5 HP for every kill', max: 2, apply: () => playerBuffs.lifeOnKill += 5 },
-                { id: 'a_t_5', name: 'Quick Hands', desc: 'Build costs -15%, and extractors yield +1 each', max: 2, apply: r => { player.buildCostMod = Math.pow(0.85, r); player.extractorBonus = r; } },
-                { id: 'a_t_6', name: 'Crippling Shot (Ult)', desc: 'Attacks slow, and slowed targets take triple damage', max: 1, apply: () => { player.attackSlows = true; player.shatter = true; } }
+                { id: 'a_t_1', name: 'Field Dressing', desc: 'Regenerate 2 HP per second', max: 2, apply: (r, p) => p.hpRegen += 2 },
+                { id: 'a_t_2', name: 'Barbed Arrows', desc: '+12% damage', max: 3, apply: (r, p) => { p.talentAtkBonus += 0.12; p.recalcStats(); } },
+                { id: 'a_t_3', name: 'Skinner', desc: 'Gather 25% more wood and stone', max: 2, apply: (r, p) => p.buffs.gatherYield += 0.25 },
+                { id: 'a_t_4', name: "Hunter's Instinct", desc: 'Heal 5 HP for every kill', max: 2, apply: (r, p) => p.buffs.lifeOnKill += 5 },
+                { id: 'a_t_5', name: 'Quick Hands', desc: 'Build costs -15%, and extractors yield +1 each', max: 2, apply: (r, p) => { p.buildCostMod = Math.pow(0.85, r); p.extractorBonus = r; } },
+                { id: 'a_t_6', name: 'Crippling Shot (Ult)', desc: 'Attacks slow, and slowed targets take triple damage', max: 1, apply: (r, p) => { p.attackSlows = true; p.shatter = true; } }
             ]},
             { id: 'p3', name: 'Ranger', desc: 'Mobility and Rain of Arrows', talents: [
-                { id: 'a_r_1', name: 'Fleetfoot', desc: '+12% move speed', max: 3, apply: () => playerBuffs.speedMult += 0.12 },
-                { id: 'a_r_2', name: 'Rapid Volley', desc: 'Rain of Arrows cooldown -1.0s', max: 2, apply: () => player.data.abCd = Math.max(1, player.data.abCd - 1.0) },
-                { id: 'a_r_3', name: 'Downpour', desc: 'Rain of Arrows radius +25%', max: 2, apply: r => player.rainMod = 1 + 0.25 * r },
-                { id: 'a_r_4', name: "Hunter's Mark", desc: '+10% damage', max: 2, apply: () => { player.talentAtkBonus += 0.10; player.recalcStats(); } },
-                { id: 'a_r_5', name: 'Evasion', desc: 'Take 8% less damage', max: 2, apply: r => { player.talentDmgReduc = Math.pow(0.92, r); player.recalcStats(); } },
-                { id: 'a_r_6', name: 'Splinter Storm (Ult)', desc: 'Rain also drops explosive arrows', max: 1, apply: () => player.rainSplinters = true }
+                { id: 'a_r_1', name: 'Fleetfoot', desc: '+12% move speed', max: 3, apply: (r, p) => p.buffs.speedMult += 0.12 },
+                { id: 'a_r_2', name: 'Rapid Volley', desc: 'Rain of Arrows cooldown -1.0s', max: 2, apply: (r, p) => p.data.abCd = Math.max(1, p.data.abCd - 1.0) },
+                { id: 'a_r_3', name: 'Downpour', desc: 'Rain of Arrows radius +25%', max: 2, apply: (r, p) => p.rainMod = 1 + 0.25 * r },
+                { id: 'a_r_4', name: "Hunter's Mark", desc: '+10% damage', max: 2, apply: (r, p) => { p.talentAtkBonus += 0.10; p.recalcStats(); } },
+                { id: 'a_r_5', name: 'Evasion', desc: 'Take 8% less damage', max: 2, apply: (r, p) => { p.talentDmgReduc = Math.pow(0.92, r); p.recalcStats(); } },
+                { id: 'a_r_6', name: 'Splinter Storm (Ult)', desc: 'Rain also drops explosive arrows', max: 1, apply: (r, p) => p.rainSplinters = true }
             ]}
         ],
         priest: [
             { id: 'p1', name: 'Paladin', desc: 'Front-line holy warrior', talents: [
-                { id: 'p_p_1', name: 'Holy Vigor', desc: '+60 Max HP', max: 3, apply: () => { player.talentHpBonus += 60; player.recalcStats(); } },
-                { id: 'p_p_2', name: 'Crusader', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
-                { id: 'p_p_3', name: 'Zeal', desc: '+8% attack speed', max: 2, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
-                { id: 'p_p_4', name: 'Retribution', desc: 'Reflect 15% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.15 },
-                { id: 'p_p_5', name: 'Divine Shield', desc: 'Holy Nova grants invincibility', max: 1, apply: () => player.novaInvincibility = true },
-                { id: 'p_p_6', name: 'Smite (Ult)', desc: 'Attacks become fast and explosive', max: 1, apply: () => player.smite = true }
+                { id: 'p_p_1', name: 'Holy Vigor', desc: '+60 Max HP', max: 3, apply: (r, p) => { p.talentHpBonus += 60; p.recalcStats(); } },
+                { id: 'p_p_2', name: 'Crusader', desc: '+12% damage', max: 3, apply: (r, p) => { p.talentAtkBonus += 0.12; p.recalcStats(); } },
+                { id: 'p_p_3', name: 'Zeal', desc: '+8% attack speed', max: 2, apply: (r, p) => { p.buffs.hasteMod *= 0.92; p.recalcStats(); } },
+                { id: 'p_p_4', name: 'Retribution', desc: 'Reflect 15% of damage taken', max: 2, apply: (r, p) => p.buffs.thorns += 0.15 },
+                { id: 'p_p_5', name: 'Divine Shield', desc: 'Holy Nova grants invincibility', max: 1, apply: (r, p) => p.novaInvincibility = true },
+                { id: 'p_p_6', name: 'Smite (Ult)', desc: 'Attacks become fast and explosive', max: 1, apply: (r, p) => p.smite = true }
             ]},
             { id: 'p2', name: 'Cleric', desc: 'Healing and sustain', talents: [
-                { id: 'p_c_1', name: 'Radiance', desc: 'Holy Nova heals 50% more', max: 3, apply: r => player.novaHealMod = 1 + 0.5 * r },
-                { id: 'p_c_2', name: 'Sanctuary', desc: 'The Nexus slowly regenerates', max: 1, apply: () => player.baseRegen = true },
-                { id: 'p_c_3', name: 'Blessing', desc: 'Heal 4 HP for every kill', max: 3, apply: () => playerBuffs.lifeOnKill += 4 },
-                { id: 'p_c_4', name: 'Mending', desc: 'Regenerate 2 HP per second', max: 3, apply: () => player.hpRegen += 2 },
-                { id: 'p_c_5', name: 'Devotion', desc: '+60 Max Mana', max: 2, apply: () => { player.talentMpBonus += 60; player.recalcStats(); } },
-                { id: 'p_c_6', name: 'Overheal (Ult)', desc: 'Nova overhealing becomes a shield', max: 1, apply: () => player.overheal = true }
+                { id: 'p_c_1', name: 'Radiance', desc: 'Holy Nova heals 50% more', max: 3, apply: (r, p) => p.novaHealMod = 1 + 0.5 * r },
+                { id: 'p_c_2', name: 'Sanctuary', desc: 'The Nexus slowly regenerates', max: 1, apply: (r, p) => p.baseRegen = true },
+                { id: 'p_c_3', name: 'Blessing', desc: 'Heal 4 HP for every kill', max: 3, apply: (r, p) => p.buffs.lifeOnKill += 4 },
+                { id: 'p_c_4', name: 'Mending', desc: 'Regenerate 2 HP per second', max: 3, apply: (r, p) => p.hpRegen += 2 },
+                { id: 'p_c_5', name: 'Devotion', desc: '+60 Max Mana', max: 2, apply: (r, p) => { p.talentMpBonus += 60; p.recalcStats(); } },
+                { id: 'p_c_6', name: 'Overheal (Ult)', desc: 'Nova overhealing becomes a shield', max: 1, apply: (r, p) => p.overheal = true }
             ]},
             { id: 'p3', name: 'Inquisitor', desc: 'Judgment and zeal', talents: [
-                { id: 'p_i_1', name: 'Fervor', desc: '+8% attack speed', max: 2, apply: () => { playerBuffs.hasteMod *= 0.92; player.recalcStats(); } },
-                { id: 'p_i_2', name: 'Wrath', desc: '+12% damage', max: 3, apply: () => { player.talentAtkBonus += 0.12; player.recalcStats(); } },
-                { id: 'p_i_3', name: 'Consecration', desc: 'Reflect 15% of damage taken', max: 2, apply: () => playerBuffs.thorns += 0.15 },
-                { id: 'p_i_4', name: 'Zealotry', desc: '+7% critical strike chance', max: 2, apply: () => playerBuffs.critChance += 0.07 },
-                { id: 'p_i_5', name: 'Judgment', desc: 'Holy Nova calls down beams', max: 1, apply: () => player.novaBeams = true },
-                { id: 'p_i_6', name: 'Prismatic Judgment (Ult)', desc: "Holy Nova's beams strike three times as hard", max: 1, apply: () => player.novaBeamMult = 3.0 }
+                { id: 'p_i_1', name: 'Fervor', desc: '+8% attack speed', max: 2, apply: (r, p) => { p.buffs.hasteMod *= 0.92; p.recalcStats(); } },
+                { id: 'p_i_2', name: 'Wrath', desc: '+12% damage', max: 3, apply: (r, p) => { p.talentAtkBonus += 0.12; p.recalcStats(); } },
+                { id: 'p_i_3', name: 'Consecration', desc: 'Reflect 15% of damage taken', max: 2, apply: (r, p) => p.buffs.thorns += 0.15 },
+                { id: 'p_i_4', name: 'Zealotry', desc: '+7% critical strike chance', max: 2, apply: (r, p) => p.buffs.critChance += 0.07 },
+                { id: 'p_i_5', name: 'Judgment', desc: 'Holy Nova calls down beams', max: 1, apply: (r, p) => p.novaBeams = true },
+                { id: 'p_i_6', name: 'Prismatic Judgment (Ult)', desc: "Holy Nova's beams strike three times as hard", max: 1, apply: (r, p) => p.novaBeamMult = 3.0 }
             ]}
         ]
     };
@@ -1630,9 +1652,9 @@
             const c = campCost(type);
             if (!pay(c.w, c.s)) return;
             campUpgrades[type].level++;
-            if (type === 'jerkin') { playerBuffs.bonusHp += 25; player.recalcStats(); player.hp += 25; }
-            if (type === 'haft')   { playerBuffs.forgeAtkMult += 0.08; player.recalcStats(); }
-            if (type === 'stride') { playerBuffs.speedMult += 0.06; }
+            if (type === 'jerkin') { grantShopBuff(player, 'bonusHp', 25); player.recalcStats(); player.hp += 25; }
+            if (type === 'haft')   { grantShopBuff(player, 'forgeAtkMult', 0.08); player.recalcStats(); }
+            if (type === 'stride') { grantShopBuff(player, 'speedMult', 0.06); }
             playSound('pickup'); addShake(4);
         }
         else if (type === 'rations') {
@@ -1839,7 +1861,7 @@
         if (!tierUnlocked(pathId, tIdx)) { playSound('error'); return; }
         player.tp--;
         player.talents.push(t.id);
-        t.apply(r + 1);
+        t.apply(r + 1, player);
         playSound('levelup'); renderTalentMenu(); addShake(4);
     }
     function buyParagon() { if (player.tp > 0) { player.tp--; player.paragonPoints++; player.recalcStats(); playSound('levelup'); renderTalentMenu(); addShake(2); } }
@@ -1851,7 +1873,7 @@
             let c = forgeCost('weapon'); let cw = c.w, cs = c.s;
             if (inventory.wood >= cw && inventory.stone >= cs) {
                 inventory.wood -= cw; inventory.stone -= cs;
-                forgeUpgrades.weapon.level++; playerBuffs.forgeAtkMult += 0.10; player.recalcStats(); addShake(5); playSound('pickup'); updateForgeUI();
+                forgeUpgrades.weapon.level++; grantShopBuff(player, 'forgeAtkMult', 0.10); player.recalcStats(); addShake(5); playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         } 
         else if (type === 'mining') {
@@ -1859,7 +1881,7 @@
             let c = forgeCost('mining'); let cw = c.w, cm = c.m;
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.mining.level++; playerBuffs.gatherYield += MINING_YIELD_STEP; playSound('pickup'); updateForgeUI();
+                forgeUpgrades.mining.level++; grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'whetstone') {
@@ -1867,7 +1889,7 @@
             let c = forgeCost('whetstone'); let cw = c.w, cm = c.m;
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.whetstone.level++; playerBuffs.critChance += 0.05; updateTrinkets(); playSound('pickup'); updateForgeUI();
+                forgeUpgrades.whetstone.level++; grantShopBuff(player, 'critChance', 0.05); updateTrinkets(); playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'nexus') {
@@ -1902,7 +1924,7 @@
             let c = forgeCost('speed'); let cw = c.w, cm = c.m;
             if (inventory.wood >= cw && inventory.mana >= cm) {
                 inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.speed.level++; playerBuffs.speedMult += 0.05; playSound('pickup'); updateForgeUI();
+                forgeUpgrades.speed.level++; grantShopBuff(player, 'speedMult', 0.05); playSound('pickup'); updateForgeUI();
             } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
@@ -1920,21 +1942,21 @@
 
     function buyMerchant(type) {
         if (inventory.mana >= SHOP_PRICES.hp && type === 'hp') {
-            inventory.mana -= SHOP_PRICES.hp; playerBuffs.bonusHp += 25; player.recalcStats(); player.hp += 25; playSound('pickup'); entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
+            inventory.mana -= SHOP_PRICES.hp; grantShopBuff(player, 'bonusHp', 25); player.recalcStats(); player.hp += 25; playSound('pickup'); entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
         } else if (inventory.mana >= SHOP_PRICES.ring && type === 'ring') {
-            inventory.mana -= SHOP_PRICES.ring; playerBuffs.vampirism += 0.05; document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+            inventory.mana -= SHOP_PRICES.ring; grantShopBuff(player, 'vampirism', 0.05); document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
         } else if (inventory.mana >= SHOP_PRICES.amulet && type === 'amulet') {
-            inventory.mana -= SHOP_PRICES.amulet; playerBuffs.hasteMod *= 0.8; document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+            inventory.mana -= SHOP_PRICES.amulet; grantShopBuff(player, 'hasteMod', 0.8, true); document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
         } else if (type === 'bulwark' || type === 'thorns' || type === 'crit' || type === 'siphon' || type === 'reaper') {
             // One-off trinkets: pay, apply, and mark the slot sold. Everything here stacks onto
             // what the talents already gave you - assigning instead of accumulating turned three
             // of these into paid downgrades for anyone who had specced into the same stat.
             const stock = {
-                bulwark: { cost: SHOP_PRICES.bulwark, btn: 'btn-bulwark', apply: () => { playerBuffs.dmgReducMult = 0.85; player.recalcStats(); } },
-                thorns:  { cost: SHOP_PRICES.thorns,  btn: 'btn-thorns',  apply: () => { playerBuffs.thorns += 0.30; } },
-                crit:    { cost: SHOP_PRICES.crit,    btn: 'btn-crit',    apply: () => { playerBuffs.critChance += 0.20; } },
-                siphon:  { cost: SHOP_PRICES.siphon,  btn: 'btn-siphon',  apply: () => { playerBuffs.mpRegenBonus = 2.0; } },
-                reaper:  { cost: SHOP_PRICES.reaper,  btn: 'btn-reaper',  apply: () => { playerBuffs.lifeOnKill += 8; } }
+                bulwark: { cost: SHOP_PRICES.bulwark, btn: 'btn-bulwark', apply: () => { player.shopBuffs.dmgReducMult = player.buffs.dmgReducMult = 0.85; player.recalcStats(); } },
+                thorns:  { cost: SHOP_PRICES.thorns,  btn: 'btn-thorns',  apply: () => { grantShopBuff(player, 'thorns', 0.30); } },
+                crit:    { cost: SHOP_PRICES.crit,    btn: 'btn-crit',    apply: () => { grantShopBuff(player, 'critChance', 0.20); } },
+                siphon:  { cost: SHOP_PRICES.siphon,  btn: 'btn-siphon',  apply: () => { player.shopBuffs.mpRegenBonus = player.buffs.mpRegenBonus = 2.0; } },
+                reaper:  { cost: SHOP_PRICES.reaper,  btn: 'btn-reaper',  apply: () => { grantShopBuff(player, 'lifeOnKill', 8); } }
             }[type];
             if (inventory.mana >= stock.cost) {
                 inventory.mana -= stock.cost; stock.apply();
@@ -1948,13 +1970,13 @@
     
     function updateTrinkets() {
         let t = "";
-        if (playerBuffs.vampirism > 0) t += `<span class="trinket-badge">💍 Vampirism ${Math.round(playerBuffs.vampirism*100)}%</span>`;
-        if (playerBuffs.hasteMod < 1.0) t += `<span class="trinket-badge">🧿 Haste</span>`;
-        if (playerBuffs.dmgReducMult < 1.0) t += `<span class="trinket-badge" style="border-color:#9ad4ff;color:#9ad4ff;">🛡️ Bulwark</span>`;
-        if (playerBuffs.thorns > 0) t += `<span class="trinket-badge" style="border-color:#7ef7d8;color:#7ef7d8;">🌵 Thorns</span>`;
-        if (playerBuffs.critChance > 0) t += `<span class="trinket-badge" style="border-color:#ff9a3c;color:#ff9a3c;">🎯 Crit ${Math.round(playerBuffs.critChance*100)}%</span>`;
-        if (playerBuffs.mpRegenBonus > 1.0) t += `<span class="trinket-badge" style="border-color:#6fe8ee;color:#6fe8ee;">🔮 Siphon</span>`;
-        if (playerBuffs.lifeOnKill > 0) t += `<span class="trinket-badge" style="border-color:#4dff88;color:#4dff88;">🩸 Reaper</span>`;
+        if (player.buffs.vampirism > 0) t += `<span class="trinket-badge">💍 Vampirism ${Math.round(player.buffs.vampirism*100)}%</span>`;
+        if (player.buffs.hasteMod < 1.0) t += `<span class="trinket-badge">🧿 Haste</span>`;
+        if (player.buffs.dmgReducMult < 1.0) t += `<span class="trinket-badge" style="border-color:#9ad4ff;color:#9ad4ff;">🛡️ Bulwark</span>`;
+        if (player.buffs.thorns > 0) t += `<span class="trinket-badge" style="border-color:#7ef7d8;color:#7ef7d8;">🌵 Thorns</span>`;
+        if (player.buffs.critChance > 0) t += `<span class="trinket-badge" style="border-color:#ff9a3c;color:#ff9a3c;">🎯 Crit ${Math.round(player.buffs.critChance*100)}%</span>`;
+        if (player.buffs.mpRegenBonus > 1.0) t += `<span class="trinket-badge" style="border-color:#6fe8ee;color:#6fe8ee;">🔮 Siphon</span>`;
+        if (player.buffs.lifeOnKill > 0) t += `<span class="trinket-badge" style="border-color:#4dff88;color:#4dff88;">🩸 Reaper</span>`;
         document.getElementById('trinketList').innerHTML = t;
     }
 
@@ -2586,8 +2608,9 @@
 
             // Critical strikes: only your own hits can crit, not environmental damage.
             let isCrit = false;
-            if (isPlayerSource && source === 'player' && playerBuffs.critChance > 0 && rnd() < playerBuffs.critChance) {
-                dmg = Math.floor(dmg * playerBuffs.critMult); isCrit = true;
+            const dealer = (isPlayerSource && source === 'player') ? killCredit() : null;
+            if (dealer && dealer.buffs.critChance > 0 && rnd() < dealer.buffs.critChance) {
+                dmg = Math.floor(dmg * dealer.buffs.critMult); isCrit = true;
             }
             
             if (this instanceof Enemy) {
@@ -2628,12 +2651,14 @@
 
             this.hp -= dmg;
             
-            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; if (playerBuffs.vampirism > 0) { const c = killCredit(); if (c) c.hp = Math.min(c.maxHp, c.hp + dmg * playerBuffs.vampirism); } }
+            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; const c = killCredit(); if (c && c.buffs.vampirism > 0) c.hp = Math.min(c.maxHp, c.hp + dmg * c.buffs.vampirism); }
             if (isPlayerSource && dmg > 0 && this instanceof Enemy && source === 'player') this.aggroTimer = AGGRO_HOLD;
 
             // Thorns pays back whoever actually swung at you.
-            if (dmg > 0 && playerBuffs.thorns > 0 && attacker && attacker instanceof Enemy && (players.includes(this) || this === base)) {
-                let back = Math.max(1, Math.floor(dmg * playerBuffs.thorns));
+            const spiked = players.includes(this) ? this
+                         : (this === base ? players.reduce((b, p) => (!b || p.buffs.thorns > b.buffs.thorns) ? p : b, null) : null);
+            if (dmg > 0 && spiked && spiked.buffs.thorns > 0 && attacker && attacker instanceof Enemy) {
+                let back = Math.max(1, Math.floor(dmg * spiked.buffs.thorns));
                 attacker.takeDamage(back, true, 'none', 'player');
                 spawnParticles(attacker.x, attacker.y, '#7ef7d8', 3);
                 // Unbreakable: what you throw back, you take in.
@@ -2656,11 +2681,11 @@
             }
             if ((this instanceof Base || this instanceof Extractor) && dmg > 0) addShake(2);
 
-            if (this.hp <= 0 && !this.markedForDeletion && this instanceof Enemy && playerBuffs.lifeOnKill > 0) {
+            if (this.hp <= 0 && !this.markedForDeletion && this instanceof Enemy) {
                 const killer = killCredit();
-                if (killer) {
-                    killer.hp = Math.min(killer.maxHp, killer.hp + playerBuffs.lifeOnKill);
-                    entities.texts.push(new FloatingText(killer.x, killer.y - 50, '+' + playerBuffs.lifeOnKill, '#4dff88'));
+                if (killer && killer.buffs.lifeOnKill > 0) {
+                    killer.hp = Math.min(killer.maxHp, killer.hp + killer.buffs.lifeOnKill);
+                    entities.texts.push(new FloatingText(killer.x, killer.y - 50, '+' + killer.buffs.lifeOnKill, '#4dff88'));
                 }
             }
             // Warlord's Tribute: the spoils come off the corpse, not the treeline.
@@ -2792,11 +2817,24 @@
             this.frameY = 0; 
             this.walkDist = 0;      // ground covered on foot, drives the walk cycle
             
+            // Bought upgrades outlive an Amnesia Potion; resetTalents rebuilds `buffs` from these.
+            this.shopBuffs = makeBuffs();
             this.resetTalents(true);
         }
         resetTalents(initial = false) {
             if (!initial) { this.tp += this.talents.length + this.paragonPoints; }
             this.talents = []; this.paragonPoints = 0; this.chosenPath = null;
+            // Everything the talents added goes; everything bought stays.
+            this.buffs = makeBuffs(this.shopBuffs);
+            // Four talents (Quick Whirl, Fast Cast, Efficiency, Rapid Volley) write straight into
+            // `data` rather than into a buff, and they leaked the same way: nothing put the
+            // cooldown back, so buy/reset/rebuy ratcheted Meteor from 6s down to the 1s floor and
+            // its cost from 40 mana to 9. Rebuilding from the class table is the whole fix, and it
+            // is safe because those four are the only writers to `data` in the game.
+            this.data = Object.assign({}, classDataInfo[this.cls]);
+            // The day-speed boon is a transient rather than a talent, so it is put back if
+            // it happens to be running - otherwise dusk would subtract a bonus nobody has.
+            if (this.hasDaySpeed) this.buffs.speedMult += 1.0;
             this.whirlMod = 1.0; this.talentDmgReduc = 1.0; this.buildCostMod = 1.0; this.extractorBonus = 0;
             // Accumulated by talent ranks; read back in recalcStats so ranks stack cleanly.
             this.talentAtkBonus = 0; this.talentHpBonus = 0; this.talentMpBonus = 0;
@@ -2820,15 +2858,15 @@
             let baseA = this.data.atk * Math.pow(1.12, this.level - 1); let baseH = this.data.hp * Math.pow(1.15, this.level - 1);
             // Forge damage is additive off the class's base attack, not a multiplier on the
             // level-scaled value, so it no longer compounds with levels, talents and crit.
-            this.atk = baseA + this.data.atk * (playerBuffs.forgeAtkMult - 1);
-            this.maxHp = baseH + playerBuffs.bonusHp; this.maxMp = this.data.mp;
+            this.atk = baseA + this.data.atk * (this.buffs.forgeAtkMult - 1);
+            this.maxHp = baseH + this.buffs.bonusHp; this.maxMp = this.data.mp;
             this.atk *= (1 + this.talentAtkBonus);
             this.maxHp += this.talentHpBonus;
             this.maxMp += this.talentMpBonus;
             this.atk *= Math.pow(1.03, this.paragonPoints); this.maxHp *= Math.pow(1.05, this.paragonPoints);
             this.atk = Math.floor(this.atk); this.maxHp = Math.floor(this.maxHp); this.maxMp = Math.floor(this.maxMp);
             this.hp = Math.min(this.hp, this.maxHp); this.mp = Math.min(this.mp, this.maxMp);
-            this.attackCd = this.data.cd * playerBuffs.hasteMod;
+            this.attackCd = this.data.cd * this.buffs.hasteMod;
             // Overcharge's five second window used to halve tower cooldowns and nothing else,
             // so with the towers gone it was a ring drawn on the ground. It now drives the only
             // weapon left: half the swing time and half again the damage while it burns.
@@ -2837,7 +2875,7 @@
                 this.attackCd *= 0.5;
             }
 
-            this.dmgReduc = (this.cls === 'warrior' ? Math.max(0.5, 1.0 - (this.level * 0.02)) : 1.0) * this.talentDmgReduc * playerBuffs.dmgReducMult;
+            this.dmgReduc = (this.cls === 'warrior' ? Math.max(0.5, 1.0 - (this.level * 0.02)) : 1.0) * this.talentDmgReduc * this.buffs.dmgReducMult;
         }
         gainXp(amount) {
             this.xp += amount;
@@ -2872,7 +2910,7 @@
                 if (keys['w']) dy -= 1; if (keys['s']) dy += 1; if (keys['a']) dx -= 1; if (keys['d']) dx += 1;
                 if (dx !== 0 || dy !== 0) {
                     let len = Math.sqrt(dx*dx + dy*dy); 
-                    let speed = this.spd * playerBuffs.speedMult * (currentWeather==='blizzard'?0.7:1) * (dt*60);
+                    let speed = this.spd * this.buffs.speedMult * (currentWeather==='blizzard'?0.7:1) * (dt*60);
                     let nextX = this.x + (dx/len) * speed; let nextY = this.y + (dy/len) * speed;
                     let px = this.x, py = this.y;
                     if (this.isFlying || !isCollidingWithObstacle(nextX, nextY, this.radius)) { this.x = nextX; this.y = nextY; }
@@ -2888,7 +2926,7 @@
             if (this.abTimer <= 0) this.angle = Math.atan2(mouse.y - this.y, mouse.x - this.x); else this.abTimer -= dt;
             if (this.abilityCooldownTimer > 0) this.abilityCooldownTimer -= dt;
             this.lastAttack -= dt;
-            if (this.mp < this.maxMp) this.mp += dt * 2 * this.mpRegenMod * playerBuffs.mpRegenBonus;
+            if (this.mp < this.maxMp) this.mp += dt * 2 * this.mpRegenMod * this.buffs.mpRegenBonus;
             if (this.hpRegen > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + dt * this.hpRegen);
             if (this.invincibleTimer > 0) { this.invincibleTimer -= dt; this.invincible = true; } else { this.invincible = false; }
             if (this.shiftCd > 0) this.shiftCd -= dt;
@@ -2919,7 +2957,7 @@
                     else this.dashAngle = this.angle;
                     this.invincibleTimer = Math.max(this.invincibleTimer || 0, 0.2); 
                 }
-                this.shiftCd = 3.0 * playerBuffs.hasteMod;
+                this.shiftCd = 3.0 * this.buffs.hasteMod;
             }
 
             // Overcharge only changes the numbers through recalcStats, so catch both edges of
@@ -2944,7 +2982,7 @@
             }
 
             if (keys['e'] && this.mp >= this.data.abCost && this.abTimer <= 0 && this.abilityCooldownTimer <= 0) {
-                this.useAbility(); this.abilityCooldownTimer = this.data.abCd * playerBuffs.hasteMod; keys['e'] = false;
+                this.useAbility(); this.abilityCooldownTimer = this.data.abCd * this.buffs.hasteMod; keys['e'] = false;
             }
             if (mouse.rightClicked && gameState === 'DAY') { this.placeBuilding(); mouse.rightClicked = false; }
             
@@ -4286,8 +4324,6 @@
         campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
         campOneOffs = { skinning: false, beastcall: false }; campRationsDay = -1;
         achievements.forEach(a => a.unlocked = false);
-        playerBuffs = { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: 0,
-        dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
         forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
         entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
         forgeBuilding = null; placingBuilding = null; buildingTab = 'forge';
@@ -4455,7 +4491,7 @@
                 document.getElementById('phaseText').style.color = '#ff4d4d'; document.getElementById('earlyNightBtn').classList.add('hidden');
                 
                 // Clear day buffs
-                if (player.hasDaySpeed) { playerBuffs.speedMult -= 1.0; player.hasDaySpeed = false; }
+                players.forEach(p => { if (p.hasDaySpeed) { p.buffs.speedMult -= 1.0; p.hasDaySpeed = false; } });
 
                 // The bear only prowls by day - it retreats to the forest at nightfall.
                 entities.npcs.forEach(npc => {
@@ -4502,7 +4538,7 @@
                             if (rand < 0.33) {
                                 inventory.mana += 50; entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
                             } else if (rand < 0.66) {
-                                if (!player.hasDaySpeed) { player.hasDaySpeed = true; playerBuffs.speedMult += 1.0; }
+                                players.forEach(p => { if (!p.hasDaySpeed) { p.hasDaySpeed = true; p.buffs.speedMult += 1.0; } });
                                 entities.texts.push(new FloatingText(r.x, r.y - 20, "SPEED BUFF", '#00ffcc'));
                             } else {
                                 // The forge caps at FORGE_MAX_LEVEL and a cache has no business
@@ -4513,9 +4549,9 @@
                                 } else {
                                     let chosen = upgs[Math.floor(rnd()*upgs.length)];
                                     forgeUpgrades[chosen].level++;
-                                    if (chosen === 'weapon') { playerBuffs.forgeAtkMult += 0.1; player.recalcStats(); }
-                                    if (chosen === 'mining') { playerBuffs.gatherYield += MINING_YIELD_STEP; }
-                                    if (chosen === 'speed') { playerBuffs.speedMult += 0.05; }
+                                    if (chosen === 'weapon') { grantShopBuff(player, 'forgeAtkMult', 0.1); player.recalcStats(); }
+                                    if (chosen === 'mining') { grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); }
+                                    if (chosen === 'speed') { grantShopBuff(player, 'speedMult', 0.05); }
                                     entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); updateForgeUI();
                                 }
                             }
@@ -4528,7 +4564,7 @@
                                 r.markedForDeletion = true;
                                 // gatherYield is fractional now, so round here or the counters
                                 // start showing half a log.
-                                let amt = Math.round(5 * playerBuffs.gatherYield);
+                                let amt = Math.round(5 * player.buffs.gatherYield);
                                 if(r.type === 'wood') { inventory.wood += amt; gameStats.wood += amt; if (gameStats.wood >= 50) checkAchievement('lumberjack'); } 
                                 else { inventory.stone += amt; gameStats.stone += amt; if (gameStats.stone >= 50) checkAchievement('mason'); }
                             }
@@ -4581,7 +4617,7 @@
         document.getElementById('mp-text').innerText = `${Math.max(0,Math.ceil(player.mp))} / ${player.maxMp}`;
 
         // --- Ability action bar (radial cooldown sweep) ---
-        let eTotal = player.data.abCd * playerBuffs.hasteMod;
+        let eTotal = player.data.abCd * player.buffs.hasteMod;
         let eSlot = document.getElementById('ability-e-slot'), eCd = document.getElementById('ability-e-cd'), eTxt = document.getElementById('ability-e-text');
         if (player.abilityCooldownTimer > 0) {
             eCd.style.setProperty('--p', Math.min(100, (player.abilityCooldownTimer / eTotal) * 100));
@@ -4595,7 +4631,7 @@
             eSlot.classList.add('ready'); eSlot.classList.remove('no-mana');
         }
 
-        let shiftTotal = 3.0 * playerBuffs.hasteMod;
+        let shiftTotal = 3.0 * player.buffs.hasteMod;
         let shiftSlot = document.getElementById('ability-shift-slot'), shiftCdEl = document.getElementById('ability-shift-cd'), shiftTxt = document.getElementById('ability-shift-text');
         if (player.shiftCd > 0) {
             shiftCdEl.style.setProperty('--p', Math.min(100, (player.shiftCd / shiftTotal) * 100));
