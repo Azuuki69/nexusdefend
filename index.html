@@ -505,8 +505,8 @@
         let lbl = document.getElementById('build-3-label'), hint = document.getElementById('build-hint');
         let item = document.getElementById('build-buildings');
         if (!lbl || !hint || typeof world.entities === 'undefined') return;
-        if (placingBuilding) {
-            lbl.innerText = BUILDINGS[placingBuilding].name;
+        if (player && player.placing) {
+            lbl.innerText = BUILDINGS[player.placing].name;
             lbl.style.color = '#7ef7d8';
             hint.innerText = 'right-click';
             if (item) item.classList.add('selected-build');
@@ -1327,7 +1327,7 @@
             let openModal = MODAL_IDS.find(id => !document.getElementById(id).classList.contains('hidden'));
             if (openModal) { closeModal(openModal); return; }
             // Then out of a pending placement, before it reaches the pause menu.
-            if (placingBuilding) { cancelPlacement(); return; }
+            if (player && player.placing) { cancelPlacement(); return; }
             if (isPaused) closeSettings(); else openSettings();
         }
     });
@@ -1568,7 +1568,6 @@
     // Picking a building here only arms it. Nothing is paid for and nothing exists until you
     // right-click a spot on the ground, so a misclick in the menu costs you nothing.
     let buildingTab = 'forge';
-    let placingBuilding = null;
 
     function openBuildings() {
         if (!player) return;
@@ -1618,15 +1617,15 @@
     function armBuilding(key) {
         let b = BUILDINGS[key];
         if (b.count() >= b.max || world.gameState !== 'DAY' || !canAfford(buildingCost(key))) { playSound('error'); return; }
-        placingBuilding = key;
+        player.placing = key;
         closeModal('buildingsOverlay');
         playSound('pickup');
         world.entities.texts.push(new FloatingText(player.x, player.y - 50, 'RIGHT-CLICK TO PLACE', '#ffcc66'));
         updateBuildUI();
     }
     function cancelPlacement() {
-        if (!placingBuilding) return;
-        placingBuilding = null; ui.buildPalette();
+        if (!player || !player.placing) return;
+        player.placing = null; ui.buildPalette();
         world.entities.texts.push(new FloatingText(player.x, player.y - 50, 'CANCELLED', '#9a9a90'));
     }
 
@@ -2423,6 +2422,7 @@
             this.walkDist = 0;      // ground covered on foot, drives the walk cycle
             
             // Bought upgrades outlive an Amnesia Potion; resetTalents rebuilds `buffs` from these.
+            this.placing = null;              // building held for placement, if any
             this.intent = makeIntent();     // what this player wants; filled in by client or server
             this.shopBuffs = makeBuffs();
             this.resetTalents(true);
@@ -2744,8 +2744,8 @@
         // Places whatever the Buildings window armed. Every rejection happens before a single
         // resource is spent, so a blocked spot never costs you the materials.
         placeBuilding() {
-            if (!placingBuilding) return;
-            let key = placingBuilding, b = BUILDINGS[key], c = buildingCost(key);
+            if (!this.placing) return;
+            let key = this.placing, b = BUILDINGS[key], c = buildingCost(key);
             let mx = this.intent.aimX, my = this.intent.aimY;
             let deny = (msg) => { playSound('error'); world.entities.texts.push(new FloatingText(mx, my - 20, msg, '#ff4d4d')); };
 
@@ -2765,7 +2765,7 @@
                 world.forgeBuilding = { x: mx, y: my };
                 world.entities.texts.push(new FloatingText(mx, my - 60, "THE FORGE IS LIT", '#ffcc66'));
             }
-            placingBuilding = null;
+            this.placing = null;
             spawnParticles(mx, my, '#fff', 18); playSound('levelup'); addShake(6); ui.buildPalette();
         }
 
@@ -3488,7 +3488,7 @@
         achievements.forEach(a => a.unlocked = false);
         world.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
         world.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
-        world.forgeBuilding = null; placingBuilding = null; buildingTab = 'forge';
+        world.forgeBuilding = null; buildingTab = 'forge';
         // gameState first: setWeather branches on it, and it was still holding the previous
         // run's phase here. A fresh game could roll night weather - a blood moon on day one -
         // and because the night branch draws twice and the day branch once, the whole seeded
@@ -3677,7 +3677,7 @@
 
         const intent = player ? player.intent : makeIntent();
         if (intent.openTalents) { ui.open('talent'); intent.openTalents = false; }
-        if (intent.openBuildings) { if (placingBuilding) cancelPlacement(); else ui.open('buildings'); intent.openBuildings = false; }
+        if (intent.openBuildings) { if (player.placing) cancelPlacement(); else ui.open('buildings'); intent.openBuildings = false; }
         if (intent.interact && world.gameState === 'DAY') {
             let shop = world.entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
             let wayfarer = world.entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
@@ -3720,7 +3720,7 @@
                     }
                 });
                 
-                ui.closeAll(); placingBuilding = null; ui.buildPalette(); spawnWave();
+                ui.closeAll(); if (player) player.placing = null; ui.buildPalette(); spawnWave();
             } else {
                 world.gameState = 'DAY'; world.wave++; world.phaseTimer = 60; setWeather();
                 ui.phase(merchantVisits(world.wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER", '#fff');
@@ -4060,7 +4060,7 @@
         world.entities.obstacles.forEach(o => o.draw(ctx));
 
         // While a building is armed, show its footprint and whether the spot will take it.
-        if (world.gameState === 'DAY' && placingBuilding) {
+        if (world.gameState === 'DAY' && player && player.placing) {
             let mx = mouse.x, my = mouse.y;
             let clash = world.entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
                      || (world.forgeBuilding && Math.hypot(world.forgeBuilding.x - mx, world.forgeBuilding.y - my) < EXTRACTOR_SPACING);
@@ -4073,7 +4073,7 @@
             ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
             ctx.fillStyle = ok ? '#7ef7d8' : '#ff8080';
             ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
-            ctx.fillText(ok ? BUILDINGS[placingBuilding].name : 'BLOCKED', mx, my - EXTRACTOR_SPACING/5 - 12);
+            ctx.fillText(ok ? BUILDINGS[player.placing].name : 'BLOCKED', mx, my - EXTRACTOR_SPACING/5 - 12);
             ctx.restore();
         } else if (world.gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) {
             ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(mouse.x - 20, mouse.y - 20, 40, 40);
