@@ -19,6 +19,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+import * as SIM from '../src/sim/constants.js';
+
 const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
 
 /** Lift a top-level `const NAME = {...};` literal out of the game and evaluate it. */
@@ -229,15 +231,10 @@ test('the sim classes still have their juice - the sink did not strip it', () =>
 // every multiplier is exactly 1.0 at a single player, so solo play is untouched - that is what
 // lets the scaling land without re-balancing the game anyone is actually playing.
 
-/** Pull a `const NAME = value;` number out of the game. */
-function liftNumber(name) {
-    const m = SRC.match(new RegExp('const ' + name + ' = ([0-9.]+);'));
-    assert.ok(m, name + ' not found in index.html');
-    return parseFloat(m[1]);
-}
-
-const ENEMY_STEP = liftNumber('COOP_ENEMY_STEP');
-const TOUGH_STEP = liftNumber('COOP_TOUGH_STEP');
+// These used to be scraped out of index.html. They now live in src/sim/constants.js, so read
+// them from there - the module is the single definition and the game imports the same values.
+const ENEMY_STEP = SIM.COOP_ENEMY_STEP;
+const TOUGH_STEP = SIM.COOP_TOUGH_STEP;
 const enemyMult = n => 1 + ENEMY_STEP * (Math.max(1, n) - 1);
 const toughMult = n => 1 + TOUGH_STEP * (Math.max(1, n) - 1);
 

@@ -448,6 +448,28 @@
     //   - Modules are strict mode. Checked before converting: the source parses strict and
     //     assigns to no undeclared identifier.
     import { mulberry32, randomSeed } from './src/sim/rng.js';
+    import { VIEW_W, VIEW_H, WORLD_W, WORLD_H, WORLD_CX, WORLD_CY, SPAWN_RING, POND_CX, POND_CY,
+        POND_RX, POND_RY, KING_WAVE_INTERVAL, KING_HP_MULT, KING_DMG_BASE, KING_SPD_MULT,
+        KING_SLAM_RANGE, KING_SLAM_CD, KING_SLAM_DMG, HARPY_HP_MULT, HARPY_SPD_MULT, GOB_HP_MULT,
+        GOB_SPD_MULT, GOB_DMG_MULT, GOB_RANGE, GOB_MELEE_RANGE, GOB_SHOT_CD, CYCLOP_HP_MULT,
+        CYCLOP_DMG_BASE, CYCLOP_SPD_MULT, CYCLOP_SMASH, CYCLOP_SMASH_CD, CYCLOP_CHANCE,
+        CYCLOP_MIN_WAVE, CYCLOP_GAP, TROLL_HP_MULT, TROLL_DMG_BASE, TROLL_SPD_MULT, TROLL_REGEN,
+        TROLL_CHANCE, TROLL_MIN_WAVE, TROLL_GAP, RIDER_HP_MULT, RIDER_SPD_MULT, RIDER_DMG_BASE,
+        RIDER_CHARGE_MIN, RIDER_CHARGE_TIME, RIDER_CHARGE_SPD, RIDER_CHARGE_DMG, RIDER_CHARGE_LAND,
+        RIDER_WHEEL, RIDER_KNOCKBACK, RIDER_CHANCE, RIDER_MIN_WAVE, RIDER_GAP, RIDER_PACK_MIN,
+        RIDER_PACK_MAX, WANDER_SPEED, WANDER_PAUSE_MIN, WANDER_PAUSE_MAX, TALK_RANGE,
+        TALK_BUBBLE_TIME, CAMP_X, CAMP_Y, CAMP_NPC_X, CAMP_NPC_Y, CAMP_RANGE, POTION_LIFE,
+        POTION_WARN, BOMBER_FUSE, HEAL_FRACTION, BOAR_FRAMES, DEER_FRAMES, RABBIT_FRAMES,
+        CRITTER_WALK1, CRITTER_WALK2, CRITTER_IDLE, CRITTER_EAT, CRITTERS, CRITTER_FLEE_TIME,
+        CRITTER_PAUSE_MIN, CRITTER_PAUSE_MAX, AGGRO_RANGE, AGGRO_RANGE_GOLEM, AGGRO_HOLD,
+        AGGRO_DROP, MAX_EXTRACTORS, EXTRACTOR_COST, TP_PER_LEVEL, TALENT_XP_GROWTH, TIER_STEP,
+        PARAGON_UNLOCK, FREEZE_DURATION, FREEZE_IMMUNITY, BEAR_LOOT_BASE, BEAR_LOOT_PER_WAVE,
+        NEXUS_BASE_HP, NEXUS_HP_GROWTH, FORGE_MAX_LEVEL, COOP_ENEMY_STEP, COOP_TOUGH_STEP,
+        MINING_YIELD_STEP, NEXUS_KEEPOUT, CACHES_PER_MAP, MERCHANT_FRAMES, HERO_WALK,
+        ATTACK_ANIM_TIME, BODY_OFFSET_X, PREDATOR_BASE_HP, PREDATOR_HP_GROWTH, BEAR_SPAWN_CHANCE,
+        BEAR_MIN_GAP_DAYS, RAIN_RADIUS, RAIN_DURATION, RAIN_TICK_DMG, RAIN_SPLINTERS, ACTOR_CLEAR,
+        CRITTER_CLEAR, NPC_CLEAR
+    } from './src/sim/constants.js';
 
     // --- The world ----------------------------------------------------------------
     // Everything a match *is*, gathered into one object.
@@ -512,14 +534,9 @@
     const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
     // ---- WORLD / CAMERA ----
     // The canvas stays 1920x1080; that is now a window onto a much larger world.
-    const VIEW_W = 1920, VIEW_H = 1080;
-    const WORLD_W = 5760, WORLD_H = 3240;      // 3x3 screens = 9x the old play area
-    const WORLD_CX = WORLD_W / 2, WORLD_CY = WORLD_H / 2;
-    const SPAWN_RING = 1250;                   // enemies walk in from here, not the world edge
     // water.png draws an isometric pond, not a full square: the water body sits at
     // these fractions of the sprite box. The hitbox is built from the same numbers
     // so it lands exactly on the visible shoreline.
-    const POND_CX = 0.515, POND_CY = 0.535, POND_RX = 0.410, POND_RY = 0.295;
     let cam = { x: 0, y: 0 };
     function updateCamera() {
         if (!player) return;
@@ -595,9 +612,6 @@
     // The King is a landmark: the player renders ~97px tall and a goblin ~80, so 260 reads
     // as genuinely huge without filling the screen.
     const KING_DRAW_H = 260, KING_FEET = 70, KING_RADIUS = 80;
-    const KING_WAVE_INTERVAL = 10;      // waves 10, 20, 30 ...
-    const KING_HP_MULT = 25, KING_DMG_BASE = 45, KING_SPD_MULT = 0.55;
-    const KING_SLAM_RANGE = 210, KING_SLAM_CD = 4.0, KING_SLAM_DMG = 1.6;
 
     // --- Harpy ------------------------------------------------------------------
     // Replaces the old purple flier. Fast and fragile, and because it is airborne it
@@ -610,7 +624,6 @@
         { sx: 461, sy: 74, sw: 193, sh: 232 }    // talon strike
     ];
     const HARPY_DRAW_H = 88, HARPY_REF = 1, HARPY_HOVER = 26;
-    const HARPY_HP_MULT = 0.45, HARPY_SPD_MULT = 1.9;
 
     // --- Goblin wolf-rider --------------------------------------------------------
     // Skirmisher: outruns everything on the field, looses arrows more than twice as
@@ -622,8 +635,6 @@
         { sx: 453, sy: 80, sw: 196, sh: 241 }    // wolf lunges - point blank
     ];
     const GOB_DRAW_H = 104, GOB_FEET = 30, GOB_RADIUS = 19;
-    const GOB_HP_MULT = 0.35, GOB_SPD_MULT = 1.55, GOB_DMG_MULT = 0.6;
-    const GOB_RANGE = 270, GOB_MELEE_RANGE = 62, GOB_SHOT_CD = 0.85;
 
     // --- Cyclops (night miniboss) -------------------------------------------------
     // Turns up on some nights, not every one. Tanky and slow, and its club lands as a
@@ -635,9 +646,6 @@
         { sx: 458, sy: 50, sw: 194, sh: 272 }
     ];
     const CYCLOP_DRAW_H = 168, CYCLOP_FEET = 46, CYCLOP_RADIUS = 34;
-    const CYCLOP_HP_MULT = 8, CYCLOP_DMG_BASE = 22, CYCLOP_SPD_MULT = 0.85;
-    const CYCLOP_SMASH = 105, CYCLOP_SMASH_CD = 3.2;
-    const CYCLOP_CHANCE = 0.30, CYCLOP_MIN_WAVE = 3, CYCLOP_GAP = 2;
 
     // --- Troll (rare night spawn) -------------------------------------------------
     // Rarer than the cyclops, and it regenerates - chip damage alone never finishes it.
@@ -650,9 +658,6 @@
         { sx: 441, sy: 28, sw: 218, sh: 285 }    // overhead club, taller by design
     ];
     const TROLL_DRAW_H = 142, TROLL_FEET = 40, TROLL_RADIUS = 27;
-    const TROLL_HP_MULT = 6, TROLL_DMG_BASE = 18, TROLL_SPD_MULT = 0.95;
-    const TROLL_REGEN = 0.02;                    // fraction of max hp per second
-    const TROLL_CHANCE = 0.16, TROLL_MIN_WAVE = 4, TROLL_GAP = 3;
 
     // --- Orc warg-rider (rare) ----------------------------------------------------
     // Cavalry, so it is built around the run-up rather than the stand-up fight: give it
@@ -666,14 +671,6 @@
         { sx: 450, sy: 51, sw: 210, sh: 264 }    // axe coming down
     ];
     const RIDER_DRAW_H = 118, RIDER_FEET = 33, RIDER_RADIUS = 22;
-    const RIDER_HP_MULT = 2.6, RIDER_SPD_MULT = 1.35, RIDER_DMG_BASE = 16;
-    const RIDER_CHARGE_MIN = 220;      // needs this much clear ground to build a charge
-    const RIDER_CHARGE_TIME = 1.6;     // seconds from a standing start to full gallop
-    const RIDER_CHARGE_SPD = 1.8;      // top speed multiplier
-    const RIDER_CHARGE_DMG = 2.4;      // damage multiplier at full charge
-    const RIDER_CHARGE_LAND = 0.55;    // below this the blow counts as an ordinary swing
-    const RIDER_WHEEL = 1.8, RIDER_KNOCKBACK = 46;
-    const RIDER_CHANCE = 0.14, RIDER_MIN_WAVE = 5, RIDER_GAP = 3;
 
     // --- Night lighting -----------------------------------------------------------
     // The old pass laid down 88% near-black and punched holes in it for the player, the
@@ -699,7 +696,6 @@
     // art lands on the same values as the wash. Actors get picked out of the night instead
     // of sinking into it, the way a moonlit figure actually reads.
     const NIGHT_ACTOR_FILTER = 'brightness(1.45) saturate(1.15)';
-    const RIDER_PACK_MIN = 2, RIDER_PACK_MAX = 3;
 
     // --- The Wayfarer (roaming NPC) -----------------------------------------------
     // The sheet has IDLE / WALK 1 / WALK 2 lettered underneath each pose, so these crop to
@@ -712,9 +708,6 @@
         { sx: 475, sy: 59, sw: 167, sh: 261 }    // walk 2
     ];
     const NPC1_DRAW_H = 104, NPC1_FEET = 30;
-    const WANDER_SPEED = 1.15;                  // slower than the player, so you can catch him
-    const WANDER_PAUSE_MIN = 1.5, WANDER_PAUSE_MAX = 4.0;
-    const TALK_RANGE = 130, TALK_BUBBLE_TIME = 6.5;
 
     // --- Hunter's camp ------------------------------------------------------------
     // A fixed landmark rather than a random scatter, so it is somewhere you can learn and
@@ -728,9 +721,6 @@
     const TENT_H = 140, TENT_FEET = 18, TENT_SOLID = 52;
     const NPC3_H = 120, NPC3_FEET = 22;
     // Clear of all three ponds - checked, not guessed.
-    const CAMP_X = WORLD_CX + 1250, CAMP_Y = WORLD_CY + 900;
-    const CAMP_NPC_X = CAMP_X - 34, CAMP_NPC_Y = CAMP_Y + 58;
-    const CAMP_RANGE = 130;
 
     // --- Holy Nova ----------------------------------------------------------------
     // One expanding rune circle drawn at four stages - nascent core, forming core, developing
@@ -864,7 +854,6 @@
     const POTION_DRAW_H = 34;
     // They used to lie on the ground for the rest of the run. Long enough to be worth
     // walking back for, short enough that a night's drops are not still there on day five.
-    const POTION_LIFE = 25.0, POTION_WARN = 6.0;
     // The hunter deals in wood and stone, not mana. That is deliberate: the merchant and the
     // forge both compete for mana, while wood and stone pile up unspent by the middle of a
     // run, so the camp is where the surplus goes.
@@ -920,8 +909,6 @@
     const ASSASSIN_H = 92,  ASSASSIN_FEET = 25;
     const HEALER_H   = 96,  HEALER_FEET   = 26;
     const MINOTAUR_H = 190, MINOTAUR_FEET = 52;
-    const BOMBER_FUSE = 90;     // how close before it shows the blast frame
-    const HEAL_FRACTION = 0.18; // a healer's tick, as a share of the patient's max hp
 
     // --- Wayfarer contracts -------------------------------------------------------
     // One at a time, taken and handed in by talking to him. Paid in mana and experience,
@@ -978,29 +965,10 @@
     const boarSprite   = new Image(); boarSprite.src   = 'assets/textures/animals/boar.png';
     const deerSprite   = new Image(); deerSprite.src   = 'assets/textures/animals/deer.png';
     const rabbitSprite = new Image(); rabbitSprite.src = 'assets/textures/animals/rabbit.png';
-    const BOAR_FRAMES = [
-        { sx: 18,  sy: 136, sw: 167, sh: 170 }, { sx: 185, sy: 136, sw: 158, sh: 170 },
-        { sx: 343, sy: 119, sw: 135, sh: 188 }, { sx: 478, sy: 158, sw: 176, sh: 154 }
-    ];
-    const DEER_FRAMES = [
-        { sx: 18,  sy: 52,  sw: 167, sh: 254 }, { sx: 185, sy: 52,  sw: 151, sh: 254 },
-        { sx: 343, sy: 49,  sw: 118, sh: 258 }, { sx: 461, sy: 49,  sw: 198, sh: 263 }
-    ];
-    const RABBIT_FRAMES = [
-        { sx: 16,  sy: 112, sw: 170, sh: 194 }, { sx: 186, sy: 112, sw: 154, sh: 194 },
-        { sx: 343, sy: 94,  sw: 127, sh: 214 }, { sx: 470, sy: 180, sw: 188, sh: 132 }
-    ];
-    const CRITTER_WALK1 = 0, CRITTER_WALK2 = 1, CRITTER_IDLE = 2, CRITTER_EAT = 3;
     // `meat` is the chance of leaving a health pickup - deliberately not wood, stone or
     // mana. Hunting stays worth doing without reopening the economy that was just tuned.
-    const CRITTERS = {
-        boar:   { sprite: null, frames: BOAR_FRAMES,   h: 78,  feet: 22, radius: 20, hp: 90, spd: 0.9, flee: 2.6, meat: 0.80 },
-        deer:   { sprite: null, frames: DEER_FRAMES,   h: 100, feet: 27, radius: 18, hp: 55, spd: 1.2, flee: 3.4, meat: 0.60 },
-        rabbit: { sprite: null, frames: RABBIT_FRAMES, h: 46,  feet: 13, radius: 10, hp: 18, spd: 1.0, flee: 3.8, meat: 0.15 }
-    };
     CRITTERS.boar.sprite = boarSprite; CRITTERS.deer.sprite = deerSprite; CRITTERS.rabbit.sprite = rabbitSprite;
     const CRITTER_POP = { boar: 4, deer: 5, rabbit: 7 };
-    const CRITTER_FLEE_TIME = 4.0, CRITTER_PAUSE_MIN = 2.0, CRITTER_PAUSE_MAX = 6.0;
     const CRITTER_KEEPOUT = 500;        // they graze the wilds, not the nexus lawn
 
     // Frames on one sheet are not the same size, so scaling every pose to a fixed drawn
@@ -1024,17 +992,14 @@
     // a few seconds so they do not flip target every step, and hitting something aggros it.
     // Widened with the towers gone: intercepting a column before it reaches the nexus is the
     // only defence left, so the player needs to be able to actually pull one.
-    const AGGRO_RANGE = 360, AGGRO_RANGE_GOLEM = 140, AGGRO_HOLD = 4.0, AGGRO_DROP = 1.7;
     const merchantSprite = new Image(); merchantSprite.src = 'assets/textures/merchant.png';
     const chestSprite = new Image(); chestSprite.src = 'assets/textures/chest.png';
     const forgeSprite = new Image(); forgeSprite.src = 'assets/textures/buildings/forge.png';
     const extractorSprite = new Image(); extractorSprite.src = 'assets/textures/buildings/extractor.png';
     const EXTRACTOR_CROP = { sx: 28, sy: 42, sw: 618, sh: 308 };
     const EXTRACTOR_H = 118, EXTRACTOR_FEET = 40, EXTRACTOR_SPACING = 130, EXTRACTOR_HP = 200;
-    const MAX_EXTRACTORS = 3;
     // Payback was 0.75 days, which made three extractors an automatic purchase rather than
     // a choice. At 50 it is about 1.25 days, so building them costs you an early wave's defence.
-    const EXTRACTOR_COST = 50;
 
     // Forge and shop prices live here and nowhere else. Growth was 1.5 and the entire shop
     // came to 255 mana, which is how everything was owned by night 3.
@@ -1065,10 +1030,8 @@
     }
     // Talent tuning: each tier of a path needs TIER_STEP more points spent in that path,
     // so the capstone at tier 5 costs 10 points of commitment.
-    const TP_PER_LEVEL = 2, TALENT_XP_GROWTH = 1.5, TIER_STEP = 2, PARAGON_UNLOCK = 8;
     // Freeze has diminishing returns, the way MMO crowd control does: without an immunity
     // window a repeating source of freeze refreshes it forever and pins a wave in place.
-    const FREEZE_DURATION = 1.5, FREEZE_IMMUNITY = 5.0;
     function paragonRequirement(pathId) {
         let path = talentData[player.cls].find(p => p.id === pathId);
         let total = path ? path.talents.reduce((n, t) => n + (t.max || 1), 0) : 0;
@@ -1077,7 +1040,6 @@
     function extractorCount() { return world.entities.extractors.length; }
     // The bear was a 300 resource lump sum - about sixty gathering actions from one kill.
     // Scaling it keeps the fight worth taking late without being a night-one jackpot.
-    const BEAR_LOOT_BASE = 25, BEAR_LOOT_PER_WAVE = 8;
     // A flat 500hp nexus died in about 1.3s at wave 10 and 0.3s at wave 20, so losing was a
     // tripwire rather than attrition. Growing the pool with the wave gives leakage somewhere
     // to land, which is what makes repairs and the brazier worth having.
@@ -1089,7 +1051,6 @@
     // single enemy chewing on it for the night was lethal, and no amount of flat HP fixes that
     // shape. It now compounds at 1.09 against their 1.10, so it very slowly loses ground
     // instead of falling off a cliff, and the late game stays playable.
-    const NEXUS_BASE_HP = 700, NEXUS_HP_GROWTH = 1.09, FORGE_MAX_LEVEL = 5;
     // --- Co-op scaling -----------------------------------------------------------
     // `count = wave * 2 + 6` was written for one player. Four of them would walk it.
     //
@@ -1102,8 +1063,6 @@
     // Nexus hardens on the same curve: more attackers reach it, so it has to hold longer.
     //
     // Every one of these is exactly 1.0 at a single player, so solo play is untouched.
-    const COOP_ENEMY_STEP = 0.6;      // extra trash per additional player
-    const COOP_TOUGH_STEP = 0.5;      // extra boss and Nexus health per additional player
     function headcount() { return Math.max(1, world.players.length); }
     function coopEnemyMult() { return 1 + COOP_ENEMY_STEP * (headcount() - 1); }
     function coopToughMult() { return 1 + COOP_TOUGH_STEP * (headcount() - 1); }
@@ -1139,12 +1098,10 @@
 
     // Gatherable nodes start scarce and the forest thickens as the run goes on.
     const RES_START = 48, RES_PER_DAY = 8, RES_MAX = 130;
-    const MINING_YIELD_STEP = 0.3;      // five levels = 2.5x total, not 6x
     function resourceCountFor(day) { return Math.min(RES_MAX, RES_START + (day - 1) * RES_PER_DAY); }
     // The nexus is the thing the whole game is named after, so it is drawn at proper
     // landmark scale. Everything pinned to its footprint scales from these two numbers.
     const NEXUS_IMG = 285, NEXUS_RADIUS = 85;
-    const NEXUS_KEEPOUT = 155;   // nothing may be built inside the structure
     const REPAIR_FRACTION = 0.25, REPAIR_W = 40, REPAIR_S = 40, REPAIR_M = 20;
     const FORGE_CROP = { sx: 112, sy: 38, sw: 475, sh: 296 };
     const FORGE_H = 132, FORGE_FEET = 46, FORGE_RANGE = 165;
@@ -1158,6 +1115,9 @@
     // --- PLACEABLE BUILDINGS ---
     // Both are raised by hand from gathered resources. Costs sit above the 50/50 you start
     // with on purpose: the first thing every run makes you do is go and gather.
+    // Not a constant in the pure sense: each entry counts what is already built, which
+    // means reading `world`. It cannot live in src/sim/constants.js for exactly that
+    // reason - that module has no world - so it stays here with the client.
     const BUILDINGS = {
         forge: {
             name: 'The Forge', icon: '🔥', max: 1,
@@ -1172,6 +1132,7 @@
             count: () => world.entities.extractors.length
         }
     };
+
     function buildingCost(key) {
         let c = BUILDINGS[key].cost, mod = player ? player.buildCostMod : 1;
         return { w: Math.floor(c.w * mod), s: Math.floor(c.s * mod), m: Math.floor(c.m * mod) };
@@ -1180,9 +1141,7 @@
 
     // The chest sits in the middle of its 677x369 sheet; crop to the art itself.
     const CHEST_SX = 0.2777, CHEST_SY = 0.1707, CHEST_SW = 0.4431, CHEST_SH = 0.6450;
-    const CACHES_PER_MAP = 3;
     // Walk strip on the bottom row of merchant.png; 6 evenly spaced 68x92 cells.
-    const MERCHANT_FRAMES = [15, 95, 174, 254, 333, 413];
     const MERCHANT_CELL = { y: 396, w: 68, h: 92 };
     const MERCHANT_VISIT_DAYS = 4;
     // Character sprite cells are 225x276 (a third of the sheet, cropped at 75%).
@@ -1236,24 +1195,6 @@
     }
     // h/feet match what the idle sheets already draw - a ~98px figure standing 40px below the
     // player's origin - so switching between idle, walking and attacking never jumps or floats.
-    const HERO_WALK = {
-        // swing.png's WALK LOOP: a true right-facing profile, one orientation across all four
-        // frames, feet on a single ground line (every crop bottoms out at y=127).
-        warrior: { faces: 'right', h: 98, feet: 40, frames: [
-            [387,56,39,71,0], [466,55,41,72,0], [541,55,41,72,0], [614,55,51,72,0] ] },
-        mage:    { faces: 'right', h: 98, feet: 40, frames: [
-            [351,41,47,89,0], [424,37,58,92,1], [515,38,39,91,1], [590,41,51,89,0] ] },
-        archer:  { faces: 'right', h: 98, feet: 40, frames: [
-            [60,194,81,124,0], [227,193,70,123,2], [398,193,61,125,0], [559,193,86,123,2] ] },
-        // The right-facing row's own frame 1 is unusable - the neighbouring attack pose's beam is
-        // painted as an opaque wash across the whole upper half of that cell, in the same cream as
-        // the priest's hair, so it can be neither cropped nor keyed out. Borrowing the left row's
-        // frame 1 and mirroring it was worse: that pose is drawn front-on, so it spun.
-        // The remaining three frames are passing / mid / contact, so they run as a ping-pong -
-        // passing, mid, contact, mid - which is an even four-beat walk off three drawings.
-        priest:  { faces: 'right', h: 98, feet: 40, frames: [
-            [460,62,35,89,0], [535,65,38,86,0], [604,66,46,85,0], [535,65,38,86,0] ] }
-    };
     // The warrior's swing, from the same sheet. Sheet order is wind-up, mid-arc, recover-across,
     // raise - so the arc frame, the one carrying the blade trail, lands second of four and reads as
     // the hit. That matters because a melee swing applies its damage the instant you click: putting
@@ -1269,12 +1210,10 @@
     HERO_ATTACK.warrior.scale = HERO_WALK.warrior.h / HERO_WALK.warrior.frames[0][3];
     // How long the swing takes to play out. Also gates which pose Player.update selects, so the
     // two can never disagree about when the attack animation is over.
-    const ATTACK_ANIM_TIME = 0.25;
 
     // How far each pose's body sits from the player's origin horizontally, indexed by frameX
     // (0 idle, 1 walking, 2 attacking). Everything not listed is centred in its cell to within a
     // couple of pixels and needs no correction. See Player.visualMidX for how these were measured.
-    const BODY_OFFSET_X = { priest: [7, 0, 0] };
 
     // World pixels per frame of the cycle. The classes cover 210-330 px/s, so this lands the
     // cycle at 7fps for the mage and 11 for the archer - the quick class visibly picks its feet
@@ -1301,12 +1240,9 @@
     // anchoring on the cell bottom keeps every frame standing on the same ground line.
     const BEAR_SCALE = 1.0, BEAR_GROUND = 81;
     const BEAR_SLEEP_SCALE = 0.55, BEAR_SLEEP_GROUND = 67;
-    const PREDATOR_BASE_HP = 1000, PREDATOR_HP_GROWTH = 1.15;
     // The bear is meant to be an occasional scare, not a fixture. Rolled per day, with a
     // minimum gap so it can never turn up on back-to-back days and clump together.
-    const BEAR_SPAWN_CHANCE = 0.22, BEAR_MIN_GAP_DAYS = 2;
     // Rain of Arrows: a lingering zone that ticks every 0.5s for its duration.
-    const RAIN_RADIUS = 165, RAIN_DURATION = 3.0, RAIN_TICK_DMG = 0.55, RAIN_SPLINTERS = 5;
     function merchantVisits(day) { return (day - 1) % MERCHANT_VISIT_DAYS === 0; }
 
     // --- AUDIO SYSTEM ---
@@ -4302,7 +4238,6 @@
     // was out gathering. Measured at 5.5% of dawns, plus 0.8% of fresh games burying the
     // fixed spawn point. Being buried is unrecoverable: every direction is blocked, so you
     // cannot walk out of it.
-    const ACTOR_CLEAR = 110, CRITTER_CLEAR = 70, NPC_CLEAR = 80;
     function protectedSpots() {
         let pts = [];
         if (typeof player !== 'undefined' && player) pts.push({ x: player.x, y: player.y, r: ACTOR_CLEAR });
