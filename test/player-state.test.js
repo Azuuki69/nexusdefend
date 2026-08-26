@@ -223,3 +223,57 @@ test('the sim classes still have their juice - the sink did not strip it', () =>
     const total = calls.reduce((n, c) => n + SRC.split(c).length - 1, 0);
     assert.ok(total > 180, 'presentation calls dropped to ' + total + '; something stripped them');
 });
+
+// --- co-op scaling -----------------------------------------------------------------------
+// `count = wave * 2 + 6` was written for one player. The rule that matters most here is that
+// every multiplier is exactly 1.0 at a single player, so solo play is untouched - that is what
+// lets the scaling land without re-balancing the game anyone is actually playing.
+
+/** Pull a `const NAME = value;` number out of the game. */
+function liftNumber(name) {
+    const m = SRC.match(new RegExp('const ' + name + ' = ([0-9.]+);'));
+    assert.ok(m, name + ' not found in index.html');
+    return parseFloat(m[1]);
+}
+
+const ENEMY_STEP = liftNumber('COOP_ENEMY_STEP');
+const TOUGH_STEP = liftNumber('COOP_TOUGH_STEP');
+const enemyMult = n => 1 + ENEMY_STEP * (Math.max(1, n) - 1);
+const toughMult = n => 1 + TOUGH_STEP * (Math.max(1, n) - 1);
+
+test('a single player scales nothing at all', () => {
+    assert.equal(enemyMult(1), 1, 'solo enemy count would change');
+    assert.equal(toughMult(1), 1, 'solo boss and Nexus health would change');
+    assert.equal(enemyMult(0), 1, 'an empty party must not divide by anything');
+});
+
+test('the horde grows with the party but not in proportion to it', () => {
+    for (let n = 2; n <= 4; n++) {
+        assert.ok(enemyMult(n) > enemyMult(n - 1), n + ' players faced no more than ' + (n - 1));
+        assert.ok(enemyMult(n) < n, n + ' players face ' + enemyMult(n) + 'x, which is not sub-linear');
+    }
+});
+
+test('bosses take health rather than company, on the gentler curve', () => {
+    // There is only ever one boss, so it cannot scale by count the way trash does - but it
+    // must not out-scale the trash either, or a party spends the whole wave on one health bar.
+    assert.ok(TOUGH_STEP < ENEMY_STEP, 'boss health scales faster than the horde does');
+    for (let n = 2; n <= 4; n++) assert.ok(toughMult(n) > 1);
+});
+
+test('the scaling is actually wired into the three places that matter', () => {
+    assert.ok(/let count = Math\.round\(\(wave \* 2 \+ 6\) \* coopEnemyMult\(\)\)/.test(SRC),
+        'the wave count does not scale');
+    assert.ok(/NEXUS_HP_GROWTH, w - 1\) \* coopToughMult\(\)/.test(SRC),
+        'the Nexus does not harden with the party');
+    assert.ok(/this\.hp = Math\.floor\(this\.hp \* coopToughMult\(\)\);/.test(SRC),
+        'the boss does not scale');
+});
+
+test('the boss is scaled before maxHp is taken from hp', () => {
+    // Otherwise the health bar reads over 100% and only appears once the boss is nearly dead.
+    const scale = SRC.indexOf('this.hp = Math.floor(this.hp * coopToughMult());');
+    const sync = SRC.indexOf('this.maxHp = this.hp;', scale);
+    assert.ok(scale !== -1 && sync !== -1 && scale < sync,
+        'boss scaling happens after maxHp is captured');
+});

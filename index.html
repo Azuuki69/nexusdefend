@@ -1072,7 +1072,25 @@
     // shape. It now compounds at 1.09 against their 1.10, so it very slowly loses ground
     // instead of falling off a cliff, and the late game stays playable.
     const NEXUS_BASE_HP = 700, NEXUS_HP_GROWTH = 1.09, FORGE_MAX_LEVEL = 5;
-    function nexusMaxHpFor(w) { return Math.floor(NEXUS_BASE_HP * Math.pow(NEXUS_HP_GROWTH, w - 1)) + 100 * (forgeUpgrades.nexus ? forgeUpgrades.nexus.level : 0); }
+    // --- Co-op scaling -----------------------------------------------------------
+    // `count = wave * 2 + 6` was written for one player. Four of them would walk it.
+    //
+    // Two players are not twice as hard to kill as one: they cover each other, they hold two
+    // lanes, and their cooldowns overlap. So the horde grows by 0.6 a head rather than 1.0,
+    // and the party still feels stronger together than apart - which is the point of co-op.
+    //
+    // Bosses take the gentler curve, and take it as health rather than as numbers, because
+    // there is only ever one of them and four players delete it in seconds otherwise. The
+    // Nexus hardens on the same curve: more attackers reach it, so it has to hold longer.
+    //
+    // Every one of these is exactly 1.0 at a single player, so solo play is untouched.
+    const COOP_ENEMY_STEP = 0.6;      // extra trash per additional player
+    const COOP_TOUGH_STEP = 0.5;      // extra boss and Nexus health per additional player
+    function headcount() { return Math.max(1, players.length); }
+    function coopEnemyMult() { return 1 + COOP_ENEMY_STEP * (headcount() - 1); }
+    function coopToughMult() { return 1 + COOP_TOUGH_STEP * (headcount() - 1); }
+
+    function nexusMaxHpFor(w) { return Math.floor(NEXUS_BASE_HP * Math.pow(NEXUS_HP_GROWTH, w - 1) * coopToughMult()) + 100 * (forgeUpgrades.nexus ? forgeUpgrades.nexus.level : 0); }
     function bearLoot() { return BEAR_LOOT_BASE + BEAR_LOOT_PER_WAVE * wave; }
     const terrainSprites = { trees: new Image(), rocks: new Image() };
     terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
@@ -3455,6 +3473,9 @@
                 this.aura = 'speed';        // a war-drum, never a medic
                 this.auraPulse = 0;
             } else if (this.type === 'boss' || this.type === 'orcking') {
+                // One boss against a party melts. It gets the health the extra bodies would
+                // have carried, rather than the party getting a second boss.
+                this.hp = Math.floor(this.hp * coopToughMult());
                 this.aura = rnd() > 0.5 ? 'heal' : 'speed';
                 this.auraPulse = 0;
             } else {
@@ -4454,7 +4475,7 @@
         // Was wave*3+5, tuned when eight-plus towers were thinning the column before it ever
         // reached you. Wave one is unchanged at 8; the cut only bites later, where the missing
         // tower damage compounds worst - 26 at wave ten instead of 35.
-        let count = wave * 2 + 6;
+        let count = Math.round((wave * 2 + 6) * coopEnemyMult());
         if (currentWeather === 'bloodmoon') count = Math.floor(count * 1.5);
         if (currentModifier === 'swarm') count *= 2;
         
