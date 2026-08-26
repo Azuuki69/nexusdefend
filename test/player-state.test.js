@@ -86,6 +86,21 @@ const find = id => {
 /** Channel names offered by an object literal, whether written `x:` or `x() {}`. */
 /** Comments stripped. `[^\n]*` rather than `.*`: these files are CRLF, and in JavaScript
  *  `.` does not match \r because \r is a line terminator - so `//.*$` strips nothing. */
+/** A whole top-level function, by brace depth. A byte window silently stops covering one
+ *  the moment anything is added to it, which is how a passing test starts failing for a
+ *  reason that has nothing to do with what it checks. */
+function functionBody(text, decl) {
+    const i = text.indexOf(decl);
+    if (i < 0) return '';
+    const open = text.indexOf('{', i);
+    let d = 0;
+    for (let j = open; j < text.length; j++) {
+        if (text[j] === '{') d++;
+        else if (text[j] === '}' && --d === 0) return text.slice(i, j + 1);
+    }
+    return '';
+}
+
 function noComments(text) { return text.replace(/\/\/[^\n]*/g, ''); }
 
 function channelsOf(text) {
@@ -423,7 +438,7 @@ test('the client asks the sink, never the document, whether a modal is open', ()
 test('the loop advances in whole fixed steps, never a raw frame delta', () => {
     const i = SRC.indexOf('function gameLoop(timestamp)');
     assert.notEqual(i, -1, 'gameLoop is gone');
-    const loop = SRC.slice(i, i + 900);
+    const loop = functionBody(SRC, 'function gameLoop(timestamp)');
     assert.ok(/while \(simAccumulator >= SIM_DT\) \{/.test(loop),
         'the loop does not step a fixed accumulator');
     assert.ok(/if \(handleLocalIntents\(SIM_DT\)\) stepWorld\(SIM_DT\);/.test(loop),
@@ -433,7 +448,7 @@ test('the loop advances in whole fixed steps, never a raw frame delta', () => {
 
 test('a stall cannot spiral into hundreds of catch-up steps', () => {
     const i = SRC.indexOf('function gameLoop(timestamp)');
-    const loop = SRC.slice(i, i + 900);
+    const loop = functionBody(SRC, 'function gameLoop(timestamp)');
     assert.ok(/if \(elapsed > MAX_CATCHUP\) elapsed = MAX_CATCHUP;/.test(loop),
         'a backgrounded tab would try to make up the whole gap in one frame');
     assert.ok(/if \(!\(elapsed > 0\)\) elapsed = 0;/.test(loop),

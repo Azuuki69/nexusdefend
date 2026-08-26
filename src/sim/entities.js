@@ -312,7 +312,7 @@ export function wayfarerLine() {
 }
 
 export class Critter {
-    constructor(type, x, y) {
+    constructor(type, x, y) { this.nid = world.nextId++;
         this.type = type; this.def = CRITTERS[type];
         this.x = x; this.y = y; this.radius = this.def.radius;
         this.hp = this.def.hp; this.maxHp = this.def.hp;
@@ -392,7 +392,7 @@ export class Critter {
 }
 
 export class Item {
-    constructor(x, y, type) { this.x = x; this.y = y; this.type = type; this.radius = 14; this.markedForDeletion = false;
+    constructor(x, y, type) { this.nid = world.nextId++; this.x = x; this.y = y; this.type = type; this.radius = 14; this.markedForDeletion = false;
         this.life = POTION_LIFE; this.bob = Math.random() * 6.283; }
     update(dt) {
         this.life -= dt;
@@ -418,7 +418,7 @@ export class FloatingText {
 }
 
 export class Effect {
-    constructor(x, y, radius, color, life, dmg=0, freeze=false, isScorched=false, element='none', source='player', style='blob') {
+    constructor(x, y, radius, color, life, dmg=0, freeze=false, isScorched=false, element='none', source='player', style='blob') { this.nid = world.nextId++;
         this.x = x; this.y = y; this.radius = radius; this.color = color; this.life = life; this.maxLife = life; this.markedForDeletion = false; this.dmg = dmg; this.freeze = freeze; this.isScorched = isScorched; this.pulseTimer = 0; this.element = element; this.source = source; this.style = style;
         if (style === 'arrowrain') {
             // Fixed scatter so the volley doesn't jitter between frames.
@@ -466,7 +466,7 @@ export class Effect {
 }
 
 export class Entity {
-    constructor(x, y, radius, hp) { this.x = x; this.y = y; this.radius = radius; this.hp = hp; this.maxHp = hp; this.shield = 0; this.markedForDeletion = false; }
+    constructor(x, y, radius, hp) { this.nid = world.nextId++; this.x = x; this.y = y; this.radius = radius; this.hp = hp; this.maxHp = hp; this.shield = 0; this.markedForDeletion = false; }
     takeDamage(amount, isPlayerSource = false, element = 'none', source = 'player', attacker = null) {
         if (this.invincible) return;
         
@@ -1032,7 +1032,7 @@ export class Extractor extends Entity {
 }
 
 export class Projectile {
-    constructor(x, y, vx, vy, dmg, isFriendly, color, chainCount=0, slows=false, pierceCount=0, isExplosive=false, element='none', source='player', owner=null) {
+    constructor(x, y, vx, vy, dmg, isFriendly, color, chainCount=0, slows=false, pierceCount=0, isExplosive=false, element='none', source='player', owner=null) { this.nid = world.nextId++;
         this.owner = owner || (isFriendly ? nearestPlayer(x, y) : null);
         this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.dmg = dmg; this.isFriendly = isFriendly; this.color = color; this.life = 2.0; this.markedForDeletion = false; this.chain = chainCount; this.slows = slows; this.pierce = pierceCount; this.isExplosive = isExplosive; this.element = element; this.source = source; this.hitList = [];
     }

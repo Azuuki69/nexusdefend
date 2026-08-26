@@ -132,12 +132,12 @@ export class MatchRoom {
                 seq: p.intent.seq
             })),
             enemies: w.entities.enemies.map(e => ({
-                type: e.type, x: Math.round(e.x), y: Math.round(e.y),
+                id: e.nid, type: e.type, x: Math.round(e.x), y: Math.round(e.y),
                 hp: Math.round(e.hp), maxHp: e.maxHp
             })),
-            projectiles: w.entities.projectiles.map(p => ({ x: Math.round(p.x), y: Math.round(p.y), color: p.color })),
-            items: w.entities.items.map(i => ({ type: i.type, x: Math.round(i.x), y: Math.round(i.y) })),
-            critters: w.entities.critters.map(c => ({ type: c.type, x: Math.round(c.x), y: Math.round(c.y) })),
+            projectiles: w.entities.projectiles.map(p => ({ id: p.nid, x: Math.round(p.x), y: Math.round(p.y), color: p.color })),
+            items: w.entities.items.map(i => ({ id: i.nid, type: i.type, x: Math.round(i.x), y: Math.round(i.y) })),
+            critters: w.entities.critters.map(c => ({ id: c.nid, type: c.type, x: Math.round(c.x), y: Math.round(c.y), facing: c.facing })),
             events
         };
     }

@@ -29,6 +29,9 @@ import { mulberry32, randomSeed } from './rng.js';
 export function createWorld() {
     const w = {};
     w.rng = null;              // the seeded stream, per match rather than per module
+    // Stable identity for anything a client has to follow across snapshots. Reconciling by
+    // array index instead makes enemies teleport and swap species the moment one dies.
+    w.nextId = 1;
     w.currentSeed = 0;
     w.activeQuest = null;
     w.forgeBuilding = null;

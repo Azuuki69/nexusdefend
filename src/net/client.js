@@ -1,0 +1,249 @@
+// The client side of a server-authoritative match.
+//
+// In an online match the browser stops being the game and starts being a window onto it. It
+// sends what the player wants; the server says what happened; this file writes that answer into
+// the same `world` the renderer already draws from, so not a single line of drawing code had to
+// change.
+//
+// What it deliberately does NOT do yet:
+//
+//   * predict. Your own movement waits for the server to confirm it, which is a round trip of
+//     lag on your own character. That is Phase 3, and it is the difference between "correct"
+//     and "feels good".
+//   * interpolate properly. Remote things are eased toward where the server last put them,
+//     which hides 20Hz stepping but is not a real interpolation buffer.
+//
+// Both are honest gaps rather than oversights: correctness first, feel second.
+
+import { world, useWorld, createWorld, seedRun, fx } from '../sim/world.js';
+import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer } from '../sim/entities.js';
+
+const INPUT_HZ = 30;
+
+/** Match a live list against a snapshot list by network id, making and dropping as needed. */
+function reconcile(list, incoming, make, update) {
+    const byId = new Map(list.map(e => [e.nid, e]));
+    const next = [];
+    for (const s of incoming) {
+        let e = byId.get(s.id);
+        if (!e) {
+            e = make(s);
+            e.nid = s.id;
+        }
+        update(e, s);
+        next.push(e);
+    }
+    // Rebuild in the server's order rather than splicing, so a death in the middle of the list
+    // cannot shuffle everything after it onto the wrong sprites.
+    list.length = 0;
+    for (const e of next) list.push(e);
+}
+
+/** Where the server last said this thing was. The renderer eases toward it. */
+function target(e, s) {
+    e.netX = s.x;
+    e.netY = s.y;
+    if (e.x === undefined || Math.hypot(e.x - s.x, e.y - s.y) > 400) {
+        // First sight, or a jump too big to be movement - a respawn, a teleport, a dash.
+        e.x = s.x;
+        e.y = s.y;
+    }
+}
+
+export class MatchClient {
+    /**
+     * @param {string} url        ws:// or wss:// address of the match
+     * @param {object} opts       { cls, onWelcome, onMap, onSnapshot, onClose }
+     */
+    constructor(url, opts = {}) {
+        this.url = url;
+        this.opts = opts;
+        this.ws = null;
+        this.connected = false;
+        this.you = null;
+        this.hz = 20;
+        this.lastTick = -1;
+        this.seq = 0;
+        this.inputTimer = null;
+        this.world = null;
+        /** Set once the map has arrived; until then there is nothing to draw. */
+        this.ready = false;
+    }
+
+    connect() {
+        return new Promise((resolve, reject) => {
+            this.ws = new WebSocket(this.url);
+            this.ws.addEventListener('open', () => { this.connected = true; });
+            this.ws.addEventListener('message', ev => {
+                let msg;
+                try { msg = JSON.parse(ev.data); } catch { return; }
+                if (msg.t === 'welcome') {
+                    this.you = msg.you;
+                    this.hz = msg.hz || 20;
+                    this.onWelcome(msg);
+                } else if (msg.t === 'map') {
+                    this.onMap(msg);
+                    this.ready = true;
+                    resolve(this);
+                } else if (msg.t === 'snap') {
+                    this.onSnapshot(msg);
+                }
+            });
+            this.ws.addEventListener('error', () => reject(new Error('could not reach the match')));
+            this.ws.addEventListener('close', () => {
+                this.connected = false;
+                this.stopSendingInput();
+                if (this.opts.onClose) this.opts.onClose();
+            });
+        });
+    }
+
+    onWelcome(msg) {
+        // A match the server owns: build an empty local world for it and let snapshots fill it.
+        this.world = createWorld();
+        useWorld(this.world);
+        seedRun(msg.seed);
+        this.world.gameState = 'DAY';
+        this.world.base = new Base();
+        if (this.opts.onWelcome) this.opts.onWelcome(msg);
+    }
+
+    onMap(msg) {
+        const w = useWorld(this.world);
+        w.entities.obstacles = msg.obstacles.map(o => Object.assign(new Obstacle(o.x, o.y, o.w, o.h, o.type), o));
+        w.entities.decorations = msg.decorations.map(d => ({ ...d }));
+        w.entities.resources = msg.resources.map(r => {
+            const res = new Resource(r.x, r.y, r.type);
+            res.radius = r.radius;
+            return res;
+        });
+        w.entities.npcs = msg.npcs.map(n => {
+            const npc = n.shop ? new Merchant() : new Wanderer();
+            npc.x = n.x; npc.y = n.y;
+            return npc;
+        });
+        if (this.opts.onMap) this.opts.onMap(msg);
+    }
+
+    onSnapshot(snap) {
+        // Out of order or duplicated: the newest wins and the rest are noise.
+        if (snap.tick <= this.lastTick) return;
+        this.lastTick = snap.tick;
+
+        const w = useWorld(this.world);
+        w.gameState = snap.phase;
+        w.wave = snap.wave;
+        w.phaseTimer = snap.phaseTimer;
+        w.currentWeather = snap.weather;
+        w.currentModifier = snap.modifier;
+        Object.assign(w.inventory, snap.inventory);
+
+        if (w.base) {
+            w.base.hp = snap.base.hp;
+            w.base.maxHp = snap.base.maxHp;
+        }
+
+        reconcile(w.players, snap.players,
+            s => {
+                const p = new Player(s.cls);
+                p.netId = s.id;
+                return p;
+            },
+            (p, s) => {
+                p.netId = s.id;
+                target(p, s);
+                p.hp = s.hp; p.maxHp = s.maxHp;
+                p.mp = s.mp; p.maxMp = s.maxMp;
+                p.level = s.level;
+                p.angle = s.angle;
+                // The renderer reads the intent for facing, so keep it pointed the right way.
+                p.intent.aimX = s.x + Math.cos(s.angle) * 100;
+                p.intent.aimY = s.y + Math.sin(s.angle) * 100;
+            });
+
+        reconcile(w.entities.enemies, snap.enemies,
+            s => new Enemy(s.x, s.y, s.type),
+            (e, s) => { target(e, s); e.hp = s.hp; e.maxHp = s.maxHp; });
+
+        reconcile(w.entities.items, snap.items,
+            s => new Item(s.x, s.y, s.type),
+            (i, s) => { target(i, s); });
+
+        reconcile(w.entities.critters, snap.critters,
+            s => new Critter(s.type, s.x, s.y),      // note the order: (type, x, y)
+            (c, s) => { target(c, s); if (s.facing !== undefined) c.facing = s.facing; });
+
+        // Projectiles are short-lived and cheap; rebuilding them each snapshot is simpler than
+        // tracking them, and nothing about a bullet needs to persist.
+        w.entities.projectiles = snap.projectiles.map(p => ({
+            nid: p.id, x: p.x, y: p.y, netX: p.x, netY: p.y,
+            color: p.color, radius: 5, markedForDeletion: false
+        }));
+
+        this.playEvents(snap.events);
+        if (this.opts.onSnapshot) this.opts.onSnapshot(snap);
+    }
+
+    /** The server's presentation log, played through the client's own sink. */
+    playEvents(events) {
+        if (!events || !events.length) return;
+        for (const e of events) {
+            if (e[0] === 'sound') fx.sound(e[1]);
+            else if (e[0] === 'particles') fx.particles(e[1], e[2], e[3], e[4]);
+            else if (e[0] === 'shake') fx.shake(e[1]);
+            // 'text' is skipped: FloatingText objects are created by the simulation itself and
+            // would be drawn twice.
+        }
+    }
+
+    /**
+     * Ease everything toward where the server last put it. Called once a frame, not once a
+     * tick, so it smooths 20Hz updates into whatever the display is doing.
+     */
+    smooth(dt) {
+        if (!this.world) return;
+        const k = Math.min(1, dt * 14);
+        const ease = e => {
+            if (e.netX === undefined) return;
+            e.x += (e.netX - e.x) * k;
+            e.y += (e.netY - e.y) * k;
+        };
+        const w = this.world;
+        w.players.forEach(ease);
+        w.entities.enemies.forEach(ease);
+        w.entities.critters.forEach(ease);
+        w.entities.items.forEach(ease);
+    }
+
+    /** Whichever player is this client's own, or null before the first snapshot. */
+    localPlayer() {
+        if (!this.world) return null;
+        return this.world.players.find(p => p.netId === this.you) || null;
+    }
+
+    startSendingInput(readIntent) {
+        this.stopSendingInput();
+        this.inputTimer = setInterval(() => {
+            if (!this.connected) return;
+            const i = readIntent();
+            if (!i) return;
+            this.ws.send(JSON.stringify({
+                t: 'input',
+                moveX: i.moveX, moveY: i.moveY,
+                aimX: Math.round(i.aimX), aimY: Math.round(i.aimY),
+                attack: i.attack, dash: i.dash, place: i.place,
+                ability: i.ability, overcharge: i.overcharge, interact: i.interact,
+                seq: ++this.seq
+            }));
+        }, 1000 / INPUT_HZ);
+    }
+
+    stopSendingInput() {
+        if (this.inputTimer !== null) { clearInterval(this.inputTimer); this.inputTimer = null; }
+    }
+
+    close() {
+        this.stopSendingInput();
+        try { this.ws && this.ws.close(); } catch { /* already gone */ }
+    }
+}
