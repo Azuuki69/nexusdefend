@@ -390,7 +390,7 @@
     <div id="forgeOverlay" class="overlay hidden">
         <div class="hud-panel menu-modal">
             <h2 class="modal-title" style="color:#ffcc00;">Crafting Forge</h2>
-            <p class="modal-sub">Spend gathered resources to permanently upgrade your gear and base.</p>
+            <p class="modal-sub">Spend gathered resources to permanently upgrade your gear and world.base.</p>
             <div id="forgeContent"></div>
             <div style="text-align: center;"><button class="close-btn" onclick="closeModal('forgeOverlay')">Close Forge</button></div>
         </div>
@@ -447,6 +447,19 @@
 </script>
 
 <script>
+    // --- The world ----------------------------------------------------------------
+    // Everything a match *is*, gathered into one object.
+    //
+    // This is not tidiness. A Durable Object isolate can hold several matches at once, and
+    // anything left at module scope is shared between them - two matches would fight over one
+    // set of enemies. Per-match state has to hang off something per-match, so it moves here
+    // one binding at a time, each move checked against a recorded replay digest.
+    //
+    // Deliberately NOT in here: cam, ui, fx, audioSettings, screenShake, isPaused,
+    // placingBuilding and simAccumulator. Those describe this client's *view* of a match
+    // rather than the match itself, and a server has no business owning them.
+    let world = {};
+
     // ==========================================
     // --- SPRITE CALIBRATION SETTINGS ---
     // Make sure these match the number of columns and rows in your image file!
@@ -459,18 +472,18 @@
     // can be replayed from its seed alone. Purely visual randomness - particles, shake,
     // texture generation - deliberately stays on Math.random: the client must be free to
     // draw without pulling the simulation's sequence out of step.
-    let currentSeed = 0;
+    world.currentSeed = 0;
     let simRng = null;
     function rnd() { return simRng ? simRng() : Math.random(); }
     function seedRun(seed) {
-        currentSeed = (seed !== undefined && seed !== null)
+        world.currentSeed = (seed !== undefined && seed !== null)
             ? (seed >>> 0)
             : (window.Sim ? window.Sim.randomSeed() : (Math.random() * 0xFFFFFFFF) >>> 0);
-        simRng = window.Sim ? window.Sim.mulberry32(currentSeed) : null;
-        return currentSeed;
+        simRng = window.Sim ? window.Sim.mulberry32(world.currentSeed) : null;
+        return world.currentSeed;
     }
     // Handy from the console: replay a specific run with startGame('warrior', 12345).
-    function currentRunSeed() { return currentSeed; }
+    function currentRunSeed() { return world.currentSeed; }
 
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
     window.addEventListener('resize', resize); resize();
@@ -478,7 +491,7 @@
     function updateBuildUI() {
         let lbl = document.getElementById('build-3-label'), hint = document.getElementById('build-hint');
         let item = document.getElementById('build-buildings');
-        if (!lbl || !hint || typeof entities === 'undefined') return;
+        if (!lbl || !hint || typeof world.entities === 'undefined') return;
         if (placingBuilding) {
             lbl.innerText = BUILDINGS[placingBuilding].name;
             lbl.style.color = '#7ef7d8';
@@ -487,7 +500,7 @@
         } else {
             lbl.innerText = 'Buildings';
             lbl.style.color = '#ffcc00';
-            hint.innerText = forgeBuilding ? `${extractorCount()}/${MAX_EXTRACTORS} rigs` : 'no forge';
+            hint.innerText = world.forgeBuilding ? `${extractorCount()}/${MAX_EXTRACTORS} rigs` : 'no forge';
             if (item) item.classList.remove('selected-build');
         }
         // Prices and affordability shift as you gather, so keep an open window honest.
@@ -863,7 +876,7 @@
     const CAMP_SKINNING = { w: 70, s: 90 };
     const CAMP_BEASTCALL= { w: 95, s: 75 };
     function campCost(type) {
-        let b = CAMP_COSTS[type], lvl = campUpgrades[type].level;
+        let b = CAMP_COSTS[type], lvl = world.campUpgrades[type].level;
         return { w: Math.min(400, Math.floor(b.w * Math.pow(CAMP_COST_GROWTH, lvl))),
                  s: Math.min(400, Math.floor(b.s * Math.pow(CAMP_COST_GROWTH, lvl))) };
     }
@@ -954,7 +967,7 @@
           give:"Four warg riders. Catch them before they build up speed, or they'll ride you down.",
           done:"Four riders unhorsed. That's a hard-won thing." }
     ];
-    let activeQuest = null;
+    world.activeQuest = null;
 
     // --- Wildlife -----------------------------------------------------------------
     // Passive: they never attack and nothing hunts them. Hit one and it bolts. Each sheet
@@ -1032,8 +1045,11 @@
         nexus:     { s: 45, m: 25 }
     };
     function forgeCost(type) {
-        let lvl = forgeUpgrades[type].level, base = FORGE_COSTS[type], out = {};
-        for (let k in base) out[k] = Math.min(500, Math.floor(base[k] * Math.pow(FORGE_COST_GROWTH, lvl)));
+        // `costs`, not `base`: this is the forge's price table, nothing to do with the Nexus.
+        // It was a local called `base` hidden in a multi-declarator, which is exactly the kind
+        // of shadowing a blanket rename walks into.
+        let lvl = world.forgeUpgrades[type].level, costs = FORGE_COSTS[type], out = {};
+        for (let k in costs) out[k] = Math.min(500, Math.floor(costs[k] * Math.pow(FORGE_COST_GROWTH, lvl)));
         return out;
     }
     const SHOP_PRICES = { hp: 30, ring: 75, amulet: 75, bulwark: 110, thorns: 95,
@@ -1056,7 +1072,7 @@
         let total = path ? path.talents.reduce((n, t) => n + (t.max || 1), 0) : 0;
         return Math.min(PARAGON_UNLOCK, total);
     }
-    function extractorCount() { return entities.extractors.length; }
+    function extractorCount() { return world.entities.extractors.length; }
     // The bear was a 300 resource lump sum - about sixty gathering actions from one kill.
     // Scaling it keeps the fight worth taking late without being a night-one jackpot.
     const BEAR_LOOT_BASE = 25, BEAR_LOOT_PER_WAVE = 8;
@@ -1086,12 +1102,12 @@
     // Every one of these is exactly 1.0 at a single player, so solo play is untouched.
     const COOP_ENEMY_STEP = 0.6;      // extra trash per additional player
     const COOP_TOUGH_STEP = 0.5;      // extra boss and Nexus health per additional player
-    function headcount() { return Math.max(1, players.length); }
+    function headcount() { return Math.max(1, world.players.length); }
     function coopEnemyMult() { return 1 + COOP_ENEMY_STEP * (headcount() - 1); }
     function coopToughMult() { return 1 + COOP_TOUGH_STEP * (headcount() - 1); }
 
-    function nexusMaxHpFor(w) { return Math.floor(NEXUS_BASE_HP * Math.pow(NEXUS_HP_GROWTH, w - 1) * coopToughMult()) + 100 * (forgeUpgrades.nexus ? forgeUpgrades.nexus.level : 0); }
-    function bearLoot() { return BEAR_LOOT_BASE + BEAR_LOOT_PER_WAVE * wave; }
+    function nexusMaxHpFor(w) { return Math.floor(NEXUS_BASE_HP * Math.pow(NEXUS_HP_GROWTH, w - 1) * coopToughMult()) + 100 * (world.forgeUpgrades.nexus ? world.forgeUpgrades.nexus.level : 0); }
+    function bearLoot() { return BEAR_LOOT_BASE + BEAR_LOOT_PER_WAVE * world.wave; }
     const terrainSprites = { trees: new Image(), rocks: new Image() };
     terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
     terrainSprites.rocks.src = 'assets/textures/terrains/rocks.png';
@@ -1132,10 +1148,10 @@
     const FORGE_H = 132, FORGE_FEET = 46, FORGE_RANGE = 165;
     // The forge is no longer scenery the map hands you: it is raised from gathered wood and
     // stone like anything else, so until it is built there is nowhere to upgrade at.
-    let forgeBuilding = null;
-    function forgeX() { return forgeBuilding ? forgeBuilding.x : 0; }
-    function forgeY() { return forgeBuilding ? forgeBuilding.y : 0; }
-    function playerAtForge() { return forgeBuilding && gameState === 'DAY' && Math.hypot(player.x - forgeBuilding.x, player.y - forgeBuilding.y) < FORGE_RANGE; }
+    world.forgeBuilding = null;
+    function forgeX() { return world.forgeBuilding ? world.forgeBuilding.x : 0; }
+    function forgeY() { return world.forgeBuilding ? world.forgeBuilding.y : 0; }
+    function playerAtForge() { return world.forgeBuilding && world.gameState === 'DAY' && Math.hypot(player.x - world.forgeBuilding.x, player.y - world.forgeBuilding.y) < FORGE_RANGE; }
 
     // --- PLACEABLE BUILDINGS ---
     // Both are raised by hand from gathered resources. Costs sit above the 50/50 you start
@@ -1145,20 +1161,20 @@
             name: 'The Forge', icon: '🔥', max: 1,
             cost: { w: 60, s: 60, m: 0 },
             desc: 'Unlocks weapon, gear and Nexus upgrades. Walk to it and press [R].',
-            count: () => forgeBuilding ? 1 : 0
+            count: () => world.forgeBuilding ? 1 : 0
         },
         extractor: {
             name: 'Extractor', icon: '⛏️', max: MAX_EXTRACTORS,
             cost: { w: EXTRACTOR_COST, s: EXTRACTOR_COST, m: 0 },
             desc: 'Pulls 2 wood and 2 stone from the ground every 4s, daylight only.',
-            count: () => entities.extractors.length
+            count: () => world.entities.extractors.length
         }
     };
     function buildingCost(key) {
         let c = BUILDINGS[key].cost, mod = player ? player.buildCostMod : 1;
         return { w: Math.floor(c.w * mod), s: Math.floor(c.s * mod), m: Math.floor(c.m * mod) };
     }
-    function canAfford(c) { return inventory.wood >= c.w && inventory.stone >= c.s && inventory.mana >= c.m; }
+    function canAfford(c) { return world.inventory.wood >= c.w && world.inventory.stone >= c.s && world.inventory.mana >= c.m; }
 
     // The chest sits in the middle of its 677x369 sheet; crop to the art itself.
     const CHEST_SX = 0.2777, CHEST_SY = 0.1707, CHEST_SW = 0.4431, CHEST_SH = 0.6450;
@@ -1381,7 +1397,11 @@
     }
 
     // --- GAME STATE ---
-    let gameState = 'MENU', lastTime = 0, player, base;
+    // `player` is still this client's own; `lastTime` is the browser's clock. Neither
+    // belongs to the match, so neither moves into the world.
+    let lastTime = 0, player;
+    world.gameState = 'MENU';
+    world.base = null;
 
     // --- Who is in the match ------------------------------------------------------
     // `players` is everyone; single player is simply a match with one. `player` is THIS
@@ -1389,9 +1409,9 @@
     // its behalf. Simulation code must never reach for it, because on a server there is no
     // "this client": the horde asks nearestPlayer() who to walk towards, and anything with
     // an area of effect asks playersInRange() who is standing in it.
-    let players = [];
+    world.players = [];
 
-    function livingPlayers() { return players.filter(p => p.hp > 0); }
+    function livingPlayers() { return world.players.filter(p => p.hp > 0); }
 
     // Who gets the experience, the lifesteal and the loot for a kill.
     //
@@ -1403,14 +1423,14 @@
 
     function nearestPlayer(x, y) {
         let best = null, bestD = Infinity;
-        for (const p of players) {
+        for (const p of world.players) {
             if (p.hp <= 0) continue;
             const d = Math.hypot(p.x - x, p.y - y);
             if (d < bestD) { bestD = d; best = p; }
         }
         // Never null while anyone is in the match. The horde has to have something to walk
         // at, and a party that is entirely down ends the run anyway.
-        return best || players[0] || null;
+        return best || world.players[0] || null;
     }
 
     function nearestPlayerDist(x, y) {
@@ -1419,21 +1439,22 @@
     }
 
     function playersInRange(x, y, r) {
-        return players.filter(p => p.hp > 0 && Math.hypot(p.x - x, p.y - y) < r);
+        return world.players.filter(p => p.hp > 0 && Math.hypot(p.x - x, p.y - y) < r);
     }
-    let entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
-    let inventory = { wood: 50, stone: 50, mana: 20 }, wave = 1, phaseTimer = 60, totalKills = 0;
+    world.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
+    world.inventory = { wood: 50, stone: 50, mana: 20 };
+    world.wave = 1; world.phaseTimer = 60; world.totalKills = 0;
     let screenShake = 0; 
-    let currentWeather = 'clear'; 
-    let currentModifier = 'none';
+    world.currentWeather = 'clear'; 
+    world.currentModifier = 'none';
     let isPaused = false;
-    let waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
-    let lastBearWave = -99;
-    let lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
-    let campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
-    let campOneOffs = { skinning: false, beastcall: false };
-    let campRationsDay = -1;
-    let gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
+    world.waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
+    world.lastBearWave = -99;
+    world.lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
+    world.campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
+    world.campOneOffs = { skinning: false, beastcall: false };
+    world.campRationsDay = -1;
+    world.gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
     let achievements = [
         { id: 'first_blood', name: 'First Blood', desc: 'Slay your first enemy.', unlocked: false },
         { id: 'lumberjack', name: 'Lumberjack', desc: 'Gather 50 Wood.', unlocked: false },
@@ -1469,13 +1490,13 @@
         else          { p.shopBuffs[field] += amount; p.buffs[field] += amount; }
     }
 
-    let forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
+    world.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
 
     const keys = {}; let mouse = { x: 0, y: 0, sx: 0, sy: 0, clicked: false, rightClicked: false };
     
     window.addEventListener('keydown', e => {
         keys[e.key.toLowerCase()] = true;
-        if (e.key === 'Escape' && gameState !== 'MENU' && gameState !== 'OVER') {
+        if (e.key === 'Escape' && world.gameState !== 'MENU' && world.gameState !== 'OVER') {
             // If a shop/forge/talent window is up, ESC backs out of that first.
             let openModal = MODAL_IDS.find(id => !document.getElementById(id).classList.contains('hidden'));
             if (openModal) { closeModal(openModal); return; }
@@ -1511,12 +1532,12 @@
     // finished early, not enough to beat going out and fighting for it.
     const EARLY_NIGHT_MANA_PER_SEC = 0.25;
     function startNightEarly() { 
-        if(gameState === 'DAY') {
-            let bonusMana = Math.floor(phaseTimer * EARLY_NIGHT_MANA_PER_SEC);
-            inventory.mana += bonusMana;
-            entities.texts.push(new FloatingText(player.x, player.y - 40, `+${bonusMana} MANA (SPEED BONUS)`, '#00ffff'));
+        if(world.gameState === 'DAY') {
+            let bonusMana = Math.floor(world.phaseTimer * EARLY_NIGHT_MANA_PER_SEC);
+            world.inventory.mana += bonusMana;
+            world.entities.texts.push(new FloatingText(player.x, player.y - 40, `+${bonusMana} MANA (SPEED BONUS)`, '#00ffff'));
             playSound('pickup');
-            phaseTimer = 0; 
+            world.phaseTimer = 0; 
         } 
     }
     
@@ -1524,7 +1545,7 @@
     function addShakeNow(amt) { screenShake = Math.max(screenShake, amt); }
     
     function isCollidingWithObstacle(x, y, radius) {
-        for (let obs of entities.obstacles) {
+        for (let obs of world.entities.obstacles) {
             if (obs.type === 'lake') {
                 // Ellipse test on the real water body (the old circle used the box width
                 // for both axes, so it blocked dry grass and let you wade in at the sides).
@@ -1539,11 +1560,11 @@
                 let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
             }
         }
-        for (let sp of entities.solids) {
+        for (let sp of world.entities.solids) {
             let dx = x - sp.x; let dy = y - sp.y;
             if (dx*dx + dy*dy < Math.pow(sp.r + radius, 2)) return true;
         }
-        for (let r of entities.resources) {
+        for (let r of world.entities.resources) {
             if (r.solid) {
                 let dx = x - r.x; let dy = y - r.y;
                 if (dx*dx + dy*dy < Math.pow(r.solidRadius + radius, 2)) return true;
@@ -1555,7 +1576,7 @@
     function spawnParticlesNow(x, y, color, count) {
         for(let i=0; i<count; i++) {
             let angle = Math.random() * Math.PI * 2; let speed = Math.random() * 5 + 2;
-            entities.particles.push(new Particle(x, y, Math.cos(angle)*speed, Math.sin(angle)*speed, color));
+            world.entities.particles.push(new Particle(x, y, Math.cos(angle)*speed, Math.sin(angle)*speed, color));
         }
     }
 
@@ -1677,7 +1698,7 @@
         const rows = [];
         const pips = (lvl, max) => { let h = '<span class="lvl-pips">'; for (let i=0;i<max;i++) h += `<span class="${i<lvl?'filled':''}"></span>`; return h + '</span>'; };
         for (const key in CAMP_COSTS) {
-            const d = CAMP_COSTS[key], lvl = campUpgrades[key].level, c = campCost(key);
+            const d = CAMP_COSTS[key], lvl = world.campUpgrades[key].level, c = campCost(key);
             const maxed = lvl >= d.max;
             const icon = { jerkin: '🛡️', haft: '🔨', stride: '👣' }[key];
             rows.push(`<div class="upgrade-row"><span class="row-icon">${icon}</span><div class="row-body">
@@ -1686,7 +1707,7 @@
                 <span style="font-size:13px; color:#aaa;">${maxed ? 'Nothing more to fit.' : `Cost: ${c.w} Wood, ${c.s} Stone`}</span>
                 </div><button class="upgrade-btn" onclick="buyCamp('${key}')" ${maxed?'disabled':''}>${maxed?'Max':'Buy'}</button></div>`);
         }
-        const usedToday = campRationsDay === wave;
+        const usedToday = world.campRationsDay === world.wave;
         rows.push(`<hr style="border-color:#3a3a34; margin:18px 0;">`);
         rows.push(`<div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🍖</span><div class="row-body">
             <strong style="color:#7ef7d8;">Trail Rations</strong><br><span style="font-size:13px;color:#aaa;">
@@ -1695,52 +1716,52 @@
         rows.push(`<div class="upgrade-row" style="border-color:#ffb347;"><span class="row-icon">🔪</span><div class="row-body">
             <strong style="color:#ffb347;">Skinning Knife</strong><br><span style="font-size:13px;color:#aaa;">
             Every beast you fell leaves meat. Cost: ${CAMP_SKINNING.w} Wood, ${CAMP_SKINNING.s} Stone</span>
-            </div><button class="upgrade-btn" onclick="buyCamp('skinning')" ${campOneOffs.skinning?'disabled':''}>${campOneOffs.skinning?'Bought':'Buy'}</button></div>`);
+            </div><button class="upgrade-btn" onclick="buyCamp('skinning')" ${world.campOneOffs.skinning?'disabled':''}>${world.campOneOffs.skinning?'Bought':'Buy'}</button></div>`);
         rows.push(`<div class="upgrade-row" style="border-color:#ffb347;"><span class="row-icon">📯</span><div class="row-body">
             <strong style="color:#ffb347;">Beast Caller</strong><br><span style="font-size:13px;color:#aaa;">
             Wounded game stands its ground instead of bolting. Cost: ${CAMP_BEASTCALL.w} Wood, ${CAMP_BEASTCALL.s} Stone</span>
-            </div><button class="upgrade-btn" onclick="buyCamp('beastcall')" ${campOneOffs.beastcall?'disabled':''}>${campOneOffs.beastcall?'Bought':'Buy'}</button></div>`);
+            </div><button class="upgrade-btn" onclick="buyCamp('beastcall')" ${world.campOneOffs.beastcall?'disabled':''}>${world.campOneOffs.beastcall?'Bought':'Buy'}</button></div>`);
         document.getElementById('campContent').innerHTML = rows.join('');
     }
     function openCamp() { updateCampUI(); document.getElementById('campOverlay').classList.remove('hidden'); }
     function buyCamp(type) {
         const pay = (w, s) => {
-            if (inventory.wood < w || inventory.stone < s) {
+            if (world.inventory.wood < w || world.inventory.stone < s) {
                 playSound('error');
-                entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d'));
+                world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d'));
                 return false;
             }
-            inventory.wood -= w; inventory.stone -= s; return true;
+            world.inventory.wood -= w; world.inventory.stone -= s; return true;
         };
         if (CAMP_COSTS[type]) {
             const d = CAMP_COSTS[type];
-            if (campUpgrades[type].level >= d.max) { playSound('error'); return; }
+            if (world.campUpgrades[type].level >= d.max) { playSound('error'); return; }
             const c = campCost(type);
             if (!pay(c.w, c.s)) return;
-            campUpgrades[type].level++;
+            world.campUpgrades[type].level++;
             if (type === 'jerkin') { grantShopBuff(player, 'bonusHp', 25); player.recalcStats(); player.hp += 25; }
             if (type === 'haft')   { grantShopBuff(player, 'forgeAtkMult', 0.08); player.recalcStats(); }
             if (type === 'stride') { grantShopBuff(player, 'speedMult', 0.06); }
             playSound('pickup'); addShake(4);
         }
         else if (type === 'rations') {
-            if (campRationsDay === wave) { playSound('error'); return; }
+            if (world.campRationsDay === world.wave) { playSound('error'); return; }
             if (!pay(CAMP_RATIONS.w, CAMP_RATIONS.s)) return;
-            campRationsDay = wave;
+            world.campRationsDay = world.wave;
             player.hp = player.maxHp; player.mp = player.maxMp;
-            entities.texts.push(new FloatingText(player.x, player.y - 50, "FED AND RESTED", '#7ef7d8'));
+            world.entities.texts.push(new FloatingText(player.x, player.y - 50, "FED AND RESTED", '#7ef7d8'));
             spawnParticles(player.x, player.y, '#7ef7d8', 18);
             playSound('levelup');
         }
         else if (type === 'skinning') {
-            if (campOneOffs.skinning) { playSound('error'); return; }
+            if (world.campOneOffs.skinning) { playSound('error'); return; }
             if (!pay(CAMP_SKINNING.w, CAMP_SKINNING.s)) return;
-            campOneOffs.skinning = true; playSound('levelup'); addShake(4);
+            world.campOneOffs.skinning = true; playSound('levelup'); addShake(4);
         }
         else if (type === 'beastcall') {
-            if (campOneOffs.beastcall) { playSound('error'); return; }
+            if (world.campOneOffs.beastcall) { playSound('error'); return; }
             if (!pay(CAMP_BEASTCALL.w, CAMP_BEASTCALL.s)) return;
-            campOneOffs.beastcall = true; playSound('levelup'); addShake(4);
+            world.campOneOffs.beastcall = true; playSound('levelup'); addShake(4);
         }
         updateCampUI(); updateTrinkets();
     }
@@ -1753,7 +1774,7 @@
 
     function openBuildings() {
         if (!player) return;
-        buildingTab = forgeBuilding ? 'extractor' : 'forge';
+        buildingTab = world.forgeBuilding ? 'extractor' : 'forge';
         updateBuildingsUI();
         document.getElementById('buildingsOverlay').classList.remove('hidden');
     }
@@ -1772,13 +1793,13 @@
         let b = BUILDINGS[buildingTab], c = buildingCost(buildingTab);
         let atMax = b.count() >= b.max;
         let costs = '';
-        if (c.w) costs += `<span class="bld-cost ${inventory.wood  < c.w ? 'short' : ''}">🪵 ${c.w} Wood</span>`;
-        if (c.s) costs += `<span class="bld-cost ${inventory.stone < c.s ? 'short' : ''}">🪨 ${c.s} Stone</span>`;
-        if (c.m) costs += `<span class="bld-cost ${inventory.mana  < c.m ? 'short' : ''}">🔮 ${c.m} Mana</span>`;
+        if (c.w) costs += `<span class="bld-cost ${world.inventory.wood  < c.w ? 'short' : ''}">🪵 ${c.w} Wood</span>`;
+        if (c.s) costs += `<span class="bld-cost ${world.inventory.stone < c.s ? 'short' : ''}">🪨 ${c.s} Stone</span>`;
+        if (c.m) costs += `<span class="bld-cost ${world.inventory.mana  < c.m ? 'short' : ''}">🔮 ${c.m} Mana</span>`;
 
         let note = atMax ? (b.max === 1 ? 'Already standing.' : 'You have raised as many as you can hold.')
                  : (!canAfford(c) ? 'Not enough gathered yet - chop and mine, then come back.'
-                 : (gameState !== 'DAY' ? 'Nothing gets built after dark.'
+                 : (world.gameState !== 'DAY' ? 'Nothing gets built after dark.'
                  : 'Right-click the ground to place it.'));
         let label = atMax ? 'Built' : 'Place';
 
@@ -1792,23 +1813,23 @@
                     <div class="bld-note">${note}</div>
                 </div>
                 <button class="upgrade-btn" onclick="armBuilding('${buildingTab}')"
-                    ${atMax || !canAfford(c) || gameState !== 'DAY' ? 'disabled' : ''}>${label}</button>
+                    ${atMax || !canAfford(c) || world.gameState !== 'DAY' ? 'disabled' : ''}>${label}</button>
             </div>`;
     }
 
     function armBuilding(key) {
         let b = BUILDINGS[key];
-        if (b.count() >= b.max || gameState !== 'DAY' || !canAfford(buildingCost(key))) { playSound('error'); return; }
+        if (b.count() >= b.max || world.gameState !== 'DAY' || !canAfford(buildingCost(key))) { playSound('error'); return; }
         placingBuilding = key;
         closeModal('buildingsOverlay');
         playSound('pickup');
-        entities.texts.push(new FloatingText(player.x, player.y - 50, 'RIGHT-CLICK TO PLACE', '#ffcc66'));
+        world.entities.texts.push(new FloatingText(player.x, player.y - 50, 'RIGHT-CLICK TO PLACE', '#ffcc66'));
         updateBuildUI();
     }
     function cancelPlacement() {
         if (!placingBuilding) return;
         placingBuilding = null; ui.buildPalette();
-        entities.texts.push(new FloatingText(player.x, player.y - 50, 'CANCELLED', '#9a9a90'));
+        world.entities.texts.push(new FloatingText(player.x, player.y - 50, 'CANCELLED', '#9a9a90'));
     }
 
     function openForge() { updateForgeUI(); document.getElementById('forgeOverlay').classList.remove('hidden'); }
@@ -1821,21 +1842,21 @@
         let sCostW = sc.w, sCostM = sc.m;
         let whCostW = whc.w, whCostM = whc.m;
         let nxCostS = nxc.s, nxCostM = nxc.m;
-        let repairAmt = base ? Math.min(Math.ceil(base.maxHp * REPAIR_FRACTION), Math.ceil(base.maxHp - base.hp)) : 0;
+        let repairAmt = world.base ? Math.min(Math.ceil(world.base.maxHp * REPAIR_FRACTION), Math.ceil(world.base.maxHp - world.base.hp)) : 0;
 
         const pips = (lvl, max=5) => { let h = '<span class="lvl-pips">'; for(let i=0;i<max;i++){ h += `<span class="${i<lvl?'filled':''}"></span>`; } return h + '</span>'; };
         let html = `
-            <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(forgeUpgrades.weapon.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.weapon.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')" ${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
-            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+30% Gather Yield)</strong> ${pips(forgeUpgrades.mining.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.mining.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')" ${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
-            <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(forgeUpgrades.speed.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.speed.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')" ${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">🗡️</span><div class="row-body"><strong>Weapon Fortification (+10% Dmg)</strong> ${pips(world.forgeUpgrades.weapon.level)} <span style="font-size:11px;color:#00ffcc;">${world.forgeUpgrades.weapon.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${wCostW} Wood, ${wCostS} Stone</span></div><button class="upgrade-btn" onclick="buyForge('weapon')" ${world.forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${world.forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">⛏️</span><div class="row-body"><strong>Pickaxe Refinement (+30% Gather Yield)</strong> ${pips(world.forgeUpgrades.mining.level)} <span style="font-size:11px;color:#00ffcc;">${world.forgeUpgrades.mining.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${mCostW} Wood, ${mCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('mining')" ${world.forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${world.forgeUpgrades.mining.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">👢</span><div class="row-body"><strong>Lightweight Gear (+5% Speed)</strong> ${pips(world.forgeUpgrades.speed.level)} <span style="font-size:11px;color:#00ffcc;">${world.forgeUpgrades.speed.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${sCostW} Wood, ${sCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('speed')" ${world.forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${world.forgeUpgrades.speed.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
             
-            <div class="upgrade-row"><span class="row-icon">🎯</span><div class="row-body"><strong>Runed Whetstone (+5% Crit Chance)</strong> ${pips(forgeUpgrades.whetstone.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.whetstone.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${whCostW} Wood, ${whCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('whetstone')" ${forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
-            <div class="upgrade-row"><span class="row-icon">🏰</span><div class="row-body"><strong>Nexus Reinforcement (+100 Nexus HP)</strong> ${pips(forgeUpgrades.nexus.level)} <span style="font-size:11px;color:#00ffcc;">${forgeUpgrades.nexus.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${nxCostS} Stone, ${nxCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('nexus')" ${forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">🎯</span><div class="row-body"><strong>Runed Whetstone (+5% Crit Chance)</strong> ${pips(world.forgeUpgrades.whetstone.level)} <span style="font-size:11px;color:#00ffcc;">${world.forgeUpgrades.whetstone.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${whCostW} Wood, ${whCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('whetstone')" ${world.forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${world.forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
+            <div class="upgrade-row"><span class="row-icon">🏰</span><div class="row-body"><strong>Nexus Reinforcement (+100 Nexus HP)</strong> ${pips(world.forgeUpgrades.nexus.level)} <span style="font-size:11px;color:#00ffcc;">${world.forgeUpgrades.nexus.level}/${FORGE_MAX_LEVEL}</span><br><span style="font-size:13px; color:#aaa;">Cost: ${nxCostS} Stone, ${nxCostM} Mana</span></div><button class="upgrade-btn" onclick="buyForge('nexus')" ${world.forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL ? 'disabled' : ''}>${world.forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL ? 'Max' : 'Upgrade'}</button></div>
 
             <hr style="border-color: #3a3a34; margin: 20px 0;">
             
-            <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🔧</span><div class="row-body"><strong style="color:#7ef7d8;">Nexus Repairs (+${repairAmt} HP)</strong><br><span style="font-size:13px; color:#aaa;">${base && base.repairedToday ? 'Crew is spent - available again tomorrow.' : (base && base.hp >= base.maxHp ? 'Nexus is at full strength.' : `Once per day • Cost: ${REPAIR_W} Wood, ${REPAIR_S} Stone, ${REPAIR_M} Mana`)}</span></div><button class="upgrade-btn" id="btn-repair" onclick="buyForge('repair')" ${base && (base.repairedToday || base.hp >= base.maxHp) ? 'disabled' : ''}>${base && base.repairedToday ? 'Used' : (base && base.hp >= base.maxHp ? 'Full' : 'Repair')}</button></div>
-            <div class="upgrade-row" style="border-color:#ffaa55;"><span class="row-icon">🔥</span><div class="row-body"><strong style="color:#ffaa55;">Base: Brazier of Renewal</strong><br><span style="font-size:13px; color:#aaa;">Nexus mends 12 HP every 2s. Cost: 70 Wood, 40 Stone, 30 Mana</span></div><button class="upgrade-btn" id="btn-brazier" onclick="buyForge('brazier')" ${base && base.hasBrazier ? 'disabled' : ''}>${base && base.hasBrazier ? 'Built' : 'Build'}</button></div>
+            <div class="upgrade-row" style="border-color:#7ef7d8;"><span class="row-icon">🔧</span><div class="row-body"><strong style="color:#7ef7d8;">Nexus Repairs (+${repairAmt} HP)</strong><br><span style="font-size:13px; color:#aaa;">${world.base && world.base.repairedToday ? 'Crew is spent - available again tomorrow.' : (world.base && world.base.hp >= world.base.maxHp ? 'Nexus is at full strength.' : `Once per day • Cost: ${REPAIR_W} Wood, ${REPAIR_S} Stone, ${REPAIR_M} Mana`)}</span></div><button class="upgrade-btn" id="btn-repair" onclick="buyForge('repair')" ${world.base && (world.base.repairedToday || world.base.hp >= world.base.maxHp) ? 'disabled' : ''}>${world.base && world.base.repairedToday ? 'Used' : (world.base && world.base.hp >= world.base.maxHp ? 'Full' : 'Repair')}</button></div>
+            <div class="upgrade-row" style="border-color:#ffaa55;"><span class="row-icon">🔥</span><div class="row-body"><strong style="color:#ffaa55;">Base: Brazier of Renewal</strong><br><span style="font-size:13px; color:#aaa;">Nexus mends 12 HP every 2s. Cost: 70 Wood, 40 Stone, 30 Mana</span></div><button class="upgrade-btn" id="btn-brazier" onclick="buyForge('brazier')" ${world.base && world.base.hasBrazier ? 'disabled' : ''}>${world.base && world.base.hasBrazier ? 'Built' : 'Build'}</button></div>
         `;
         document.getElementById('forgeContent').innerHTML = html;
     }
@@ -1935,65 +1956,65 @@
     function buyForge(type) {
 
         if (type === 'weapon') {
-            if (forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
+            if (world.forgeUpgrades.weapon.level >= FORGE_MAX_LEVEL) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let c = forgeCost('weapon'); let cw = c.w, cs = c.s;
-            if (inventory.wood >= cw && inventory.stone >= cs) {
-                inventory.wood -= cw; inventory.stone -= cs;
-                forgeUpgrades.weapon.level++; grantShopBuff(player, 'forgeAtkMult', 0.10); player.recalcStats(); addShake(5); playSound('pickup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            if (world.inventory.wood >= cw && world.inventory.stone >= cs) {
+                world.inventory.wood -= cw; world.inventory.stone -= cs;
+                world.forgeUpgrades.weapon.level++; grantShopBuff(player, 'forgeAtkMult', 0.10); player.recalcStats(); addShake(5); playSound('pickup'); updateForgeUI();
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         } 
         else if (type === 'mining') {
-            if (forgeUpgrades.mining.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
+            if (world.forgeUpgrades.mining.level >= FORGE_MAX_LEVEL) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let c = forgeCost('mining'); let cw = c.w, cm = c.m;
-            if (inventory.wood >= cw && inventory.mana >= cm) {
-                inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.mining.level++; grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); playSound('pickup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            if (world.inventory.wood >= cw && world.inventory.mana >= cm) {
+                world.inventory.wood -= cw; world.inventory.mana -= cm;
+                world.forgeUpgrades.mining.level++; grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); playSound('pickup'); updateForgeUI();
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'whetstone') {
-            if (forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
+            if (world.forgeUpgrades.whetstone.level >= FORGE_MAX_LEVEL) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let c = forgeCost('whetstone'); let cw = c.w, cm = c.m;
-            if (inventory.wood >= cw && inventory.mana >= cm) {
-                inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.whetstone.level++; grantShopBuff(player, 'critChance', 0.05); updateTrinkets(); playSound('pickup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            if (world.inventory.wood >= cw && world.inventory.mana >= cm) {
+                world.inventory.wood -= cw; world.inventory.mana -= cm;
+                world.forgeUpgrades.whetstone.level++; grantShopBuff(player, 'critChance', 0.05); updateTrinkets(); playSound('pickup'); updateForgeUI();
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'nexus') {
-            if (forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
+            if (world.forgeUpgrades.nexus.level >= FORGE_MAX_LEVEL) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let c = forgeCost('nexus'); let cs = c.s, cm = c.m;
-            if (inventory.stone >= cs && inventory.mana >= cm) {
-                inventory.stone -= cs; inventory.mana -= cm;
-                forgeUpgrades.nexus.level++; base.maxHp += 100; base.hp += 100; addShake(5); playSound('pickup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            if (world.inventory.stone >= cs && world.inventory.mana >= cm) {
+                world.inventory.stone -= cs; world.inventory.mana -= cm;
+                world.forgeUpgrades.nexus.level++; world.base.maxHp += 100; world.base.hp += 100; addShake(5); playSound('pickup'); updateForgeUI();
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'repair') {
-            if (base.repairedToday) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY REPAIRED TODAY", '#ffcc00')); }
-            else if (base.hp >= base.maxHp) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NEXUS ALREADY FULL", '#ffcc00')); }
-            else if (inventory.wood >= REPAIR_W && inventory.stone >= REPAIR_S && inventory.mana >= REPAIR_M) {
-                inventory.wood -= REPAIR_W; inventory.stone -= REPAIR_S; inventory.mana -= REPAIR_M;
-                let healed = Math.min(Math.ceil(base.maxHp * REPAIR_FRACTION), Math.ceil(base.maxHp - base.hp));
-                base.hp = Math.min(base.maxHp, base.hp + healed);
-                base.repairedToday = true;
-                entities.texts.push(new FloatingText(base.x, base.y - 60, "+" + healed + " NEXUS", '#7ef7d8'));
-                spawnParticles(base.x, base.y, '#7ef7d8', 24);
+            if (world.base.repairedToday) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY REPAIRED TODAY", '#ffcc00')); }
+            else if (world.base.hp >= world.base.maxHp) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NEXUS ALREADY FULL", '#ffcc00')); }
+            else if (world.inventory.wood >= REPAIR_W && world.inventory.stone >= REPAIR_S && world.inventory.mana >= REPAIR_M) {
+                world.inventory.wood -= REPAIR_W; world.inventory.stone -= REPAIR_S; world.inventory.mana -= REPAIR_M;
+                let healed = Math.min(Math.ceil(world.base.maxHp * REPAIR_FRACTION), Math.ceil(world.base.maxHp - world.base.hp));
+                world.base.hp = Math.min(world.base.maxHp, world.base.hp + healed);
+                world.base.repairedToday = true;
+                world.entities.texts.push(new FloatingText(world.base.x, world.base.y - 60, "+" + healed + " NEXUS", '#7ef7d8'));
+                spawnParticles(world.base.x, world.base.y, '#7ef7d8', 24);
                 addShake(6); playSound('levelup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'brazier') {
-            if (!base.hasBrazier && inventory.wood >= 70 && inventory.stone >= 40 && inventory.mana >= 30) {
-                inventory.wood -= 70; inventory.stone -= 40; inventory.mana -= 30;
-                base.hasBrazier = true; addShake(10); playSound('levelup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            if (!world.base.hasBrazier && world.inventory.wood >= 70 && world.inventory.stone >= 40 && world.inventory.mana >= 30) {
+                world.inventory.wood -= 70; world.inventory.stone -= 40; world.inventory.mana -= 30;
+                world.base.hasBrazier = true; addShake(10); playSound('levelup'); updateForgeUI();
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
         else if (type === 'speed') {
-            if (forgeUpgrades.speed.level >= FORGE_MAX_LEVEL) { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
+            if (world.forgeUpgrades.speed.level >= FORGE_MAX_LEVEL) { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "ALREADY MASTERED", '#ffcc00')); return; }
             let c = forgeCost('speed'); let cw = c.w, cm = c.m;
-            if (inventory.wood >= cw && inventory.mana >= cm) {
-                inventory.wood -= cw; inventory.mana -= cm;
-                forgeUpgrades.speed.level++; grantShopBuff(player, 'speedMult', 0.05); playSound('pickup'); updateForgeUI();
-            } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+            if (world.inventory.wood >= cw && world.inventory.mana >= cm) {
+                world.inventory.wood -= cw; world.inventory.mana -= cm;
+                world.forgeUpgrades.speed.level++; grantShopBuff(player, 'speedMult', 0.05); playSound('pickup'); updateForgeUI();
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
         }
-        else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
+        else { playSound('error'); world.entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH RESOURCES!", '#ff4d4d')); }
     }
 
     // A fresh run gets fresh stock - otherwise the buttons stay disabled from last time.
@@ -2007,12 +2028,12 @@
     }
 
     function buyMerchant(type) {
-        if (inventory.mana >= SHOP_PRICES.hp && type === 'hp') {
-            inventory.mana -= SHOP_PRICES.hp; grantShopBuff(player, 'bonusHp', 25); player.recalcStats(); player.hp += 25; playSound('pickup'); entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
-        } else if (inventory.mana >= SHOP_PRICES.ring && type === 'ring') {
-            inventory.mana -= SHOP_PRICES.ring; grantShopBuff(player, 'vampirism', 0.05); document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
-        } else if (inventory.mana >= SHOP_PRICES.amulet && type === 'amulet') {
-            inventory.mana -= SHOP_PRICES.amulet; grantShopBuff(player, 'hasteMod', 0.8, true); document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+        if (world.inventory.mana >= SHOP_PRICES.hp && type === 'hp') {
+            world.inventory.mana -= SHOP_PRICES.hp; grantShopBuff(player, 'bonusHp', 25); player.recalcStats(); player.hp += 25; playSound('pickup'); world.entities.texts.push(new FloatingText(960, 500, "MAX HP UPGRADED!", '#00ffcc'));
+        } else if (world.inventory.mana >= SHOP_PRICES.ring && type === 'ring') {
+            world.inventory.mana -= SHOP_PRICES.ring; grantShopBuff(player, 'vampirism', 0.05); document.getElementById('btn-ring').disabled = true; document.getElementById('btn-ring').innerText = "Sold"; updateTrinkets(); playSound('levelup');
+        } else if (world.inventory.mana >= SHOP_PRICES.amulet && type === 'amulet') {
+            world.inventory.mana -= SHOP_PRICES.amulet; grantShopBuff(player, 'hasteMod', 0.8, true); document.getElementById('btn-amulet').disabled = true; document.getElementById('btn-amulet').innerText = "Sold"; updateTrinkets(); playSound('levelup');
         } else if (type === 'bulwark' || type === 'thorns' || type === 'crit' || type === 'siphon' || type === 'reaper') {
             // One-off trinkets: pay, apply, and mark the slot sold. Everything here stacks onto
             // what the talents already gave you - assigning instead of accumulating turned three
@@ -2024,14 +2045,14 @@
                 siphon:  { cost: SHOP_PRICES.siphon,  btn: 'btn-siphon',  apply: () => { player.shopBuffs.mpRegenBonus = player.buffs.mpRegenBonus = 2.0; } },
                 reaper:  { cost: SHOP_PRICES.reaper,  btn: 'btn-reaper',  apply: () => { grantShopBuff(player, 'lifeOnKill', 8); } }
             }[type];
-            if (inventory.mana >= stock.cost) {
-                inventory.mana -= stock.cost; stock.apply();
+            if (world.inventory.mana >= stock.cost) {
+                world.inventory.mana -= stock.cost; stock.apply();
                 let b = document.getElementById(stock.btn); b.disabled = true; b.innerText = 'Sold';
                 updateTrinkets(); playSound('levelup'); addShake(4);
-            } else { playSound('error'); entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH MANA!", '#ff4d4d')); }
-        } else if (inventory.mana >= SHOP_PRICES.amnesia && type === 'amnesia') {
-            inventory.mana -= SHOP_PRICES.amnesia; player.resetTalents(); playSound('explosion'); addShake(20); closeModal('merchantOverlay'); entities.texts.push(new FloatingText(960, 500, "TALENTS RESET!", '#ff00ff'));
-        } else { playSound('error'); entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH MANA!", '#ff4d4d')); }
+            } else { playSound('error'); world.entities.texts.push(new FloatingText(player.x, player.y - 40, "NOT ENOUGH MANA!", '#ff4d4d')); }
+        } else if (world.inventory.mana >= SHOP_PRICES.amnesia && type === 'amnesia') {
+            world.inventory.mana -= SHOP_PRICES.amnesia; player.resetTalents(); playSound('explosion'); addShake(20); closeModal('merchantOverlay'); world.entities.texts.push(new FloatingText(960, 500, "TALENTS RESET!", '#ff00ff'));
+        } else { playSound('error'); world.entities.texts.push(new FloatingText(960, 500, "NOT ENOUGH MANA!", '#ff4d4d')); }
     }
     
     function updateTrinkets() {
@@ -2080,7 +2101,7 @@
     class Merchant {
         constructor() { this.isShop = true; let fromLeft = rnd() > 0.5; this.x = WORLD_CX + (fromLeft ? -1500 : 1500); this.y = WORLD_CY + (rnd()*400 - 200); this.radius = 20; this.targetX = WORLD_CX + (rnd()*500 - 250); this.targetY = WORLD_CY - 320 - rnd()*160; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
         update(dt) {
-            if (gameState === 'NIGHT') { this.targetX = WORLD_CX - 2600; }
+            if (world.gameState === 'NIGHT') { this.targetX = WORLD_CX - 2600; }
             let dx = this.targetX - this.x; let dy = this.targetY - this.y; let len = Math.hypot(dx, dy);
             this.moving = len > 5;
             if (this.moving) {
@@ -2089,7 +2110,7 @@
                 this.frameTimer += dt;
                 if (this.frameTimer > 0.11) { this.frameTimer = 0; this.frame = (this.frame + 1) % MERCHANT_FRAMES.length; }
             } else { this.frame = 0; this.frameTimer = 0; }
-            if (gameState === 'NIGHT' && Math.hypot(this.x - WORLD_CX, this.y - WORLD_CY) > 1800) this.markedForDeletion = true;
+            if (world.gameState === 'NIGHT' && Math.hypot(this.x - WORLD_CX, this.y - WORLD_CY) > 1800) this.markedForDeletion = true;
         }
         draw(ctx) {
             const feetY = this.y + 20;
@@ -2109,7 +2130,7 @@
             }
             // Deliberately the local player: each client draws its own prompt for its own
             // character. This is rendering, and never runs on the server.
-            if (gameState === 'DAY' && player && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
+            if (world.gameState === 'DAY' && player && Math.hypot(player.x - this.x, player.y - this.y) < 150) {
                 ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, 40, 0, Math.PI*2); ctx.stroke();
                 ctx.fillStyle = '#00ffcc'; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("Press [R] to Shop", this.x, this.y + 55);
             } else { ctx.fillStyle = '#fff'; ctx.font = "bold 13px Arial"; ctx.textAlign = "center"; ctx.fillText("SHOP", this.x, this.y - 82); }
@@ -2147,16 +2168,16 @@
         talk() {
             this.bubble = TALK_BUBBLE_TIME;
             this.pause = Math.max(this.pause, 2.0);      // he stops to speak to you
-            if (!activeQuest) {
+            if (!world.activeQuest) {
                 let q = questOffer();
                 startQuest(q);
                 this.line = q.give;
                 playSound('levelup');
-            } else if (activeQuest.have >= activeQuest.need) {
+            } else if (world.activeQuest.have >= world.activeQuest.need) {
                 this.line = turnInQuest();
             } else {
                 // Still working: remind them what for, and pay the walk back with a rumour.
-                let left = activeQuest.need - activeQuest.have;
+                let left = world.activeQuest.need - world.activeQuest.have;
                 this.line = left + " more to go. " + wayfarerLine();
                 playSound('pickup');
             }
@@ -2188,7 +2209,7 @@
             let inRange = player && Math.hypot(player.x - this.x, player.y - this.y) < TALK_RANGE;
             ctx.save();
             ctx.translate(this.x, this.y);
-            if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+            if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
             ctx.fillStyle = 'rgba(0,0,0,0.26)';
             ctx.beginPath(); ctx.ellipse(0, NPC1_FEET - 6, 24, 8, 0, 0, Math.PI*2); ctx.fill();
             ctx.scale(this.facing, 1);
@@ -2241,23 +2262,23 @@
     }
 
     function questOffer() {
-        let pool = QUESTS.filter(q => wave >= q.minWave);
+        let pool = QUESTS.filter(q => world.wave >= q.minWave);
         return pool[Math.floor(rnd() * pool.length)];
     }
     function startQuest(q) {
-        activeQuest = { id: q.id, kind: q.kind, target: q.target, need: q.need,
+        world.activeQuest = { id: q.id, kind: q.kind, target: q.target, need: q.need,
                         have: 0, mana: q.mana, xp: q.xp, label: q.id };
         updateQuestUI();
     }
     // Called from both death paths. Wildlife and monsters live in different arrays, so the
     // kind has to match too or hunting rabbits would tick a goblin contract.
     function questKill(kind, type) {
-        if (!activeQuest || activeQuest.have >= activeQuest.need) return;
-        if (activeQuest.kind !== kind || activeQuest.target !== type) return;
-        activeQuest.have++;
+        if (!world.activeQuest || world.activeQuest.have >= world.activeQuest.need) return;
+        if (world.activeQuest.kind !== kind || world.activeQuest.target !== type) return;
+        world.activeQuest.have++;
         updateQuestUI();
-        if (activeQuest.have >= activeQuest.need) {
-            entities.texts.push(new FloatingText(player.x, player.y - 70, "CONTRACT COMPLETE", '#4dff88'));
+        if (world.activeQuest.have >= world.activeQuest.need) {
+            world.entities.texts.push(new FloatingText(player.x, player.y - 70, "CONTRACT COMPLETE", '#4dff88'));
             playSound('levelup');
         }
     }
@@ -2267,11 +2288,11 @@
     function updateQuestUI() { /* the tracker is drawn on the canvas - nothing to sync */ }
     // Anchored to the minimap's own box so the two can never drift apart.
     function drawQuestTracker(ctx) {
-        if (!activeQuest) return;
-        let done = activeQuest.have >= activeQuest.need;
-        let noun = QUEST_NOUN[activeQuest.target] || activeQuest.target;
+        if (!world.activeQuest) return;
+        let done = world.activeQuest.have >= world.activeQuest.need;
+        let noun = QUEST_NOUN[world.activeQuest.target] || world.activeQuest.target;
         let title = 'HUNT ' + noun.toUpperCase();
-        let count = activeQuest.have + ' / ' + activeQuest.need;
+        let count = world.activeQuest.have + ' / ' + world.activeQuest.need;
         let x = MM_X, y = MM_Y + MM_H + 10, w = MM_W, h = 46;
         ctx.save();
         ctx.fillStyle = 'rgba(9,11,8,0.92)'; ctx.fillRect(x, y, w, h);
@@ -2292,14 +2313,14 @@
         ctx.restore();
     }
     function turnInQuest() {
-        let def = QUESTS.find(q => q.id === activeQuest.id);
-        inventory.mana += activeQuest.mana;
-        player.gainXp(activeQuest.xp);
-        entities.texts.push(new FloatingText(player.x, player.y - 60, "+" + activeQuest.mana + " MANA", '#00ffcc'));
-        entities.texts.push(new FloatingText(player.x, player.y - 90, "+" + activeQuest.xp + " XP", '#ffe066'));
+        let def = QUESTS.find(q => q.id === world.activeQuest.id);
+        world.inventory.mana += world.activeQuest.mana;
+        player.gainXp(world.activeQuest.xp);
+        world.entities.texts.push(new FloatingText(player.x, player.y - 60, "+" + world.activeQuest.mana + " MANA", '#00ffcc'));
+        world.entities.texts.push(new FloatingText(player.x, player.y - 90, "+" + world.activeQuest.xp + " XP", '#ffe066'));
         spawnParticles(player.x, player.y, '#e8d8a8', 20);
         playSound('levelup'); addShake(5);
-        activeQuest = null;
+        world.activeQuest = null;
         updateQuestUI();
         return def.done;
     }
@@ -2309,18 +2330,18 @@
     function wayfarerLine() {
         const dirName = ['north', 'south', 'west', 'east'];
         let pool = [];
-        if (waveDirection !== -1) {
-            pool.push("They gather to the " + dirName[waveDirection] + " tonight. I'd face your guns that way.");
+        if (world.waveDirection !== -1) {
+            pool.push("They gather to the " + dirName[world.waveDirection] + " tonight. I'd face your guns that way.");
         }
-        if (wave % KING_WAVE_INTERVAL === KING_WAVE_INTERVAL - 1) {
+        if (world.wave % KING_WAVE_INTERVAL === KING_WAVE_INTERVAL - 1) {
             pool.push("The drums are wrong. Come tomorrow night, their King walks - and he brings the ground down with him.");
-        } else if ((wave + 1) % 5 === 0) {
+        } else if ((world.wave + 1) % 5 === 0) {
             pool.push("Something big is coming for you tomorrow. Bigger than what you've buried so far.");
         }
-        if (wave >= TROLL_MIN_WAVE) pool.push("If a troll comes, don't trust your eyes - it knits itself back up. Burn it and the mending stops.");
-        if (wave >= CYCLOP_MIN_WAVE) pool.push("The one-eyed brute swings wide and hits hard. Don't stand still in front of it.");
-        if (wave >= RIDER_MIN_WAVE) pool.push("Warg riders need a run-up. Break their line early and they're just orcs on dogs.");
-        if (wave > 2) pool.push("Winged ones come straight over the treeline. Nothing on the ground will slow them.");
+        if (world.wave >= TROLL_MIN_WAVE) pool.push("If a troll comes, don't trust your eyes - it knits itself back up. Burn it and the mending stops.");
+        if (world.wave >= CYCLOP_MIN_WAVE) pool.push("The one-eyed brute swings wide and hits hard. Don't stand still in front of it.");
+        if (world.wave >= RIDER_MIN_WAVE) pool.push("Warg riders need a run-up. Break their line early and they're just orcs on dogs.");
+        if (world.wave > 2) pool.push("Winged ones come straight over the treeline. Nothing on the ground will slow them.");
         pool.push("Nothing stands between you and them any more. You are the wall.");
         pool.push("Raise your extractors early - they only work by daylight, and they pay all night for it.");
         pool.push("Bear's worth more than it looks, if you can take it. But it only prowls by daylight.");
@@ -2356,14 +2377,14 @@
             if (this.markedForDeletion) return;
             this.hp -= amount;
             // The Beast Caller keeps wounded game where it stands.
-            if (!campOneOffs.beastcall) { this.fleeTimer = CRITTER_FLEE_TIME; this.pause = 0; }
+            if (!world.campOneOffs.beastcall) { this.fleeTimer = CRITTER_FLEE_TIME; this.pause = 0; }
             spawnParticles(this.x, this.y, '#8f3a3a', 4);
             if (this.hp <= 0) {
                 this.markedForDeletion = true;
                 questKill('critter', this.type);
                 spawnParticles(this.x, this.y, '#8f3a3a', 16);
                 playSound('hit');
-                if (campOneOffs.skinning || rnd() < this.def.meat) entities.items.push(new Item(this.x, this.y, 'hp'));
+                if (world.campOneOffs.skinning || rnd() < this.def.meat) world.entities.items.push(new Item(this.x, this.y, 'hp'));
             }
         }
         update(dt) {
@@ -2411,7 +2432,7 @@
             let d = this.def;
             ctx.save();
             ctx.translate(this.x, this.y);
-            if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+            if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
             // boar, deer and rabbit all has a shadow baked into the sprite already.
             ctx.scale(this.facing, 1);
             if (d.sprite.complete && d.sprite.naturalWidth !== 0) {
@@ -2431,14 +2452,14 @@
     // Keeps the wilds stocked without letting the population creep up day after day.
     function stockWildlife() {
         for (let type in CRITTER_POP) {
-            let have = entities.critters.filter(c => c.type === type).length;
+            let have = world.entities.critters.filter(c => c.type === type).length;
             for (let i = have; i < CRITTER_POP[type]; i++) {
                 for (let t = 0; t < 40; t++) {
                     let x = 200 + rnd() * (WORLD_W - 400);
                     let y = 200 + rnd() * (WORLD_H - 400);
                     if (Math.hypot(x - WORLD_CX, y - WORLD_CY) < CRITTER_KEEPOUT) continue;
                     if (isCollidingWithObstacle(x, y, CRITTERS[type].radius)) continue;
-                    entities.critters.push(new Critter(type, x, y));
+                    world.entities.critters.push(new Critter(type, x, y));
                     break;
                 }
             }
@@ -2452,10 +2473,10 @@
             this.life -= dt;
             if (this.life <= 0) { spawnParticles(this.x, this.y, this.type === 'hp' ? '#c8324a' : '#3a7fd5', 6); this.markedForDeletion = true; return; }
             // Whoever walks over it gets it, not whoever happens to be this client.
-            const taker = players.find(p => p.hp > 0 && Math.hypot(p.x - this.x, p.y - this.y) < p.radius + this.radius);
+            const taker = world.players.find(p => p.hp > 0 && Math.hypot(p.x - this.x, p.y - this.y) < p.radius + this.radius);
             if (taker) {
-                if(this.type === 'hp') { taker.hp = Math.min(taker.maxHp, taker.hp + 50); entities.texts.push(new FloatingText(this.x, this.y, "+50 HP", '#00ff00')); }
-                if(this.type === 'mp') { taker.mp = Math.min(taker.maxMp, taker.mp + 50); entities.texts.push(new FloatingText(this.x, this.y, "+50 MP", '#00ffff')); }
+                if(this.type === 'hp') { taker.hp = Math.min(taker.maxHp, taker.hp + 50); world.entities.texts.push(new FloatingText(this.x, this.y, "+50 HP", '#00ff00')); }
+                if(this.type === 'mp') { taker.mp = Math.min(taker.maxMp, taker.mp + 50); world.entities.texts.push(new FloatingText(this.x, this.y, "+50 MP", '#00ffff')); }
                 playSound('pickup'); this.markedForDeletion = true;
             }
         }
@@ -2515,7 +2536,7 @@
             if (this.isScorched) {
                 this.pulseTimer -= dt;
                 if (this.pulseTimer <= 0) {
-                    entities.enemies.forEach(e => { 
+                    world.entities.enemies.forEach(e => { 
                         if (e.type === 'assassin' && e.isInvisible) return;
                         if (Math.hypot(e.x - this.x, e.y - this.y) < this.radius) { e.takeDamage(this.dmg, true, this.element, this.source); playSound('hit'); } 
                     });
@@ -2529,11 +2550,11 @@
                 // their own owner, the Nexus and the extractors.
                 if (this.source === 'enemy') {
                     playersInRange(this.x, this.y, this.radius).forEach(p => p.takeDamage(this.dmg));
-                    if (Math.hypot(base.x - this.x, base.y - this.y) < this.radius + base.radius) base.takeDamage(this.dmg);
-                    entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < this.radius) t.takeDamage(this.dmg); });
+                    if (Math.hypot(world.base.x - this.x, world.base.y - this.y) < this.radius + world.base.radius) world.base.takeDamage(this.dmg);
+                    world.entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < this.radius) t.takeDamage(this.dmg); });
                     playSound('explosion');
                 } else {
-                    entities.enemies.forEach(e => {
+                    world.entities.enemies.forEach(e => {
                         if (e.type === 'assassin' && e.isInvisible) return;
                         if (Math.hypot(e.x - this.x, e.y - this.y) < this.radius) {
                             e.takeDamage(this.dmg, this.source === 'player', this.element, this.source); playSound('hit');
@@ -2644,7 +2665,7 @@
                 return;
             }
             if (this.color === '#00ffff' && this.radius < 50 && this.maxLife < 1) { // Laser
-                ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(this.x, this.y); ctx.stroke();
+                ctx.strokeStyle = this.color; ctx.lineWidth = this.radius * (this.life/this.maxLife); ctx.beginPath(); ctx.moveTo(world.base.x, world.base.y); ctx.lineTo(this.x, this.y); ctx.stroke();
             } else {
                 // Fallback path for Scorched Earth when its sheet has not loaded. Its zone lives 5s,
                 // so life/maxLife alone left it at ~97% opacity for most of that - a solid disc of
@@ -2664,7 +2685,7 @@
             // An armoured horde used to shrug off tower fire specifically. With the towers gone
             // that clause matched nothing, so the modifier now blunts every hit - and by a
             // quarter rather than a half, since it is your own damage it is biting into.
-            if (this instanceof Enemy && currentModifier === 'armored') {
+            if (this instanceof Enemy && world.currentModifier === 'armored') {
                 amount = amount * 0.75;
             }
             
@@ -2683,21 +2704,21 @@
                 if (element === 'fire') {
                     if (this.frozenTimer > 0) {
                         this.frozenTimer = 0; dmg *= 2.5;
-                        entities.texts.push(new FloatingText(this.x, this.y - 30, "THERMAL SHOCK!", '#ffaa00'));
-                        entities.effects.push(new Effect(this.x, this.y, 60, '#ffaa00', 0.2, dmg * 0.5, false, false, 'none', source));
+                        world.entities.texts.push(new FloatingText(this.x, this.y - 30, "THERMAL SHOCK!", '#ffaa00'));
+                        world.entities.effects.push(new Effect(this.x, this.y, 60, '#ffaa00', 0.2, dmg * 0.5, false, false, 'none', source));
                         playSound('explosion'); addShake(3);
                     } else { this.burningTimer = 3.0; }
                 } else if (element === 'ice') {
                     if (this.burningTimer > 0) {
                         this.burningTimer = 0; dmg *= 2.5;
-                        entities.texts.push(new FloatingText(this.x, this.y - 30, "THERMAL SHOCK!", '#00ffff'));
-                        entities.effects.push(new Effect(this.x, this.y, 60, '#00ffff', 0.2, dmg * 0.5, false, false, 'none', source));
+                        world.entities.texts.push(new FloatingText(this.x, this.y - 30, "THERMAL SHOCK!", '#00ffff'));
+                        world.entities.effects.push(new Effect(this.x, this.y, 60, '#00ffff', 0.2, dmg * 0.5, false, false, 'none', source));
                         playSound('explosion'); addShake(3);
                     } else if (this.freezeImmuneTimer <= 0) {
                         this.frozenTimer = FREEZE_DURATION;
                         this.freezeImmuneTimer = FREEZE_DURATION + FREEZE_IMMUNITY;
                     } else if (Math.random() < 0.08) {
-                        entities.texts.push(new FloatingText(this.x, this.y - 40, "RESIST", '#9ad4ff'));
+                        world.entities.texts.push(new FloatingText(this.x, this.y - 40, "RESIST", '#9ad4ff'));
                     }
                 }
             }
@@ -2708,8 +2729,8 @@
             }
 
             // Your own shield burns your own mana. The Nexus is covered by anyone who took it.
-            const shielder = players.includes(this) ? (this.manaShield ? this : null)
-                           : (this === base ? players.find(p => p.manaShield && p.mp > 0) : null);
+            const shielder = world.players.includes(this) ? (this.manaShield ? this : null)
+                           : (this === world.base ? world.players.find(p => p.manaShield && p.mp > 0) : null);
             if (dmg > 0 && shielder) {
                 let absorbed = Math.min(Math.floor(dmg * 0.5), shielder.mp);
                 shielder.mp -= absorbed; dmg -= absorbed;
@@ -2717,32 +2738,32 @@
 
             this.hp -= dmg;
             
-            if (isPlayerSource && dmg > 0) { gameStats.dmg += dmg; const c = killCredit(); if (c && c.buffs.vampirism > 0) c.hp = Math.min(c.maxHp, c.hp + dmg * c.buffs.vampirism); }
+            if (isPlayerSource && dmg > 0) { world.gameStats.dmg += dmg; const c = killCredit(); if (c && c.buffs.vampirism > 0) c.hp = Math.min(c.maxHp, c.hp + dmg * c.buffs.vampirism); }
             if (isPlayerSource && dmg > 0 && this instanceof Enemy && source === 'player') this.aggroTimer = AGGRO_HOLD;
 
             // Thorns pays back whoever actually swung at you.
-            const spiked = players.includes(this) ? this
-                         : (this === base ? players.reduce((b, p) => (!b || p.buffs.thorns > b.buffs.thorns) ? p : b, null) : null);
+            const spiked = world.players.includes(this) ? this
+                         : (this === world.base ? world.players.reduce((b, p) => (!b || p.buffs.thorns > b.buffs.thorns) ? p : b, null) : null);
             if (dmg > 0 && spiked && spiked.buffs.thorns > 0 && attacker && attacker instanceof Enemy) {
                 let back = Math.max(1, Math.floor(dmg * spiked.buffs.thorns));
                 attacker.takeDamage(back, true, 'none', 'player');
                 spawnParticles(attacker.x, attacker.y, '#7ef7d8', 3);
                 // Unbreakable: what you throw back, you take in.
-                const reflector = players.includes(this) ? this : players.find(p => p.reflectHeals);
+                const reflector = world.players.includes(this) ? this : world.players.find(p => p.reflectHeals);
                 if (reflector && reflector.reflectHeals) {
                     let mend = Math.max(1, Math.floor(back * 0.5));
                     reflector.hp = Math.min(reflector.maxHp, reflector.hp + mend);
-                    entities.texts.push(new FloatingText(reflector.x, reflector.y - 50, '+' + mend, '#7ef7d8'));
+                    world.entities.texts.push(new FloatingText(reflector.x, reflector.y - 50, '+' + mend, '#7ef7d8'));
                 }
             }
             
             if (this instanceof Enemy) {
                 if (this.isAsleep) {
                     this.isAsleep = false;
-                    entities.texts.push(new FloatingText(this.x, this.y - 50, "AWAKENED!", '#ff0000'));
+                    world.entities.texts.push(new FloatingText(this.x, this.y - 50, "AWAKENED!", '#ff0000'));
                     playSound('error'); addShake(10);
                 }
-                if (dmg > 0) entities.texts.push(new FloatingText(this.x, this.y - this.radius, isCrit ? dmg + '!' : dmg, isCrit ? '#ff7b2e' : '#ffcc00'));
+                if (dmg > 0) world.entities.texts.push(new FloatingText(this.x, this.y - this.radius, isCrit ? dmg + '!' : dmg, isCrit ? '#ff7b2e' : '#ffcc00'));
                 if (dmg > 0) playSound('hit'); 
             }
             if ((this instanceof Base || this instanceof Extractor) && dmg > 0) addShake(2);
@@ -2751,26 +2772,26 @@
                 const killer = killCredit();
                 if (killer && killer.buffs.lifeOnKill > 0) {
                     killer.hp = Math.min(killer.maxHp, killer.hp + killer.buffs.lifeOnKill);
-                    entities.texts.push(new FloatingText(killer.x, killer.y - 50, '+' + killer.buffs.lifeOnKill, '#4dff88'));
+                    world.entities.texts.push(new FloatingText(killer.x, killer.y - 50, '+' + killer.buffs.lifeOnKill, '#4dff88'));
                 }
             }
             // Warlord's Tribute: the spoils come off the corpse, not the treeline.
             if (this.hp <= 0 && !this.markedForDeletion && this instanceof Enemy && killCredit() && killCredit().killTribute) {
-                inventory.wood += 2; inventory.stone += 2;
-                entities.texts.push(new FloatingText(this.x, this.y - 32, '+2W +2S', '#ffcc00'));
+                world.inventory.wood += 2; world.inventory.stone += 2;
+                world.entities.texts.push(new FloatingText(this.x, this.y - 32, '+2W +2S', '#ffcc00'));
             }
             if (this.hp <= 0 && !this.markedForDeletion) {
                 this.markedForDeletion = true;
 
                 if (this instanceof Enemy) {
-                    gameStats.kills++; totalKills++;
+                    world.gameStats.kills++; world.totalKills++;
                     questKill('enemy', this.type);
-                    if (totalKills === 1) checkAchievement('first_blood');
+                    if (world.totalKills === 1) checkAchievement('first_blood');
                     
                     if (this.type === 'predator') {
                         let loot = bearLoot();
-                        inventory.mana += loot; inventory.wood += loot; inventory.stone += loot;
-                        entities.texts.push(new FloatingText(this.x, this.y, "+" + loot + " EACH!", '#ffcc00'));
+                        world.inventory.mana += loot; world.inventory.wood += loot; world.inventory.stone += loot;
+                        world.entities.texts.push(new FloatingText(this.x, this.y, "+" + loot + " EACH!", '#ffcc00'));
                         playSound('levelup');
                     } else {
                         // Trash pays 14 rather than 10. Levels are the only power you accumulate
@@ -2784,28 +2805,28 @@
                         let swarmCut = this.swarmling ? 0.25 : 1;
                         // Experience is personal, so it goes to the killer rather than the party.
                         const scorer = killCredit();
-                        if (scorer) scorer.gainXp(Math.max(1, Math.floor(xpDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1));
+                        if (scorer) scorer.gainXp(Math.max(1, Math.floor(xpDrop * swarmCut)) * (world.currentWeather==='bloodmoon'?3:1));
                         
                         // Trash mana creeps up with the waves. Raising forge and shop prices without
                         // this would leave mana the permanent bottleneck on everything and a long run
                         // unable to finish the tree at all. It does not compound the way the pickaxe
                         // did - you earn it by killing more, which is the loop already being asked of you.
-                        let trashMana = 2 + Math.floor(wave / 5);
+                        let trashMana = 2 + Math.floor(world.wave / 5);
                         let manaDrop = this.type === 'orcking' ? 150 : (this.type === 'boss' ? 50 : (this.type === 'cyclop' ? 35 :
                                        (this.type === 'troll' ? 25 : (this.type === 'orcrider' ? 12 : (this.type === 'golem' ? 5 : trashMana)))));
-                        manaDrop = Math.max(1, Math.floor(manaDrop * swarmCut)) * (currentWeather==='bloodmoon'?3:1);
+                        manaDrop = Math.max(1, Math.floor(manaDrop * swarmCut)) * (world.currentWeather==='bloodmoon'?3:1);
                         // Mana into the shared pot; the trickle of personal mana to the killer.
-                        inventory.mana += manaDrop;
+                        world.inventory.mana += manaDrop;
                         const gainer = killCredit();
                         if (gainer) gainer.mp = Math.min(gainer.maxMp, gainer.mp + 5);
 
                         let pColor = this.type === 'golem' ? '#777' : (this.type === 'harpy' ? '#7a6a3a' : '#5b9e32');
                         spawnParticles(this.x, this.y, pColor, this.radius);
-                        if (rnd() < 0.1) entities.items.push(new Item(this.x, this.y, rnd()>0.5?'hp':'mp'));
+                        if (rnd() < 0.1) world.entities.items.push(new Item(this.x, this.y, rnd()>0.5?'hp':'mp'));
                         // Night visitors are a fight you did not pick, so they always pay out.
-                        if (this.type === 'cyclop' || this.type === 'troll') entities.items.push(new Item(this.x, this.y, rnd()>0.5?'hp':'mp'));
+                        if (this.type === 'cyclop' || this.type === 'troll') world.entities.items.push(new Item(this.x, this.y, rnd()>0.5?'hp':'mp'));
                         
-                        if (this.type === 'bomber') { entities.effects.push(new Effect(this.x, this.y, 100, '#ffaa00', 0.5, 40, false, false, 'none', 'enemy')); addShake(15); playSound('explosion'); }
+                        if (this.type === 'bomber') { world.entities.effects.push(new Effect(this.x, this.y, 100, '#ffaa00', 0.5, 40, false, false, 'none', 'enemy')); addShake(15); playSound('explosion'); }
                     }
                 }
             } 
@@ -2813,10 +2834,10 @@
     }
 
     class Base extends Entity {
-        constructor() { super(WORLD_CX, WORLD_CY, NEXUS_RADIUS, nexusMaxHpFor(wave)); this.repairedToday = false; this.regenTimer = 0; this.hasBrazier = false; this.overchargeCd = 0; this.overchargeActive = 0; }
+        constructor() { super(WORLD_CX, WORLD_CY, NEXUS_RADIUS, nexusMaxHpFor(world.wave)); this.repairedToday = false; this.regenTimer = 0; this.hasBrazier = false; this.overchargeCd = 0; this.overchargeActive = 0; }
         // Called when the wave advances: the structure hardens without erasing existing damage.
         recalcMaxHp() {
-            let want = nexusMaxHpFor(wave);
+            let want = nexusMaxHpFor(world.wave);
             if (want > this.maxHp) { let gain = want - this.maxHp; this.maxHp = want; this.hp += gain; }
             else this.maxHp = want;
             this.hp = Math.min(this.hp, this.maxHp);
@@ -2825,7 +2846,7 @@
             if (this.overchargeCd > 0) this.overchargeCd -= dt;
             if (this.overchargeActive > 0) this.overchargeActive -= dt;
         
-            if (players.some(p => p.baseRegen) || this.hasBrazier) { this.regenTimer += dt; if (this.regenTimer >= 2.0) { this.hp = Math.min(this.maxHp, this.hp + (this.hasBrazier ? 12 : 5)); this.regenTimer = 0; } }
+            if (world.players.some(p => p.baseRegen) || this.hasBrazier) { this.regenTimer += dt; if (this.regenTimer >= 2.0) { this.hp = Math.min(this.maxHp, this.hp + (this.hasBrazier ? 12 : 5)); this.regenTimer = 0; } }
         }
         draw(ctx) {
             let pulse = Math.abs(Math.sin(performance.now() / 400)) * 10;
@@ -2936,7 +2957,7 @@
             // Overcharge's five second window used to halve tower cooldowns and nothing else,
             // so with the towers gone it was a ring drawn on the ground. It now drives the only
             // weapon left: half the swing time and half again the damage while it burns.
-            if (typeof base !== 'undefined' && base && base.overchargeActive > 0) {
+            if (typeof world.base !== 'undefined' && world.base && world.base.overchargeActive > 0) {
                 this.atk = Math.floor(this.atk * 1.5);
                 this.attackCd *= 0.5;
             }
@@ -2958,7 +2979,7 @@
             }
             if (gained > 0) {
                 this.recalcStats(); this.hp = this.maxHp; this.mp = this.maxMp; playSound('levelup');
-                entities.texts.push(new FloatingText(this.x, this.y - 40,
+                world.entities.texts.push(new FloatingText(this.x, this.y - 40,
                     gained > 1 ? "LEVEL UP x" + gained + "!" : "LEVEL UP!", '#ffcc00'));
             }
         }
@@ -2976,7 +2997,7 @@
                 if (keys['w']) dy -= 1; if (keys['s']) dy += 1; if (keys['a']) dx -= 1; if (keys['d']) dx += 1;
                 if (dx !== 0 || dy !== 0) {
                     let len = Math.sqrt(dx*dx + dy*dy); 
-                    let speed = this.spd * this.buffs.speedMult * (currentWeather==='blizzard'?0.7:1) * (dt*60);
+                    let speed = this.spd * this.buffs.speedMult * (world.currentWeather==='blizzard'?0.7:1) * (dt*60);
                     let nextX = this.x + (dx/len) * speed; let nextY = this.y + (dy/len) * speed;
                     let px = this.x, py = this.y;
                     if (this.isFlying || !isCollidingWithObstacle(nextX, nextY, this.radius)) { this.x = nextX; this.y = nextY; }
@@ -3028,22 +3049,22 @@
 
             // Overcharge only changes the numbers through recalcStats, so catch both edges of
             // the window - switching it on and letting it lapse - and rebuild the stats there.
-            let ocNow = base && base.overchargeActive > 0;
+            let ocNow = world.base && world.base.overchargeActive > 0;
             if (ocNow !== this.wasOvercharged) { this.wasOvercharged = ocNow; this.recalcStats(); }
 
             // Overcharge is a night-only button, so say so rather than swallowing the press.
-            if (keys['q'] && gameState !== 'NIGHT') {
+            if (keys['q'] && world.gameState !== 'NIGHT') {
                 playSound('error');
-                entities.texts.push(new FloatingText(this.x, this.y - 50, "THE NEXUS ONLY WAKES AT NIGHT", '#9a9a90'));
+                world.entities.texts.push(new FloatingText(this.x, this.y - 50, "THE NEXUS ONLY WAKES AT NIGHT", '#9a9a90'));
                 keys['q'] = false;
             }
-            if (keys['q'] && base.overchargeCd <= 0 && gameState === 'NIGHT') {
-                base.overchargeActive = 5.0;
-                base.overchargeCd = 45.0;
+            if (keys['q'] && world.base.overchargeCd <= 0 && world.gameState === 'NIGHT') {
+                world.base.overchargeActive = 5.0;
+                world.base.overchargeCd = 45.0;
                 // `this`, not the global: the nova is powered by whoever pressed the key.
-                entities.effects.push(new Effect(base.x, base.y, 400, '#00ffff', 0.5, this.atk * 3, false, false, 'none', 'player'));
+                world.entities.effects.push(new Effect(world.base.x, world.base.y, 400, '#00ffff', 0.5, this.atk * 3, false, false, 'none', 'player'));
                 addShake(20); playSound('explosion');
-                entities.texts.push(new FloatingText(base.x, base.y - 80, "NEXUS OVERCHARGE!", '#00ffff'));
+                world.entities.texts.push(new FloatingText(world.base.x, world.base.y - 80, "NEXUS OVERCHARGE!", '#00ffff'));
                 this.wasOvercharged = true; this.recalcStats();   // take effect on this frame, not the next
                 keys['q'] = false;
             }
@@ -3051,13 +3072,13 @@
             if (keys['e'] && this.mp >= this.data.abCost && this.abTimer <= 0 && this.abilityCooldownTimer <= 0) {
                 this.useAbility(); this.abilityCooldownTimer = this.data.abCd * this.buffs.hasteMod; keys['e'] = false;
             }
-            if (mouse.rightClicked && gameState === 'DAY') { this.placeBuilding(); mouse.rightClicked = false; }
+            if (mouse.rightClicked && world.gameState === 'DAY') { this.placeBuilding(); mouse.rightClicked = false; }
             
             if (this.abTimer > 0 && this.cls === 'warrior') {
                 this.angle += dt * 15; this.whirlTick -= dt;
                 this.whirlSpin += dt * 15; this.whirlPulse = Math.max(0, this.whirlPulse - dt * 5);
                 if (this.whirlTick <= 0) {
-                    entities.enemies.forEach(e => {
+                    world.entities.enemies.forEach(e => {
                         if (e.type === 'assassin' && e.isInvisible) return;
                         if (Math.hypot(e.x - this.x, e.y - this.y) < 100 * this.whirlMod) {
                             let dmgDealt = this.atk * 0.5;
@@ -3125,25 +3146,25 @@
                 if (this.leapSlam) { 
                     this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, mouse.x));
                     this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, mouse.y));
-                    entities.effects.push(new Effect(this.x, this.y, 100, '#ff4d4d', 0.2, 0, false, false, 'none', 'player')); 
+                    world.entities.effects.push(new Effect(this.x, this.y, 100, '#ff4d4d', 0.2, 0, false, false, 'none', 'player')); 
                     addShake(10); 
                     this.invincibleTimer = 0.5;
                 }
                 this.abTimer = 1.5; this.abMaxTimer = 1.5; this.whirlTick = 0; this.whirlSpin = 0; this.whirlPulse = 0;
             } 
             else if (this.cls === 'mage') { 
-                entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player', 'meteor')); 
-                if (this.scorchedEarth) entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff3300', 5.0, this.atk * 0.5, false, true, 'fire', 'player', 'scorched'));
+                world.entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player', 'meteor')); 
+                if (this.scorchedEarth) world.entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff3300', 5.0, this.atk * 0.5, false, true, 'fire', 'player', 'scorched'));
                 addShake(15); 
             } 
             else if (this.cls === 'archer') {
                 // Rain of Arrows: a volley that keeps falling on the marked ground.
                 let r = RAIN_RADIUS * this.rainMod;
-                entities.effects.push(new Effect(mouse.x, mouse.y, r, '#4dff4d', RAIN_DURATION, this.atk * RAIN_TICK_DMG, false, true, 'none', 'player', 'arrowrain'));
+                world.entities.effects.push(new Effect(mouse.x, mouse.y, r, '#4dff4d', RAIN_DURATION, this.atk * RAIN_TICK_DMG, false, true, 'none', 'player', 'arrowrain'));
                 if (this.rainSplinters) {
                     for (let i = 0; i < RAIN_SPLINTERS; i++) {
                         let a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r;
-                        entities.projectiles.push(new Projectile(mouse.x + Math.cos(a)*d, mouse.y + Math.sin(a)*d, 0, 0, this.atk * 1.5, true, '#ffaa00', 0, false, 0, true, 'fire', 'player'));
+                        world.entities.projectiles.push(new Projectile(mouse.x + Math.cos(a)*d, mouse.y + Math.sin(a)*d, 0, 0, this.atk * 1.5, true, '#ffaa00', 0, false, 0, true, 'fire', 'player'));
                     }
                 }
                 addShake(6);
@@ -3157,7 +3178,7 @@
                 // the centre of his own circle instead of a head low in it. Offsetting the effect
                 // itself rather than just the drawing keeps the circle you see and the circle that
                 // heals and hits as one and the same.
-                entities.effects.push(new Effect(this.x + this.visualMidX(), this.y + this.visualMidY(), 250, '#ffffcc', 0.5, this.atk * 2.5, false, false, 'none', 'player', 'holynova'));
+                world.entities.effects.push(new Effect(this.x + this.visualMidX(), this.y + this.visualMidY(), 250, '#ffffcc', 0.5, this.atk * 2.5, false, false, 'none', 'player', 'holynova'));
                 
                 let applyHeal = (ent, amt) => {
                     if (ent.hp >= ent.maxHp && this.overheal) ent.shield = Math.min(ent.maxHp, ent.shield + amt);
@@ -3165,11 +3186,11 @@
                 };
                 
                 applyHeal(this, healAmt);
-                if (Math.hypot(this.x - base.x, this.y - base.y) < 250) applyHeal(base, healAmt*2);
+                if (Math.hypot(this.x - world.base.x, this.y - world.base.y) < 250) applyHeal(world.base, healAmt*2);
                 if (this.novaInvincibility) this.invincibleTimer = 3.0;
-                if (this.novaBeams) entities.enemies.forEach(e => {
+                if (this.novaBeams) world.entities.enemies.forEach(e => {
                     if (e.type === 'assassin' && e.isInvisible) return;
-                    if (Math.hypot(e.x - this.x, e.y - this.y) < 250) entities.effects.push(new Effect(e.x, e.y, 40, '#ffe666', 0.3, this.atk * 2 * this.novaBeamMult, false, false, 'none', 'player'));
+                    if (Math.hypot(e.x - this.x, e.y - this.y) < 250) world.entities.effects.push(new Effect(e.x, e.y, 40, '#ffe666', 0.3, this.atk * 2 * this.novaBeamMult, false, false, 'none', 'player'));
                 });
                 addShake(8);
             }
@@ -3180,8 +3201,8 @@
             playSound('shoot');
             if (this.data.type === 'melee') {
                 let reachX = this.x + Math.cos(this.angle) * 40, reachY = this.y + Math.sin(this.angle) * 40;
-                entities.effects.push(new Effect(reachX, reachY, this.data.range, '#ffffff', 0.2));
-                entities.enemies.forEach(e => { 
+                world.entities.effects.push(new Effect(reachX, reachY, this.data.range, '#ffffff', 0.2));
+                world.entities.enemies.forEach(e => { 
                     if (e.type === 'assassin' && e.isInvisible) return;
                     if (Math.hypot(e.x - reachX, e.y - reachY) < this.data.range) { 
                         let dmgDealt = this.atk;
@@ -3189,14 +3210,14 @@
                     } 
                 });
                 // Wildlife is fair game, and gets no say in it beyond running.
-                entities.critters.forEach(c => {
+                world.entities.critters.forEach(c => {
                     if (Math.hypot(c.x - reachX, c.y - reachY) < this.data.range + c.radius) c.takeDamage(this.atk);
                 });
             } else {
                 let vx = Math.cos(this.angle) * 12 * this.projSpeedMod, vy = Math.sin(this.angle) * 12 * this.projSpeedMod;
                 if (this.smite) { vx *= 5; vy *= 5; } 
                 let el = (this.cls === 'mage') ? (this.attackSlows ? 'ice' : 'fire') : 'none';
-                entities.projectiles.push(new Projectile(this.x, this.y, vx, vy, this.atk, true, this.data.color, this.chainBounces, this.attackSlows, this.piercingArrows, this.smite, el, 'player', this));
+                world.entities.projectiles.push(new Projectile(this.x, this.y, vx, vy, this.atk, true, this.data.color, this.chainBounces, this.attackSlows, this.piercingArrows, this.smite, el, 'player', this));
             }
             this.lastAttack = this.attackCd;
         }
@@ -3207,23 +3228,23 @@
             if (!placingBuilding) return;
             let key = placingBuilding, b = BUILDINGS[key], c = buildingCost(key);
             let mx = mouse.x, my = mouse.y;
-            let deny = (msg) => { playSound('error'); entities.texts.push(new FloatingText(mx, my - 20, msg, '#ff4d4d')); };
+            let deny = (msg) => { playSound('error'); world.entities.texts.push(new FloatingText(mx, my - 20, msg, '#ff4d4d')); };
 
             if (b.count() >= b.max) { deny(b.name.toUpperCase() + " LIMIT " + b.count() + "/" + b.max); return; }
             if (!canAfford(c)) { deny("NOT ENOUGH RESOURCES!"); return; }
 
             // Everything already standing needs elbow room, and nothing goes inside the Nexus.
-            let clash = entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
-                     || (forgeBuilding && Math.hypot(forgeBuilding.x - mx, forgeBuilding.y - my) < EXTRACTOR_SPACING);
-            if (clash || Math.hypot(base.x - mx, base.y - my) < NEXUS_KEEPOUT || isCollidingWithObstacle(mx, my, 30)) { deny("BLOCKED"); return; }
+            let clash = world.entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
+                     || (world.forgeBuilding && Math.hypot(world.forgeBuilding.x - mx, world.forgeBuilding.y - my) < EXTRACTOR_SPACING);
+            if (clash || Math.hypot(world.base.x - mx, world.base.y - my) < NEXUS_KEEPOUT || isCollidingWithObstacle(mx, my, 30)) { deny("BLOCKED"); return; }
 
-            inventory.wood -= c.w; inventory.stone -= c.s; inventory.mana -= c.m;
+            world.inventory.wood -= c.w; world.inventory.stone -= c.s; world.inventory.mana -= c.m;
             if (key === 'extractor') {
-                entities.extractors.push(new Extractor(mx, my));
-                gameStats.extractors++; if (gameStats.extractors === 3) checkAchievement('builder');
+                world.entities.extractors.push(new Extractor(mx, my));
+                world.gameStats.extractors++; if (world.gameStats.extractors === 3) checkAchievement('builder');
             } else {
-                forgeBuilding = { x: mx, y: my };
-                entities.texts.push(new FloatingText(mx, my - 60, "THE FORGE IS LIT", '#ffcc66'));
+                world.forgeBuilding = { x: mx, y: my };
+                world.entities.texts.push(new FloatingText(mx, my - 60, "THE FORGE IS LIT", '#ffcc66'));
             }
             placingBuilding = null;
             spawnParticles(mx, my, '#fff', 18); playSound('levelup'); addShake(6); ui.buildPalette();
@@ -3338,11 +3359,11 @@
         }
         update(dt) {
             this.tick -= dt;
-            if (gameState === 'DAY' && this.tick <= 0) {
+            if (world.gameState === 'DAY' && this.tick <= 0) {
                 // Shared building: the party's best prospector sets the yield.
-            let n = 2 + players.reduce((best, p) => Math.max(best, p.extractorBonus || 0), 0);
-                inventory.wood += n; inventory.stone += n;
-                entities.texts.push(new FloatingText(this.x, this.y - 20, "+" + (n * 2) + " Res", '#ffcc00'));
+            let n = 2 + world.players.reduce((best, p) => Math.max(best, p.extractorBonus || 0), 0);
+                world.inventory.wood += n; world.inventory.stone += n;
+                world.entities.texts.push(new FloatingText(this.x, this.y - 20, "+" + (n * 2) + " Res", '#ffcc00'));
                 playSound('pickup');
                 this.tick = 4.0;
             }
@@ -3354,7 +3375,7 @@
             ctx.beginPath(); ctx.ellipse(0, EXTRACTOR_FEET - 6, dw * 0.4, dw * 0.11, 0, 0, Math.PI*2); ctx.fill();
             if (extractorSprite.complete && extractorSprite.naturalWidth !== 0) {
                 // The rig glows while it is actually producing, i.e. during the day.
-                if (gameState === 'DAY') {
+                if (world.gameState === 'DAY') {
                     let pulse = 0.4 + Math.abs(Math.sin(performance.now() / 520)) * 0.3;
                     let grad = ctx.createRadialGradient(-dw*0.06, -8, 4, -dw*0.06, -8, 70);
                     grad.addColorStop(0, 'rgba(120, 255, 190, ' + (0.22 * pulse).toFixed(3) + ')');
@@ -3381,24 +3402,24 @@
         update(dt) {
             this.x += this.vx * (dt*60); this.y += this.vy * (dt*60); this.life -= dt; if(this.life <= 0) this.markedForDeletion = true;
             if(this.isFriendly) {
-                entities.critters.forEach(c => {
+                world.entities.critters.forEach(c => {
                     if (!this.markedForDeletion && Math.hypot(c.x - this.x, c.y - this.y) < c.radius + 10 && !this.hitList.includes(c)) {
                         c.takeDamage(this.dmg); this.hitList.push(c);
                         spawnParticles(this.x, this.y, this.color, 4);
                         if (!this.pierce) this.markedForDeletion = true;
                     }
                 });
-                entities.enemies.forEach(e => {
+                world.entities.enemies.forEach(e => {
                     if (!this.markedForDeletion && Math.hypot(e.x - this.x, e.y - this.y) < e.radius + 10 && !this.hitList.includes(e)) {
                         let dmgDealt = this.dmg;
                         const shooter = this.owner || nearestPlayer(this.x, this.y);
-                        if (shooter && shooter.shatter && (e.spd < e.baseSpd || e.frozenTimer > 0)) { dmgDealt *= 3; e.spd = e.baseSpd; e.frozenTimer = 0; entities.texts.push(new FloatingText(e.x, e.y, "SHATTER!", '#00ffff')); }
+                        if (shooter && shooter.shatter && (e.spd < e.baseSpd || e.frozenTimer > 0)) { dmgDealt *= 3; e.spd = e.baseSpd; e.frozenTimer = 0; world.entities.texts.push(new FloatingText(e.x, e.y, "SHATTER!", '#00ffff')); }
                         
                         e.takeDamage(dmgDealt, true, this.element, this.source); this.hitList.push(e); spawnParticles(this.x, this.y, this.color, 4);
-                        if (this.slows) e.spd = e.baseSpd * ((shooter && shooter.slowPower) || 0.5);if (shooter && shooter.cls === 'mage' && !this.isExplosive) entities.effects.push(new Effect(this.x, this.y, 50, '#ff9900', 0.2, 10, false, false, 'fire', this.source));
+                        if (this.slows) e.spd = e.baseSpd * ((shooter && shooter.slowPower) || 0.5);if (shooter && shooter.cls === 'mage' && !this.isExplosive) world.entities.effects.push(new Effect(this.x, this.y, 50, '#ff9900', 0.2, 10, false, false, 'fire', this.source));
                         
                         if (this.isExplosive) {
-                            entities.effects.push(new Effect(this.x, this.y, 80, '#ffaa00', 0.2, this.dmg, false, false, 'fire', this.source)); playSound('explosion'); addShake(3);
+                            world.entities.effects.push(new Effect(this.x, this.y, 80, '#ffaa00', 0.2, this.dmg, false, false, 'fire', this.source)); playSound('explosion'); addShake(3);
                             this.markedForDeletion = true;
                         } else {
                             // Ricochet first, pierce as the fallback. Pierce used to win outright,
@@ -3406,7 +3427,7 @@
                             let nearest = null;
                             if (this.chain > 0) {
                                 let minDist = 250;
-                                entities.enemies.forEach(ne => {
+                                world.entities.enemies.forEach(ne => {
                                     if (ne.isAsleep || (ne.type === 'assassin' && ne.isInvisible)) return;
                                     if (!this.hitList.includes(ne)) { let d = Math.hypot(ne.x - this.x, ne.y - this.y); if (d < minDist) { minDist = d; nearest = ne; } }
                                 });
@@ -3423,9 +3444,9 @@
                     }
                 });
             } else {
-                const struck = players.find(p => p.hp > 0 && Math.hypot(p.x - this.x, p.y - this.y) < p.radius + 5);
+                const struck = world.players.find(p => p.hp > 0 && Math.hypot(p.x - this.x, p.y - this.y) < p.radius + 5);
                 if (struck) { struck.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); } 
-                else if (Math.hypot(base.x - this.x, base.y - this.y) < base.radius + 5) { base.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); }
+                else if (Math.hypot(world.base.x - this.x, world.base.y - this.y) < world.base.radius + 5) { world.base.takeDamage(this.dmg); this.markedForDeletion = true; playSound('hit'); }
             }
         }
         draw(ctx) { 
@@ -3444,11 +3465,11 @@
         constructor(x, y, type) {
             // 1.15 compounded against a tower line that grew every wave. On foot alone it ran
             // away from the player's own curve, so it is 1.13 - the same shape, a slower climb.
-            let baseHPMult = Math.pow(1.13, wave - 1);
+            let baseHPMult = Math.pow(1.13, world.wave - 1);
             let startHp = Math.floor(35 * baseHPMult);
             super(x, y, type==='orcking'? KING_RADIUS : (type==='cyclop'? CYCLOP_RADIUS : (type==='troll'? TROLL_RADIUS : (type==='orcrider'? RIDER_RADIUS :
                 (type==='goblinarcher'? GOB_RADIUS : (type==='boss'? 40 : (type==='golem'? 25 : (type==='predator'? 45 : 15))))))), startHp);
-            this.type = type; this.baseSpd = 1.5 + (wave * 0.1); this.isFlying = (type === 'harpy');
+            this.type = type; this.baseSpd = 1.5 + (world.wave * 0.1); this.isFlying = (type === 'harpy');
             this.spawnPhase = Math.random() * 6.283;
             this.isAsleep = false;
             this.isInvisible = false;
@@ -3468,7 +3489,7 @@
             if (this.type === 'troll') { this.hp *= TROLL_HP_MULT; this.baseSpd *= TROLL_SPD_MULT; }
             if (this.type === 'orcrider') { this.hp *= RIDER_HP_MULT; this.baseSpd *= RIDER_SPD_MULT; this.charge = 0; this.wheelTimer = 0; }
             if (this.type === 'bomber') { this.hp *= 0.8; this.baseSpd *= 1.2; }
-            if (this.type === 'predator') { this.hp = Math.floor(PREDATOR_BASE_HP * Math.pow(PREDATOR_HP_GROWTH, wave - 1)); this.baseSpd = 4 + Math.min(wave - 1, 10) * 0.06; this.isAsleep = true; }
+            if (this.type === 'predator') { this.hp = Math.floor(PREDATOR_BASE_HP * Math.pow(PREDATOR_HP_GROWTH, world.wave - 1)); this.baseSpd = 4 + Math.min(world.wave - 1, 10) * 0.06; this.isAsleep = true; }
             if (this.type === 'assassin') { this.hp *= 0.5; this.baseSpd *= 1.8; this.isInvisible = true; }
             if (this.type === 'necromancer') { this.hp *= 0.8; this.baseSpd *= 0.7; this.healCd = 2.0; this.castAnim = 0; }
             if (this.type === 'wolf') { this.hp *= 0.7; this.baseSpd *= 1.4; }
@@ -3486,13 +3507,13 @@
                 this.aura = 'none';
             }
             
-            if (currentWeather === 'bloodmoon') { this.baseSpd *= 1.5; }
+            if (world.currentWeather === 'bloodmoon') { this.baseSpd *= 1.5; }
 
             this.spd = this.baseSpd; 
             let baseDmg = this.type === 'orcking' ? KING_DMG_BASE : (this.type === 'cyclop' ? CYCLOP_DMG_BASE :
                           (this.type === 'troll' ? TROLL_DMG_BASE : (this.type === 'orcrider' ? RIDER_DMG_BASE : (this.type === 'boss' ? 20 : (this.type === 'predator' ? 40 :
                           (this.type === 'goblinarcher' ? 5 * GOB_DMG_MULT : (this.type === 'wolf' ? 8 : 5)))))));
-            this.dmg = Math.floor(baseDmg * Math.pow(1.1, wave - 1)); 
+            this.dmg = Math.floor(baseDmg * Math.pow(1.1, world.wave - 1)); 
             this.attackCd = 1.0; this.flashAnim = 0; this.frozenTimer = 0; this.freezeImmuneTimer = 0; this.aggroTimer = 0; this.stuckTimer = 0;
             this.maxHp = this.hp;
         }
@@ -3539,42 +3560,42 @@
             if (this.type === 'orcking') {
                 this.slamCd -= dt;
                 let slamTarget = distPlayer < KING_SLAM_RANGE ? targetPlayer
-                               : (Math.hypot(base.x - this.x, base.y - this.y) < KING_SLAM_RANGE + base.radius ? base : null);
+                               : (Math.hypot(world.base.x - this.x, world.base.y - this.y) < KING_SLAM_RANGE + world.base.radius ? world.base : null);
                 if (this.slamCd <= 0 && slamTarget) {
                     // Axe comes down: everything nearby takes a hit, extractors included.
                     this.slamCd = KING_SLAM_CD * (this.enraged ? 0.6 : 1.0);
                     this.frameX = 2; this.animTimer = 0;
-                    entities.effects.push(new Effect(this.x, this.y, KING_SLAM_RANGE, '#ff7b2e', 0.45, 0, false, false, 'none', 'enemy'));
+                    world.entities.effects.push(new Effect(this.x, this.y, KING_SLAM_RANGE, '#ff7b2e', 0.45, 0, false, false, 'none', 'enemy'));
                     let slam = Math.floor(this.dmg * KING_SLAM_DMG);
                     playersInRange(this.x, this.y, KING_SLAM_RANGE).forEach(p => p.takeDamage(slam, false, 'none', 'player', this));
-                    if (Math.hypot(base.x - this.x, base.y - this.y) < KING_SLAM_RANGE + base.radius) base.takeDamage(slam);
-                    entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < KING_SLAM_RANGE) t.takeDamage(slam); });
+                    if (Math.hypot(world.base.x - this.x, world.base.y - this.y) < KING_SLAM_RANGE + world.base.radius) world.base.takeDamage(slam);
+                    world.entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < KING_SLAM_RANGE) t.takeDamage(slam); });
                     spawnParticles(this.x, this.y, '#c98a3c', 26);
                     playSound('explosion'); addShake(22);
                 }
                 if (!this.enraged && this.hp < this.maxHp * 0.5) {
                     this.enraged = true; this.baseSpd *= 1.5; this.spd = this.baseSpd;
-                    entities.texts.push(new FloatingText(this.x, this.y - 140, "ENRAGED!", '#ff3b3b'));
+                    world.entities.texts.push(new FloatingText(this.x, this.y - 140, "ENRAGED!", '#ff3b3b'));
                     playSound('explosion'); addShake(25);
                     for (let i = 0; i < 20; i++) {
                         let ang = (Math.PI * 2 / 20) * i;
-                        entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(ang)*7, Math.sin(ang)*7, this.dmg, false, '#ffaa00'));
+                        world.entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(ang)*7, Math.sin(ang)*7, this.dmg, false, '#ffaa00'));
                     }
                 }
             }
             if (this.type === 'cyclop') {
                 this.smashCd -= dt;
                 let hitsPlayer = distPlayer < CYCLOP_SMASH;
-                let hitsBase = Math.hypot(base.x - this.x, base.y - this.y) < CYCLOP_SMASH + base.radius;
+                let hitsBase = Math.hypot(world.base.x - this.x, world.base.y - this.y) < CYCLOP_SMASH + world.base.radius;
                 if (this.smashCd <= 0 && (hitsPlayer || hitsBase)) {
                     // The club comes down and the ground goes with it - extractors included.
                     this.smashCd = CYCLOP_SMASH_CD;
                     this.frameX = 2; this.animTimer = 0;
-                    entities.effects.push(new Effect(this.x, this.y, CYCLOP_SMASH, '#d8a24a', 0.35, 0, false, false, 'none', 'enemy'));
+                    world.entities.effects.push(new Effect(this.x, this.y, CYCLOP_SMASH, '#d8a24a', 0.35, 0, false, false, 'none', 'enemy'));
                     let blow = Math.floor(this.dmg * 1.1);
                     playersInRange(this.x, this.y, CYCLOP_SMASH).forEach(p => p.takeDamage(blow, false, 'none', 'player', this));
-                    if (hitsBase) base.takeDamage(blow);
-                    entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < CYCLOP_SMASH) t.takeDamage(blow); });
+                    if (hitsBase) world.base.takeDamage(blow);
+                    world.entities.extractors.forEach(t => { if (Math.hypot(t.x - this.x, t.y - this.y) < CYCLOP_SMASH) t.takeDamage(blow); });
                     spawnParticles(this.x, this.y, '#c98a3c', 16);
                     playSound('explosion'); addShake(11);
                 }
@@ -3584,31 +3605,31 @@
                 playSound('explosion'); addShake(15);
                 for(let i=0; i<16; i++) {
                     let ang = (Math.PI * 2 / 16) * i;
-                    entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(ang)*8, Math.sin(ang)*8, this.dmg * 1.5, false, '#ffaa00'));
+                    world.entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(ang)*8, Math.sin(ang)*8, this.dmg * 1.5, false, '#ffaa00'));
                 }
             }
             
-            entities.enemies.forEach(other => {
+            world.entities.enemies.forEach(other => {
                 if (this !== other && this.type !== 'boss' && other.type !== 'boss' && this.type !== 'orcking' && other.type !== 'orcking') {
                     let edx = this.x - other.x; let edy = this.y - other.y; let edist = Math.hypot(edx, edy);
                     if (edist < this.radius + other.radius && edist > 0) { this.x += (edx / edist) * 0.5; this.y += (edy / edist) * 0.5; }
                 }
             });
 
-            let distBase = Math.hypot(base.x - this.x, base.y - this.y);
+            let distBase = Math.hypot(world.base.x - this.x, world.base.y - this.y);
             if (this.aggroTimer > 0) this.aggroTimer -= dt;
             let aggroRange = this.type === 'golem' ? AGGRO_RANGE_GOLEM : AGGRO_RANGE;
             if (distPlayer < aggroRange) this.aggroTimer = AGGRO_HOLD;           // you walked into it
             // Hold the grudge until you break well clear, so they don't flip-flop each step.
             let onPlayer = this.aggroTimer > 0 && distPlayer < aggroRange * AGGRO_DROP;
             if (!onPlayer) this.aggroTimer = 0;
-            let target = onPlayer ? targetPlayer : (distBase < distPlayer ? base : targetPlayer);
+            let target = onPlayer ? targetPlayer : (distBase < distPlayer ? world.base : targetPlayer);
             if (target !== this._lastTarget) { this._lastTarget = target; this.stuckTimer = 0; }
             
             if (this.type === 'necromancer') {
                 let healTarget = null;
                 let lowestHpRatio = 1.0;
-                entities.enemies.forEach(e => {
+                world.entities.enemies.forEach(e => {
                     if (e === this || e.markedForDeletion || e.hp >= e.maxHp) return;
                     if (e.hp / e.maxHp < lowestHpRatio) {
                         lowestHpRatio = e.hp / e.maxHp;
@@ -3622,7 +3643,7 @@
 
 
             let dx = target.x - this.x; let dy = target.y - this.y; let len = Math.hypot(dx, dy);
-            let stopDist = this.type === 'orcarcher' ? 300 : (this.type === 'goblinarcher' ? GOB_RANGE :(this.type === 'necromancer' && !players.includes(target) && target !== base ? 200 : this.radius + (target.radius || 0)));
+            let stopDist = this.type === 'orcarcher' ? 300 : (this.type === 'goblinarcher' ? GOB_RANGE :(this.type === 'necromancer' && !world.players.includes(target) && target !== world.base ? 200 : this.radius + (target.radius || 0)));
             
             if (len > stopDist) {
                 let speed = this.spd * (dt*60); 
@@ -3660,12 +3681,12 @@
             }
             
             let auraSpeedMult = 1.0;
-            entities.enemies.forEach(other => {
+            world.entities.enemies.forEach(other => {
                 if (other !== this && other.aura === 'speed' && Math.hypot(this.x - other.x, this.y - other.y) < 200) {
                     auraSpeedMult = 1.5;
                 }
             });
-            this.spd = this.baseSpd * (players.some(p => p.globalSlow) ? 0.8 : 1.0) * auraSpeedMult;
+            this.spd = this.baseSpd * (world.players.some(p => p.globalSlow) ? 0.8 : 1.0) * auraSpeedMult;
 
             if (this.type === 'orcrider') {
                 // A rising stuckTimer means it is jammed against something, and a rider with
@@ -3684,23 +3705,23 @@
             if (this.aura === 'heal') {
                 this.auraPulse -= dt;
                 if (this.auraPulse <= 0) {
-                    entities.enemies.forEach(other => {
+                    world.entities.enemies.forEach(other => {
                         if (Math.hypot(this.x - other.x, this.y - other.y) < 200 && other.hp < other.maxHp) {
                             other.hp = Math.min(other.maxHp, other.hp + (other.maxHp * 0.05));
-                            entities.effects.push(new Effect(other.x, other.y, other.radius + 10, '#00ff00', 0.3));
+                            world.entities.effects.push(new Effect(other.x, other.y, other.radius + 10, '#00ff00', 0.3));
                         }
                     });
                     this.auraPulse = 2.0;
                 }
             }
 
-            if (this.type === 'necromancer' && !players.includes(target) && target !== base) {
+            if (this.type === 'necromancer' && !world.players.includes(target) && target !== world.base) {
                 if (len <= 250) {
                     this.healCd -= dt;
                     if (this.healCd <= 0) {
                         this.castAnim = 0.7;
                         target.hp = Math.min(target.maxHp, target.hp + target.maxHp * HEAL_FRACTION);
-                        entities.effects.push(new Effect(target.x, target.y, 40, '#00ff00', 0.5));
+                        world.entities.effects.push(new Effect(target.x, target.y, 40, '#00ff00', 0.5));
                         playSound('pickup');
                         this.healCd = 2.0;
                     }
@@ -3718,10 +3739,10 @@
                 let orcInMelee = this.type === 'orcarcher' && distPlayer < ORC_MELEE_RANGE;
                 let gobInMelee = this.type === 'goblinarcher' && distPlayer < GOB_MELEE_RANGE;
                 if (this.type === 'orcarcher' && len <= 350 && !orcInMelee) {
-                    let angle = Math.atan2(dy, dx); entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*8, Math.sin(angle)*8, this.dmg, false, '#ff0000'));
+                    let angle = Math.atan2(dy, dx); world.entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*8, Math.sin(angle)*8, this.dmg, false, '#ff0000'));
                     this.attackCd = 2.0; playSound('shoot');
                 } else if (this.type === 'goblinarcher' && len <= GOB_RANGE + 40 && !gobInMelee) {
-                    let angle = Math.atan2(dy, dx); entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*9, Math.sin(angle)*9, this.dmg, false, '#cfe36b'));
+                    let angle = Math.atan2(dy, dx); world.entities.projectiles.push(new Projectile(this.x, this.y, Math.cos(angle)*9, Math.sin(angle)*9, this.dmg, false, '#cfe36b'));
                     this.attackCd = GOB_SHOT_CD; playSound('shoot');
                 } else if ((distPlayer < this.radius + 20 || orcInMelee || gobInMelee) && this.type !== 'golem' && this.type !== 'necromancer') { 
                     if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else {
@@ -3737,10 +3758,10 @@
                         }
                         this.spendCharge();
                         this.attackCd = 1.0; if(this.type === 'boss') addShake(5); playSound('hit'); }
-                } else if (distBase < this.radius + base.radius + 10) { 
-                    if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { base.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.hitPower()); this.spendCharge(); this.attackCd = 1.0; if(this.type === 'boss') addShake(8); playSound('hit'); }
+                } else if (distBase < this.radius + world.base.radius + 10) { 
+                    if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); } else { world.base.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.hitPower()); this.spendCharge(); this.attackCd = 1.0; if(this.type === 'boss') addShake(8); playSound('hit'); }
                 } else {
-                    entities.extractors.forEach(t => {
+                    world.entities.extractors.forEach(t => {
                         if (Math.hypot(t.x - this.x, t.y - this.y) < this.radius + 25) {
                             if (this.type === 'bomber') { this.hp = 0; this.takeDamage(0); }
                             else { t.takeDamage(this.type === 'golem' ? this.dmg * 2 : this.hitPower()); this.spendCharge(); this.attackCd = 1.0;
@@ -3790,7 +3811,7 @@
                 // The third frame is the detonation itself, so it is held for the run-in
                 // rather than the moment of death - you get a beat of warning.
                 let near = Math.min(nearestPlayerDist(this.x, this.y),
-                                    Math.hypot(base.x - this.x, base.y - this.y) - base.radius);
+                                    Math.hypot(world.base.x - this.x, world.base.y - this.y) - world.base.radius);
                 if (near < BOMBER_FUSE) this.frameX = 2;
                 else this.frameX = Math.floor((this.distanceTraveled || 0) / 28) % 2;
             }
@@ -3830,10 +3851,10 @@
             if (this.type === 'assassin' && this.isInvisible) return;
 
             ctx.save(); ctx.translate(this.x, this.y); 
-            if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+            if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
             const facingTarget = nearestPlayer(this.x, this.y);
-            let target = (this.type === 'golem' || !facingTarget) ? base
-                       : (Math.hypot(base.x - this.x, base.y - this.y) < Math.hypot(facingTarget.x - this.x, facingTarget.y - this.y) ? base : facingTarget);
+            let target = (this.type === 'golem' || !facingTarget) ? world.base
+                       : (Math.hypot(world.base.x - this.x, world.base.y - this.y) < Math.hypot(facingTarget.x - this.x, facingTarget.y - this.y) ? world.base : facingTarget);
             
             if (this.frozenTimer > 0) ctx.fillStyle = '#00ffff'; 
             else if (this.type === 'goblin') ctx.fillStyle = '#5b9e32';
@@ -4176,7 +4197,7 @@
 
     function resetGameToMenu() {
         // Stop the run properly - without this the loop kept simulating behind the menu.
-        gameState = 'MENU'; isPaused = false;
+        world.gameState = 'MENU'; isPaused = false;
         closeSettings();
         MODAL_IDS.forEach(id => closeModal(id));
         document.getElementById('gameOverOverlay').classList.add('hidden');
@@ -4227,8 +4248,8 @@
     function protectedSpots() {
         let pts = [];
         if (typeof player !== 'undefined' && player) pts.push({ x: player.x, y: player.y, r: ACTOR_CLEAR });
-        entities.critters.forEach(c => pts.push({ x: c.x, y: c.y, r: CRITTER_CLEAR }));
-        entities.npcs.forEach(np => pts.push({ x: np.x, y: np.y, r: NPC_CLEAR }));
+        world.entities.critters.forEach(c => pts.push({ x: c.x, y: c.y, r: CRITTER_CLEAR }));
+        world.entities.npcs.forEach(np => pts.push({ x: np.x, y: np.y, r: NPC_CLEAR }));
         return pts;
     }
     function tooCloseToActor(pts, x, y) {
@@ -4241,10 +4262,10 @@
         if (typeof player !== 'undefined' && player) {
             for (let guard = 0; guard < 8; guard++) {
                 if (!isCollidingWithObstacle(player.x, player.y, player.radius)) break;
-                let before = entities.solids.length + entities.resources.length;
-                entities.solids = entities.solids.filter(sp => Math.hypot(sp.x - player.x, sp.y - player.y) >= sp.r + player.radius);
-                entities.resources = entities.resources.filter(r => !r.solid || Math.hypot(r.x - player.x, r.y - player.y) >= r.solidRadius + player.radius);
-                if (entities.solids.length + entities.resources.length === before) {
+                let before = world.entities.solids.length + world.entities.resources.length;
+                world.entities.solids = world.entities.solids.filter(sp => Math.hypot(sp.x - player.x, sp.y - player.y) >= sp.r + player.radius);
+                world.entities.resources = world.entities.resources.filter(r => !r.solid || Math.hypot(r.x - player.x, r.y - player.y) >= r.solidRadius + player.radius);
+                if (world.entities.solids.length + world.entities.resources.length === before) {
                     // Nothing left to delete, so it is terrain - step out of it instead.
                     let ang = Math.atan2(player.y - WORLD_CY, player.x - WORLD_CX);
                     for (let step = 1; step <= 24; step++) {
@@ -4256,7 +4277,7 @@
                 }
             }
         }
-        entities.critters.concat(entities.npcs).forEach(a => {
+        world.entities.critters.concat(world.entities.npcs).forEach(a => {
             if (!isCollidingWithObstacle(a.x, a.y, a.radius)) return;
             for (let t = 0; t < 30; t++) {
                 let ang = rnd() * Math.PI * 2, d = 90 + rnd() * 260;
@@ -4268,13 +4289,13 @@
     }
 
     function generateMap() {
-        entities.obstacles = []; entities.resources = []; entities.decorations = []; entities.solids = [];
+        world.entities.obstacles = []; world.entities.resources = []; world.entities.decorations = []; world.entities.solids = [];
         let actorSpots = protectedSpots();
 
         // A few ponds, well clear of the nexus. Kept square so the sprite is never
         // stretched out of shape - the pond's own art supplies the oval.
         const lakes = [ [-2150, -900, 760], [1650, -1150, 620], [-1250, 1000, 680] ];
-        lakes.forEach(l => entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[2], 'lake')));
+        lakes.forEach(l => world.entities.obstacles.push(new Obstacle(WORLD_CX + l[0], WORLD_CY + l[1], l[2], l[2], 'lake')));
 
         layOutCamp();
 
@@ -4283,12 +4304,12 @@
         for(let i=0; i<260; i++) {
             let dx = rnd() * WORLD_W, dy = rnd() * WORLD_H;
             if (isCollidingWithObstacle(dx, dy, 0)) continue;
-            entities.decorations.push({ x: dx, y: dy, type: rnd() > 0.5 ? 'grass' : 'pebble', size: rnd() * 3 + 2 });
+            world.entities.decorations.push({ x: dx, y: dy, type: rnd() > 0.5 ? 'grass' : 'pebble', size: rnd() * 3 + 2 });
         }
 
 
 
-        for(let i=0, want=resourceCountFor(wave); i<want; i++) {
+        for(let i=0, want=resourceCountFor(world.wave); i<want; i++) {
             // Retry placement so resources never overlap each other, obstacles, or the base
             let placed = false;
             for (let attempt = 0; attempt < 20 && !placed; attempt++) {
@@ -4297,9 +4318,9 @@
                 if (Math.hypot(x-CAMP_X, y-CAMP_Y) < 220) continue;
                 if (tooCloseToActor(actorSpots, x, y)) continue;
                 if (isCollidingWithObstacle(x, y, 45)) continue;
-                let overlapsResource = entities.resources.some(r => Math.hypot(r.x - x, r.y - y) < 135);
+                let overlapsResource = world.entities.resources.some(r => Math.hypot(r.x - x, r.y - y) < 135);
                 if (overlapsResource) continue;
-                entities.resources.push(new Resource(x, y, rnd() > 0.5 ? 'wood' : 'stone'));
+                world.entities.resources.push(new Resource(x, y, rnd() > 0.5 ? 'wood' : 'stone'));
                 placed = true;
             }
         }
@@ -4307,10 +4328,10 @@
         // Spawn Mystery Caches - deliberately rare, they are a bonus not a staple
         for(let i=0; i<CACHES_PER_MAP; i++) {
             let cx = rnd() * (WORLD_W - 200) + 100; let cy = rnd() * (WORLD_H - 200) + 100;
-            let overlapsResource = entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
+            let overlapsResource = world.entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
             if (tooCloseToActor(actorSpots, cx, cy)) continue;
             if (Math.hypot(cx-WORLD_CX, cy-WORLD_CY) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
-                entities.resources.push(new Resource(cx, cy, 'cache'));
+                world.entities.resources.push(new Resource(cx, cy, 'cache'));
             }
         }
 
@@ -4328,56 +4349,56 @@
             let dwid = dh * (b[2] / b[3]);
             // Clearance scales with the canopy so a big tree never sits on top of a node.
             let clear = Math.max(90, dwid * 0.6);
-            if (entities.resources.some(r => Math.hypot(r.x - dx, r.y - dy) < clear)) continue;
-            entities.decorations.push({ x: dx, y: dy, type: 'scenery', sheet: g.sheet,
+            if (world.entities.resources.some(r => Math.hypot(r.x - dx, r.y - dy) < clear)) continue;
+            world.entities.decorations.push({ x: dx, y: dy, type: 'scenery', sheet: g.sheet,
                 sx: b[0], sy: b[1], sw: b[2], sh: b[3], h: dh,
                 flip: rnd() < 0.5, canopy: !!g.canopy });
-            if (g.solid) entities.solids.push({ x: dx, y: dy, r: dwid * g.solid });
+            if (g.solid) world.entities.solids.push({ x: dx, y: dy, r: dwid * g.solid });
         }
         freeBuriedActors();
 
         // Draw back-to-front so nearer scenery overlaps what is behind it.
-        entities.decorations.sort((a, b) => a.y - b.y);
+        world.entities.decorations.sort((a, b) => a.y - b.y);
         
         // Sleeping bear: an occasional visitor, never on consecutive days
-        if (wave - lastBearWave >= BEAR_MIN_GAP_DAYS && rnd() < BEAR_SPAWN_CHANCE) {
+        if (world.wave - world.lastBearWave >= BEAR_MIN_GAP_DAYS && rnd() < BEAR_SPAWN_CHANCE) {
             let ba = rnd() * Math.PI * 2, bd = 700 + rnd() * 1500;
             let px = clampWorld(WORLD_CX + Math.cos(ba) * bd, WORLD_W, 80);
             let py = clampWorld(WORLD_CY + Math.sin(ba) * bd, WORLD_H, 80);
             if (!isCollidingWithObstacle(px, py, 50)) {
-                entities.enemies.push(new Enemy(px, py, 'predator'));
-                entities.decorations.push({ x: px, y: py, type: 'crystal', size: 40 });
-                lastBearWave = wave;
+                world.entities.enemies.push(new Enemy(px, py, 'predator'));
+                world.entities.decorations.push({ x: px, y: py, type: 'crystal', size: 40 });
+                world.lastBearWave = world.wave;
             }
         }
     }
     
     function setWeather() {
         let rand = rnd();
-        if (gameState === 'NIGHT') {
-            if (rand < 0.1) currentWeather = 'bloodmoon';
-            else if (rand < 0.2) currentWeather = 'fog';
-            else if (rand < 0.3) currentWeather = 'blizzard';
-            else currentWeather = 'clear';
+        if (world.gameState === 'NIGHT') {
+            if (rand < 0.1) world.currentWeather = 'bloodmoon';
+            else if (rand < 0.2) world.currentWeather = 'fog';
+            else if (rand < 0.3) world.currentWeather = 'blizzard';
+            else world.currentWeather = 'clear';
             
             let modRand = rnd();
-            if (modRand < 0.2) currentModifier = 'swarm';
-            else if (modRand < 0.4) currentModifier = 'armored';
-            else currentModifier = 'none';
+            if (modRand < 0.2) world.currentModifier = 'swarm';
+            else if (modRand < 0.4) world.currentModifier = 'armored';
+            else world.currentModifier = 'none';
         } else {
-            if (rand < 0.15) currentWeather = 'blizzard';
-            else currentWeather = 'clear';
-            currentModifier = 'none';
+            if (rand < 0.15) world.currentWeather = 'blizzard';
+            else world.currentWeather = 'clear';
+            world.currentModifier = 'none';
         }
         
         let __wtext = '', __wcol = '#fff';
         let txt = ""; let col = "#fff";
-        if (currentWeather === 'bloodmoon') { txt += "BLOOD MOON "; col = "#ff3333"; }
-        else if (currentWeather === 'blizzard') { txt += "BLIZZARD "; col = "#aaddff"; }
-        else if (currentWeather === 'fog') { txt += "DENSE FOG "; col = "#aaaaaa"; }
+        if (world.currentWeather === 'bloodmoon') { txt += "BLOOD MOON "; col = "#ff3333"; }
+        else if (world.currentWeather === 'blizzard') { txt += "BLIZZARD "; col = "#aaddff"; }
+        else if (world.currentWeather === 'fog') { txt += "DENSE FOG "; col = "#aaaaaa"; }
 
-        if (currentModifier === 'swarm') { txt += (txt ? " | " : "") + "SWARM"; }
-        else if (currentModifier === 'armored') { txt += (txt ? " | " : "") + "ARMORED HORDE"; }
+        if (world.currentModifier === 'swarm') { txt += (txt ? " | " : "") + "SWARM"; }
+        else if (world.currentModifier === 'armored') { txt += (txt ? " | " : "") + "ARMORED HORDE"; }
         
         __wtext = txt;
         __wcol = col === '#fff' && txt.includes('SWARM') ? '#ffcc00' : col;
@@ -4389,25 +4410,25 @@
         document.getElementById('mainMenu').classList.add('hidden'); document.getElementById('hud').classList.remove('hidden');
         if(audioCtx.state === 'suspended') audioCtx.resume(); 
         
-        inventory = { wood: 50, stone: 50, mana: 20 }; wave = 1; phaseTimer = 60; totalKills = 0; gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
-        isPaused = false; waveDirection = -1; lastBearWave = -99; lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
-        activeQuest = null; updateQuestUI();
-        campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
-        campOneOffs = { skinning: false, beastcall: false }; campRationsDay = -1;
+        world.inventory = { wood: 50, stone: 50, mana: 20 }; world.wave = 1; world.phaseTimer = 60; world.totalKills = 0; world.gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
+        isPaused = false; world.waveDirection = -1; world.lastBearWave = -99; world.lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
+        world.activeQuest = null; updateQuestUI();
+        world.campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
+        world.campOneOffs = { skinning: false, beastcall: false }; world.campRationsDay = -1;
         achievements.forEach(a => a.unlocked = false);
-        forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
-        entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
-        forgeBuilding = null; placingBuilding = null; buildingTab = 'forge';
+        world.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
+        world.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
+        world.forgeBuilding = null; placingBuilding = null; buildingTab = 'forge';
         // gameState first: setWeather branches on it, and it was still holding the previous
         // run's phase here. A fresh game could roll night weather - a blood moon on day one -
         // and because the night branch draws twice and the day branch once, the whole seeded
         // sequence shifted depending on how the last run ended.
-        gameState = 'DAY';
-        currentWeather = 'clear'; currentModifier = 'none'; setWeather();
+        world.gameState = 'DAY';
+        world.currentWeather = 'clear'; world.currentModifier = 'none'; setWeather();
         
-        players = [];
-        player = new Player(selectedClass); players.push(player);
-        base = new Base();
+        world.players = [];
+        player = new Player(selectedClass); world.players.push(player);
+        world.base = new Base();
         document.getElementById('ui-class').innerText = selectedClass;
         updateBuildUI(); updateTrinkets(); restockMerchant();
 
@@ -4426,11 +4447,11 @@
         document.getElementById('ability-shift-name').innerText =
             (selectedClass === 'mage' || selectedClass === 'priest') ? 'Teleport' : 'Dash';
         
-        generateMap(); gameState = 'DAY'; if (merchantVisits(wave)) entities.npcs.push(new Merchant());
-        entities.npcs.push(new Wanderer());
+        generateMap(); world.gameState = 'DAY'; if (merchantVisits(world.wave)) world.entities.npcs.push(new Merchant());
+        world.entities.npcs.push(new Wanderer());
         stockWildlife();
         // Retrying straight from a death left the banner reading "GAME OVER" until the next phase.
-        document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
+        document.getElementById('phaseText').innerText = merchantVisits(world.wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
         document.getElementById('phaseText').style.color = '#fff';
         document.getElementById('earlyNightBtn').classList.remove('hidden');
         startMusic();
@@ -4443,14 +4464,14 @@
     // never on a boss night - a King plus a cyclops on the same wave is not a fight, it is
     // a pile-on, and boss nights read better when the boss is the story.
     function rollNightVisitor(type, chance, minWave, gap, label, count) {
-        if (wave < minWave || wave % 5 === 0 || wave - lastVisitorWave[type] < gap || rnd() >= chance) return;
-        lastVisitorWave[type] = wave;
+        if (world.wave < minWave || world.wave % 5 === 0 || world.wave - world.lastVisitorWave[type] < gap || rnd() >= chance) return;
+        world.lastVisitorWave[type] = world.wave;
         // A warband rides in together, not merely from the same compass point: picking a
         // fresh ringSpawn each time scatters them a screen apart, which reads as three
         // strays rather than a charge. Form the rest up around the leader instead.
         let side = Math.floor(rnd() * 4);
         let first = ringSpawn(side);
-        entities.enemies.push(new Enemy(first.x, first.y, type));
+        world.entities.enemies.push(new Enemy(first.x, first.y, type));
         for (let i = 1; i < (count || 1); i++) {
             let px = first.x, py = first.y, placed = false;
             for (let tryN = 0; tryN < 12 && !placed; tryN++) {
@@ -4460,59 +4481,59 @@
                 if (!isCollidingWithObstacle(cx, cy, 30)) { px = cx; py = cy; placed = true; }
             }
             if (!placed) { let alt = ringSpawn(side); px = alt.x; py = alt.y; }
-            entities.enemies.push(new Enemy(px, py, type));
+            world.entities.enemies.push(new Enemy(px, py, type));
         }
-        entities.texts.push(new FloatingText(first.x, first.y - 110, label, '#ffb347'));
+        world.entities.texts.push(new FloatingText(first.x, first.y - 110, label, '#ffb347'));
         playSound('explosion'); addShake(12);
     }
 
     function spawnWave() {
-        if (wave % 5 === 0) {
-            let bpos = ringSpawn(waveDirection === -1 ? Math.floor(rnd()*4) : waveDirection);
+        if (world.wave % 5 === 0) {
+            let bpos = ringSpawn(world.waveDirection === -1 ? Math.floor(rnd()*4) : world.waveDirection);
             // Every tenth wave the Orc King turns up instead of the usual boss.
-            let bossType = (wave % KING_WAVE_INTERVAL === 0) ? 'orcking' : 'boss';
-            entities.enemies.push(new Enemy(bpos.x, bpos.y, bossType));
+            let bossType = (world.wave % KING_WAVE_INTERVAL === 0) ? 'orcking' : 'boss';
+            world.entities.enemies.push(new Enemy(bpos.x, bpos.y, bossType));
             if (bossType === 'orcking') {
-                entities.texts.push(new FloatingText(bpos.x, bpos.y - 120, "THE ORC KING COMES", '#ff3b3b'));
+                world.entities.texts.push(new FloatingText(bpos.x, bpos.y - 120, "THE ORC KING COMES", '#ff3b3b'));
                 playSound('explosion'); addShake(30);
             } else addShake(15);
         }
         // Was wave*3+5, tuned when eight-plus towers were thinning the column before it ever
         // reached you. Wave one is unchanged at 8; the cut only bites later, where the missing
         // tower damage compounds worst - 26 at wave ten instead of 35.
-        let count = Math.round((wave * 2 + 6) * coopEnemyMult());
-        if (currentWeather === 'bloodmoon') count = Math.floor(count * 1.5);
-        if (currentModifier === 'swarm') count *= 2;
+        let count = Math.round((world.wave * 2 + 6) * coopEnemyMult());
+        if (world.currentWeather === 'bloodmoon') count = Math.floor(count * 1.5);
+        if (world.currentModifier === 'swarm') count *= 2;
         
         for(let i=0; i<count; i++) {
-            let side = waveDirection !== -1 ? waveDirection : Math.floor(rnd() * 4);
+            let side = world.waveDirection !== -1 ? world.waveDirection : Math.floor(rnd() * 4);
             let pos = ringSpawn(side); let x = pos.x, y = pos.y;
             let rand = rnd(); let type = 'goblin';
             
             // Scaled wave spawning including new enemies
-            if (wave > 0 && rand > 0.35) type = 'wolf';
-            if (wave > 1 && rand > 0.5) type = 'orcarcher';
-            if (wave > 2 && rand > 0.64) type = 'goblinarcher';
-            if (wave > 2 && rand > 0.74) type = 'harpy';
-            if (wave > 3 && rand > 0.82) type = 'bomber'; 
-            if (wave > 4 && rand > 0.88) type = 'golem';
-            if (wave > 5 && rand > 0.93) type = 'assassin';
-            if (wave > 6 && rand > 0.97) type = 'necromancer';
+            if (world.wave > 0 && rand > 0.35) type = 'wolf';
+            if (world.wave > 1 && rand > 0.5) type = 'orcarcher';
+            if (world.wave > 2 && rand > 0.64) type = 'goblinarcher';
+            if (world.wave > 2 && rand > 0.74) type = 'harpy';
+            if (world.wave > 3 && rand > 0.82) type = 'bomber'; 
+            if (world.wave > 4 && rand > 0.88) type = 'golem';
+            if (world.wave > 5 && rand > 0.93) type = 'assassin';
+            if (world.wave > 6 && rand > 0.97) type = 'necromancer';
             
             let en = new Enemy(x, y, type);
-            if (currentModifier === 'swarm' && type !== 'boss' && type !== 'predator') {
+            if (world.currentModifier === 'swarm' && type !== 'boss' && type !== 'predator') {
                 // Marked as well as nerfed: a body that dies to one hit should not pay like a
                 // body that fought back. See the payout in Entity.takeDamage.
                 en.hp = 1; en.maxHp = 1; en.swarmling = true;
             }
-            entities.enemies.push(en);
+            world.entities.enemies.push(en);
         }
         rollNightVisitor('cyclop', CYCLOP_CHANCE, CYCLOP_MIN_WAVE, CYCLOP_GAP, "A CYCLOPS STIRS", 1);
         rollNightVisitor('troll', TROLL_CHANCE, TROLL_MIN_WAVE, TROLL_GAP, "A TROLL PROWLS", 1);
         rollNightVisitor('orcrider', RIDER_CHANCE, RIDER_MIN_WAVE, RIDER_GAP, "WARG RIDERS!",
                          RIDER_PACK_MIN + Math.floor(rnd() * (RIDER_PACK_MAX - RIDER_PACK_MIN + 1)));
 
-        waveDirection = -1; // Reset for next day
+        world.waveDirection = -1; // Reset for next day
     }
 
     // --- UI sink ------------------------------------------------------------------
@@ -4575,14 +4596,14 @@
         closeModal('talentOverlay'); closeModal('buildingsOverlay');
     }
 
-    function triggerGameOver() { gameState = 'OVER'; ui.gameOver(); }
+    function triggerGameOver() { world.gameState = 'OVER'; ui.gameOver(); }
 
     function gameOverPanelNow() { 
         document.getElementById('phaseText').innerText = "GAME OVER"; 
         document.getElementById('gameOverOverlay').classList.remove('hidden'); 
-        document.getElementById('go-waves').innerText = wave; document.getElementById('go-kills').innerText = totalKills; 
-        document.getElementById('go-dmg').innerText = gameStats.dmg; document.getElementById('go-wood').innerText = gameStats.wood;
-        document.getElementById('go-stone').innerText = gameStats.stone; document.getElementById('go-extractors').innerText = gameStats.extractors;
+        document.getElementById('go-waves').innerText = world.wave; document.getElementById('go-kills').innerText = world.totalKills; 
+        document.getElementById('go-dmg').innerText = world.gameStats.dmg; document.getElementById('go-wood').innerText = world.gameStats.wood;
+        document.getElementById('go-stone').innerText = world.gameStats.stone; document.getElementById('go-extractors').innerText = world.gameStats.extractors;
     }
 
     // Any window that takes over the screen also stops the clock. The talent tree and the
@@ -4593,74 +4614,74 @@
     function update(dt) {
         updateCamera();
         mouse.x = mouse.sx + cam.x; mouse.y = mouse.sy + cam.y;
-        if (gameState === 'OVER') return;
+        if (world.gameState === 'OVER') return;
         if (isPaused || ui.modalOpen()) { ui.hud(); return; }
         if (screenShake > 0) screenShake -= dt * 30;
 
         if (keys['t']) { ui.open('talent'); keys['t'] = false; }
         if (keys['b']) { if (placingBuilding) cancelPlacement(); else ui.open('buildings'); keys['b'] = false; }
-        if (keys['r'] && gameState === 'DAY') {
-            let shop = entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
-            let wayfarer = entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
+        if (keys['r'] && world.gameState === 'DAY') {
+            let shop = world.entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
+            let wayfarer = world.entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
             if (shop) { ui.open('merchant'); keys['r'] = false; }
             else if (wayfarer) { wayfarer.talk(); keys['r'] = false; }
             else if (Math.hypot(player.x - CAMP_NPC_X, player.y - CAMP_NPC_Y) < CAMP_RANGE) { ui.open('camp'); keys['r'] = false; }
             else if (playerAtForge()) { ui.open('forge'); keys['r'] = false; }
         }
 
-        phaseTimer -= dt;
+        world.phaseTimer -= dt;
         
         // Threat Indicator Logic
-        if (gameState === 'DAY' && phaseTimer <= 3.0 && waveDirection === -1) {
-            waveDirection = Math.floor(rnd() * 4);
+        if (world.gameState === 'DAY' && world.phaseTimer <= 3.0 && world.waveDirection === -1) {
+            world.waveDirection = Math.floor(rnd() * 4);
         }
 
-        if (gameState === 'NIGHT' && entities.enemies.length === 0) phaseTimer = 0;
+        if (world.gameState === 'NIGHT' && world.entities.enemies.length === 0) world.phaseTimer = 0;
 
-        if (phaseTimer <= 0) {
-            if (gameState === 'DAY') {
-                gameState = 'NIGHT'; phaseTimer = 90; setWeather();
-                ui.phase(wave % 5 === 0 ? "BOSS WAVE - DEFEND!" : "NIGHT PHASE - DEFEND!", '#ff4d4d');
+        if (world.phaseTimer <= 0) {
+            if (world.gameState === 'DAY') {
+                world.gameState = 'NIGHT'; world.phaseTimer = 90; setWeather();
+                ui.phase(world.wave % 5 === 0 ? "BOSS WAVE - DEFEND!" : "NIGHT PHASE - DEFEND!", '#ff4d4d');
                 ui.nightButton(false);
                 
                 // Clear day buffs
-                players.forEach(p => { if (p.hasDaySpeed) { p.buffs.speedMult -= 1.0; p.hasDaySpeed = false; } });
+                world.players.forEach(p => { if (p.hasDaySpeed) { p.buffs.speedMult -= 1.0; p.hasDaySpeed = false; } });
 
                 // The bear only prowls by day - it retreats to the forest at nightfall.
-                entities.npcs.forEach(npc => {
+                world.entities.npcs.forEach(npc => {
                     if (npc.isShop) return;
-                    entities.texts.push(new FloatingText(npc.x, npc.y - 60, "MAKES CAMP", '#e8d8a8'));
+                    world.entities.texts.push(new FloatingText(npc.x, npc.y - 60, "MAKES CAMP", '#e8d8a8'));
                     spawnParticles(npc.x, npc.y, '#e8d8a8', 10);
                     npc.markedForDeletion = true;
                 });
-                entities.enemies.forEach(e => {
+                world.entities.enemies.forEach(e => {
                     if (e.type === 'predator') {
                         spawnParticles(e.x, e.y, '#8a6a4a', 12);
-                        entities.texts.push(new FloatingText(e.x, e.y - 40, "RETREATS", '#c8a06a'));
+                        world.entities.texts.push(new FloatingText(e.x, e.y - 40, "RETREATS", '#c8a06a'));
                         e.markedForDeletion = true;
                     }
                 });
                 
                 ui.closeAll(); placingBuilding = null; ui.buildPalette(); spawnWave();
             } else {
-                gameState = 'DAY'; wave++; phaseTimer = 60; setWeather();
-                ui.phase(merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER", '#fff');
+                world.gameState = 'DAY'; world.wave++; world.phaseTimer = 60; setWeather();
+                ui.phase(merchantVisits(world.wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER", '#fff');
                 ui.nightButton(true);
-                ui.waveNumber(wave); base.recalcMaxHp(); base.repairedToday = false; generateMap(); ui.buildPalette();
-                if (merchantVisits(wave)) entities.npcs.push(new Merchant());
-                entities.npcs.push(new Wanderer());
+                ui.waveNumber(world.wave); world.base.recalcMaxHp(); world.base.repairedToday = false; generateMap(); ui.buildPalette();
+                if (merchantVisits(world.wave)) world.entities.npcs.push(new Merchant());
+                world.entities.npcs.push(new Wanderer());
                 stockWildlife();
             }
         }
 
         if (mouse.clicked) {
             let clickedInteractable = false;
-            if (gameState === 'DAY') {
-                entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
+            if (world.gameState === 'DAY') {
+                world.entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
                 if (!clickedInteractable && playerAtForge() && Math.hypot(mouse.x - forgeX(), mouse.y - forgeY()) < 90) { ui.open('forge'); clickedInteractable = true; }
             }
             if (!clickedInteractable) {
-                entities.resources.forEach(r => {
+                world.entities.resources.forEach(r => {
                     // Hit radius now matches each resource's real sprite size (r.radius), not a guessed constant
                     if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < r.radius && Math.hypot(player.x - r.x, player.y - r.y) < r.radius + 130) {
                         
@@ -4668,28 +4689,28 @@
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
                             let rand = rnd();
                             if (rand < 0.33) {
-                                inventory.mana += 50; entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
+                                world.inventory.mana += 50; world.entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
                             } else if (rand < 0.66) {
-                                players.forEach(p => { if (!p.hasDaySpeed) { p.hasDaySpeed = true; p.buffs.speedMult += 1.0; } });
-                                entities.texts.push(new FloatingText(r.x, r.y - 20, "SPEED BUFF", '#00ffcc'));
+                                world.players.forEach(p => { if (!p.hasDaySpeed) { p.hasDaySpeed = true; p.buffs.speedMult += 1.0; } });
+                                world.entities.texts.push(new FloatingText(r.x, r.y - 20, "SPEED BUFF", '#00ffcc'));
                             } else {
                                 // The forge caps at FORGE_MAX_LEVEL and a cache has no business
                                 // walking past it - unfiltered, this printed 6/5 on the pips.
-                                let upgs = ['weapon', 'mining', 'speed'].filter(u => forgeUpgrades[u].level < FORGE_MAX_LEVEL);
+                                let upgs = ['weapon', 'mining', 'speed'].filter(u => world.forgeUpgrades[u].level < FORGE_MAX_LEVEL);
                                 if (!upgs.length) {
-                                    inventory.mana += 50; entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
+                                    world.inventory.mana += 50; world.entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
                                 } else {
                                     let chosen = upgs[Math.floor(rnd()*upgs.length)];
-                                    forgeUpgrades[chosen].level++;
+                                    world.forgeUpgrades[chosen].level++;
                                     if (chosen === 'weapon') { grantShopBuff(player, 'forgeAtkMult', 0.1); player.recalcStats(); }
                                     if (chosen === 'mining') { grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); }
                                     if (chosen === 'speed') { grantShopBuff(player, 'speedMult', 0.05); }
-                                    entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); ui.forgePanel();
+                                    world.entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); ui.forgePanel();
                                 }
                             }
                         } else {
                             r.hp--; clickedInteractable = true; r.hitFlashTimer = 0.1; playSound('mine');
-                            entities.texts.push(new FloatingText(r.x, r.y - 20, "⛏️", '#ffffff'));
+                            world.entities.texts.push(new FloatingText(r.x, r.y - 20, "⛏️", '#ffffff'));
                             spawnParticles(r.x, r.y, r.type === 'wood' ? '#8B4513' : '#777', 3);
                             
                             if(r.hp <= 0) {
@@ -4697,8 +4718,8 @@
                                 // gatherYield is fractional now, so round here or the counters
                                 // start showing half a log.
                                 let amt = Math.round(5 * player.buffs.gatherYield);
-                                if(r.type === 'wood') { inventory.wood += amt; gameStats.wood += amt; if (gameStats.wood >= 50) checkAchievement('lumberjack'); } 
-                                else { inventory.stone += amt; gameStats.stone += amt; if (gameStats.stone >= 50) checkAchievement('mason'); }
+                                if(r.type === 'wood') { world.inventory.wood += amt; world.gameStats.wood += amt; if (world.gameStats.wood >= 50) checkAchievement('lumberjack'); } 
+                                else { world.inventory.stone += amt; world.gameStats.stone += amt; if (world.gameStats.stone >= 50) checkAchievement('mason'); }
                             }
                         }
                     }
@@ -4707,22 +4728,22 @@
             if (clickedInteractable) mouse.clicked = false; else player.attack(); 
         }
 
-        player.update(dt); base.update(dt);
-        entities.npcs.forEach(n => n.update(dt)); entities.critters.forEach(c => c.update(dt)); entities.resources.forEach(r => r.update(dt)); entities.extractors.forEach(t => t.update(dt));
-        entities.enemies.forEach(e => e.update(dt)); entities.projectiles.forEach(p => p.update(dt)); entities.effects.forEach(ef => ef.update(dt));
-        entities.texts.forEach(txt => txt.update(dt)); entities.particles.forEach(p => p.update(dt)); entities.items.forEach(i => i.update(dt));
+        player.update(dt); world.base.update(dt);
+        world.entities.npcs.forEach(n => n.update(dt)); world.entities.critters.forEach(c => c.update(dt)); world.entities.resources.forEach(r => r.update(dt)); world.entities.extractors.forEach(t => t.update(dt));
+        world.entities.enemies.forEach(e => e.update(dt)); world.entities.projectiles.forEach(p => p.update(dt)); world.entities.effects.forEach(ef => ef.update(dt));
+        world.entities.texts.forEach(txt => txt.update(dt)); world.entities.particles.forEach(p => p.update(dt)); world.entities.items.forEach(i => i.update(dt));
 
-        if (currentWeather === 'blizzard') spawnParticles(cam.x + Math.random()*VIEW_W, cam.y - 10, '#ffffff', 1);
+        if (world.currentWeather === 'blizzard') spawnParticles(cam.x + Math.random()*VIEW_W, cam.y - 10, '#ffffff', 1);
 
-        let extractorsBefore = entities.extractors.length;
-        entities.npcs = entities.npcs.filter(n => !n.markedForDeletion); entities.critters = entities.critters.filter(c => !c.markedForDeletion); entities.extractors = entities.extractors.filter(t => !t.markedForDeletion);
-        if (entities.extractors.length !== extractorsBefore) ui.buildPalette();   // a destroyed extractor frees its slot
-        entities.enemies = entities.enemies.filter(e => !e.markedForDeletion); entities.projectiles = entities.projectiles.filter(p => !p.markedForDeletion);
-        entities.resources = entities.resources.filter(r => !r.markedForDeletion); entities.effects = entities.effects.filter(ef => !ef.markedForDeletion);
-        entities.texts = entities.texts.filter(txt => !txt.markedForDeletion); entities.particles = entities.particles.filter(p => !p.markedForDeletion);
-        entities.items = entities.items.filter(i => !i.markedForDeletion);
+        let extractorsBefore = world.entities.extractors.length;
+        world.entities.npcs = world.entities.npcs.filter(n => !n.markedForDeletion); world.entities.critters = world.entities.critters.filter(c => !c.markedForDeletion); world.entities.extractors = world.entities.extractors.filter(t => !t.markedForDeletion);
+        if (world.entities.extractors.length !== extractorsBefore) ui.buildPalette();   // a destroyed extractor frees its slot
+        world.entities.enemies = world.entities.enemies.filter(e => !e.markedForDeletion); world.entities.projectiles = world.entities.projectiles.filter(p => !p.markedForDeletion);
+        world.entities.resources = world.entities.resources.filter(r => !r.markedForDeletion); world.entities.effects = world.entities.effects.filter(ef => !ef.markedForDeletion);
+        world.entities.texts = world.entities.texts.filter(txt => !txt.markedForDeletion); world.entities.particles = world.entities.particles.filter(p => !p.markedForDeletion);
+        world.entities.items = world.entities.items.filter(i => !i.markedForDeletion);
 
-        if (player.hp <= 0 || base.hp <= 0) { triggerGameOver(); }
+        if (player.hp <= 0 || world.base.hp <= 0) { triggerGameOver(); }
 
         ui.hud();
     }
@@ -4730,7 +4751,7 @@
     // Split out of update() so it still runs while a window has the clock stopped - otherwise
     // buying at the forge left the resource pills reading the old numbers until you closed it.
     function syncHudNow() {
-        flashResource('ui-wood', inventory.wood); flashResource('ui-stone', inventory.stone); flashResource('ui-mana', inventory.mana);
+        flashResource('ui-wood', world.inventory.wood); flashResource('ui-stone', world.inventory.stone); flashResource('ui-mana', world.inventory.mana);
         document.getElementById('ui-atk').innerText = player.atk;
         document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`; document.getElementById('mpBar').style.width = `${(player.mp/player.maxMp)*100}%`;
         document.getElementById('xpBar').style.width = `${(player.xp/player.maxXp)*100}%`; document.getElementById('ui-level').innerText = player.level;
@@ -4775,11 +4796,11 @@
         }
 
         let qSlot = document.getElementById('ability-q-slot'), qCdEl = document.getElementById('ability-q-cd'), qTxt = document.getElementById('ability-q-text');
-        if (base.overchargeCd > 0) {
-            qCdEl.style.setProperty('--p', Math.min(100, (base.overchargeCd / 45.0) * 100));
-            qTxt.innerText = base.overchargeCd.toFixed(0);
+        if (world.base.overchargeCd > 0) {
+            qCdEl.style.setProperty('--p', Math.min(100, (world.base.overchargeCd / 45.0) * 100));
+            qTxt.innerText = world.base.overchargeCd.toFixed(0);
             qSlot.classList.remove('ready', 'no-mana');
-        } else if (gameState !== 'NIGHT') {
+        } else if (world.gameState !== 'NIGHT') {
             // Off cooldown but unusable until dark - the slot said "ready" all day.
             qCdEl.style.setProperty('--p', 0); qTxt.innerText = '';
             qSlot.classList.remove('ready'); qSlot.classList.add('no-mana');
@@ -4866,7 +4887,7 @@
         if (!tentSprite.complete || tentSprite.naturalWidth === 0) return;
         let dh = TENT_H, dw = dh * (TENT_CROP.sw / TENT_CROP.sh);
         ctx.save();
-        if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
         ctx.globalAlpha = 0.26; ctx.fillStyle = '#000';
         ctx.beginPath(); ctx.ellipse(d.x, d.y + TENT_FEET - 6, dw * 0.42, dh * 0.10, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
@@ -4875,10 +4896,10 @@
         ctx.restore();
     }
     function drawSentry(ctx, d) {
-        let inRange = gameState === 'DAY' && Math.hypot(player.x - d.x, player.y - d.y) < CAMP_RANGE;
+        let inRange = world.gameState === 'DAY' && Math.hypot(player.x - d.x, player.y - d.y) < CAMP_RANGE;
         ctx.save();
         ctx.translate(d.x, d.y);
-        if (gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
+        if (world.gameState === 'NIGHT') ctx.filter = NIGHT_ACTOR_FILTER;
         ctx.fillStyle = 'rgba(0,0,0,0.26)';
         ctx.beginPath(); ctx.ellipse(0, NPC3_FEET - 5, 20, 7, 0, 0, Math.PI*2); ctx.fill();
         ctx.scale(d.flip ? -1 : 1, 1);
@@ -4902,10 +4923,10 @@
     }
     // The camp is a landmark, so it goes back in the same place every morning.
     function layOutCamp() {
-        entities.decorations.push({ x: CAMP_X, y: CAMP_Y, type: 'camp' });
-        entities.decorations.push({ x: CAMP_X - 34, y: CAMP_Y + 58, type: 'sentry', flip: false });
-        entities.solids.push({ x: CAMP_X, y: CAMP_Y, r: TENT_SOLID });
-        entities.solids.push({ x: CAMP_X - 34, y: CAMP_Y + 58, r: 14 });
+        world.entities.decorations.push({ x: CAMP_X, y: CAMP_Y, type: 'camp' });
+        world.entities.decorations.push({ x: CAMP_X - 34, y: CAMP_Y + 58, type: 'sentry', flip: false });
+        world.entities.solids.push({ x: CAMP_X, y: CAMP_Y, r: TENT_SOLID });
+        world.entities.solids.push({ x: CAMP_X - 34, y: CAMP_Y + 58, r: 14 });
     }
 
     function drawScenery(ctx, d) {
@@ -4924,8 +4945,8 @@
     }
 
     function drawForge(ctx) {
-        if (!forgeBuilding) return;
-        let fx = forgeBuilding.x, fy = forgeBuilding.y;
+        if (!world.forgeBuilding) return;
+        let fx = world.forgeBuilding.x, fy = world.forgeBuilding.y;
         if (!inView(fx, fy, 200)) return;
         let dw = FORGE_H * (FORGE_CROP.sw / FORGE_CROP.sh), dh = FORGE_H;
         // The furnace is lit, so it throws a warm flicker - and doubles as a night landmark.
@@ -4952,7 +4973,7 @@
             ctx.beginPath(); ctx.ellipse(fx, fy + FORGE_FEET - 6, dw * 0.5, dw * 0.16, 0, 0, Math.PI*2); ctx.stroke();
             ctx.fillStyle = '#ffcc66'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center';
             ctx.fillText('Press [R] to use the Forge', fx, fy + FORGE_FEET + 26);
-        } else if (gameState === 'DAY') {
+        } else if (world.gameState === 'DAY') {
             ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
             ctx.fillText('FORGE', fx, fy - dh + FORGE_FEET - 12);
         }
@@ -4966,23 +4987,23 @@
 
         ctx.save();
         ctx.translate(-cam.x, -cam.y);          // ---- WORLD SPACE ----
-        let snowy = currentWeather === 'blizzard';
+        let snowy = world.currentWeather === 'blizzard';
         ctx.fillStyle = groundFill(ctx, snowy ? 'snow' : 'grass');
         ctx.fillRect(cam.x, cam.y, VIEW_W, VIEW_H);
         if (snowy) ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        else if (currentWeather === 'bloodmoon') ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
-        else if (gameState === 'NIGHT') ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        else if (world.currentWeather === 'bloodmoon') ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+        else if (world.gameState === 'NIGHT') ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         else ctx.fillStyle = 'rgba(0,0,0,0)';
         ctx.fillRect(cam.x, cam.y, VIEW_W, VIEW_H);
 
-        entities.obstacles.forEach(o => o.draw(ctx));
+        world.entities.obstacles.forEach(o => o.draw(ctx));
 
         // While a building is armed, show its footprint and whether the spot will take it.
-        if (gameState === 'DAY' && placingBuilding) {
+        if (world.gameState === 'DAY' && placingBuilding) {
             let mx = mouse.x, my = mouse.y;
-            let clash = entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
-                     || (forgeBuilding && Math.hypot(forgeBuilding.x - mx, forgeBuilding.y - my) < EXTRACTOR_SPACING);
-            let ok = !clash && Math.hypot(base.x - mx, base.y - my) >= NEXUS_KEEPOUT && !isCollidingWithObstacle(mx, my, 30);
+            let clash = world.entities.extractors.some(t => Math.hypot(t.x - mx, t.y - my) < EXTRACTOR_SPACING)
+                     || (world.forgeBuilding && Math.hypot(world.forgeBuilding.x - mx, world.forgeBuilding.y - my) < EXTRACTOR_SPACING);
+            let ok = !clash && Math.hypot(world.base.x - mx, world.base.y - my) >= NEXUS_KEEPOUT && !isCollidingWithObstacle(mx, my, 30);
             ctx.save();
             ctx.strokeStyle = ok ? 'rgba(126,247,216,0.85)' : 'rgba(255,77,77,0.85)';
             ctx.fillStyle   = ok ? 'rgba(126,247,216,0.14)' : 'rgba(255,77,77,0.14)';
@@ -4993,32 +5014,32 @@
             ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
             ctx.fillText(ok ? BUILDINGS[placingBuilding].name : 'BLOCKED', mx, my - EXTRACTOR_SPACING/5 - 12);
             ctx.restore();
-        } else if (gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) {
+        } else if (world.gameState === 'DAY' && !isCollidingWithObstacle(mouse.x, mouse.y, 30)) {
             ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(mouse.x - 20, mouse.y - 20, 40, 40);
         }
 
-        entities.decorations.forEach(d => {
+        world.entities.decorations.forEach(d => {
             if (!inView(d.x, d.y, 120)) return;
             // Anything tall enough to overlap a tree is drawn later, depth sorted.
             if (d.type === 'scenery') { if (d.h < SCENERY_PROP_MIN) drawScenery(ctx, d); return; }
-            if (d.type === 'grass') {ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
+            if (d.type === 'grass') {ctx.fillStyle = world.gameState === 'DAY' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-d.size, d.y-d.size*2); ctx.lineTo(d.x+d.size, d.y-d.size*2); ctx.fill(); } 
             else if (d.type === 'crystal') { ctx.fillStyle = 'rgba(255, 50, 100, 0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y-d.size); ctx.lineTo(d.x+d.size, d.y); ctx.lineTo(d.x, d.y+d.size); ctx.lineTo(d.x-d.size, d.y); ctx.fill(); }
-            else { ctx.fillStyle = gameState === 'DAY' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill(); }
+            else { ctx.fillStyle = world.gameState === 'DAY' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(d.x, d.y, d.size/2, 0, Math.PI*2); ctx.fill(); }
         });
 
         drawForge(ctx);
-        entities.critters.forEach(c => { if (inView(c.x, c.y, 120)) c.draw(ctx); });
-        entities.npcs.forEach(n => { if (inView(n.x, n.y)) n.draw(ctx); });
-        entities.items.forEach(i => { if (inView(i.x, i.y)) i.draw(ctx); });
+        world.entities.critters.forEach(c => { if (inView(c.x, c.y, 120)) c.draw(ctx); });
+        world.entities.npcs.forEach(n => { if (inView(n.x, n.y)) n.draw(ctx); });
+        world.entities.items.forEach(i => { if (inView(i.x, i.y)) i.draw(ctx); });
 
         // Tall scenery and gatherable nodes drawn together, back to front, so neither
         // layer is permanently stacked on top of the other.
         let props = [];
-        entities.decorations.forEach(d => {
+        world.entities.decorations.forEach(d => {
             let isProp = (d.type === 'scenery' && d.h >= SCENERY_PROP_MIN) || d.type === 'camp' || d.type === 'sentry';
             if (isProp && inView(d.x, d.y, 260)) props.push(d);
         });
-        entities.resources.forEach(r => { if (inView(r.x, r.y, 200)) props.push(r); });
+        world.entities.resources.forEach(r => { if (inView(r.x, r.y, 200)) props.push(r); });
         props.sort((a, b) => a.y - b.y);
         props.forEach(pr => {
             if (pr.type === 'scenery') drawScenery(ctx, pr);
@@ -5026,18 +5047,18 @@
             else if (pr.type === 'sentry') drawSentry(ctx, pr);
             else pr.draw(ctx);
         });
-        base.draw(ctx); entities.extractors.forEach(t => { if (inView(t.x, t.y)) t.draw(ctx); }); entities.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(ctx); });
-        entities.projectiles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); entities.effects.forEach(ef => { if (inView(ef.x, ef.y, ef.radius + 40)) ef.draw(ctx); }); entities.particles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); player.draw(ctx);
+        world.base.draw(ctx); world.entities.extractors.forEach(t => { if (inView(t.x, t.y)) t.draw(ctx); }); world.entities.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(ctx); });
+        world.entities.projectiles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); world.entities.effects.forEach(ef => { if (inView(ef.x, ef.y, ef.radius + 40)) ef.draw(ctx); }); world.entities.particles.forEach(p => { if (inView(p.x, p.y, 40)) p.draw(ctx); }); player.draw(ctx);
 
         // Re-draw tree crowns that stand in front of the player so the player walks behind the
         // foliage instead of appearing on top of it. The player is painted after every prop,
         // so without this pass they would always sit above the leaves.
-        entities.resources.forEach(r => {
+        world.entities.resources.forEach(r => {
             if (r.type === 'wood' && r.y > player.y - 20 && Math.abs(r.x - player.x) < 100 && Math.abs(r.y - player.y) < 165) {
                 r.draw(ctx);
             }
         });
-        entities.decorations.forEach(d => {
+        world.entities.decorations.forEach(d => {
             if (!d.canopy || d.y <= player.y - 20) return;
             let dw = d.h * (d.sw / d.sh);
             if (Math.abs(d.x - player.x) < dw * 0.55 && (d.y - player.y) < d.h * 0.9) drawScenery(ctx, d);
@@ -5045,26 +5066,26 @@
 
         ctx.restore();                           // ---- back to SCREEN SPACE ----
 
-        if (gameState === 'NIGHT') {
+        if (world.gameState === 'NIGHT') {
             // Clear first: the wash is semi-transparent, so source-over would lay this frame's
             // layer on top of last frame's residue and compound toward solid black. The old
             // 0.88 fill hid that by saturating on the second frame - a lighter wash does not.
             lctx.clearRect(0, 0, VIEW_W, VIEW_H);
             lctx.globalCompositeOperation = 'source-over';
-            lctx.fillStyle = currentWeather === 'fog' ? NIGHT_AMBIENT_FOG
-                           : (currentWeather === 'bloodmoon' ? NIGHT_AMBIENT_BLOOD : NIGHT_AMBIENT);
+            lctx.fillStyle = world.currentWeather === 'fog' ? NIGHT_AMBIENT_FOG
+                           : (world.currentWeather === 'bloodmoon' ? NIGHT_AMBIENT_BLOOD : NIGHT_AMBIENT);
             lctx.fillRect(0, 0, VIEW_W, VIEW_H);
             lctx.globalCompositeOperation = 'destination-out';
 
             // The light canvas is viewport-sized, so world positions come in camera-relative.
             // Fog still cuts your range, but not to the point of playing blind.
-            let visMod = currentWeather === 'fog' ? 0.62 : 1.0;
+            let visMod = world.currentWeather === 'fog' ? 0.62 : 1.0;
             drawLight(lctx, player.x - cam.x, player.y - cam.y, LIGHT_PLAYER * visMod, 'rgba(255,255,255,' + LIGHT_PLAYER_A + ')');
-            drawLight(lctx, base.x - cam.x, base.y - cam.y, LIGHT_NEXUS * visMod, 'rgba(255,255,255,' + LIGHT_NEXUS_A + ')');
-            entities.extractors.forEach(t => { if (inView(t.x, t.y, LIGHT_EXTRACTOR)) drawLight(lctx, t.x - cam.x, t.y - cam.y, LIGHT_EXTRACTOR * visMod, 'rgba(255,255,255,' + LIGHT_EXTRACTOR_A + ')'); });
-            entities.projectiles.forEach(p => drawLight(lctx, p.x - cam.x, p.y - cam.y, 100 * visMod, 'rgba(255,255,255,0.55)'));
-            entities.effects.forEach(ef => drawLight(lctx, ef.x - cam.x, ef.y - cam.y, ef.radius + 50, 'rgba(255,255,255,0.85)'));
-            entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x - cam.x, e.y - cam.y, 80, 'rgba(255,255,255,0.45)'); });
+            drawLight(lctx, world.base.x - cam.x, world.base.y - cam.y, LIGHT_NEXUS * visMod, 'rgba(255,255,255,' + LIGHT_NEXUS_A + ')');
+            world.entities.extractors.forEach(t => { if (inView(t.x, t.y, LIGHT_EXTRACTOR)) drawLight(lctx, t.x - cam.x, t.y - cam.y, LIGHT_EXTRACTOR * visMod, 'rgba(255,255,255,' + LIGHT_EXTRACTOR_A + ')'); });
+            world.entities.projectiles.forEach(p => drawLight(lctx, p.x - cam.x, p.y - cam.y, 100 * visMod, 'rgba(255,255,255,0.55)'));
+            world.entities.effects.forEach(ef => drawLight(lctx, ef.x - cam.x, ef.y - cam.y, ef.radius + 50, 'rgba(255,255,255,0.85)'));
+            world.entities.enemies.forEach(e => { if(e.type==='bomber') drawLight(lctx, e.x - cam.x, e.y - cam.y, 80, 'rgba(255,255,255,0.45)'); });
             // The tent has a lit lantern hanging in it, so the camp shows from a distance.
             if (inView(CAMP_X, CAMP_Y, 320)) drawLight(lctx, CAMP_X - cam.x, CAMP_Y - cam.y, 215, 'rgba(255,255,255,0.55)');
             ctx.drawImage(lightCanvas, 0, 0);
@@ -5074,29 +5095,29 @@
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.translate(-cam.x, -cam.y);
-            drawLight(ctx, base.x, base.y, 300, 'rgba(120,160,255,0.10)');
+            drawLight(ctx, world.base.x, world.base.y, 300, 'rgba(120,160,255,0.10)');
             if (inView(CAMP_X, CAMP_Y, 260)) drawLight(ctx, CAMP_X, CAMP_Y, 180, 'rgba(255,170,80,0.13)');
-            entities.extractors.forEach(t => { if (inView(t.x, t.y, 130)) drawLight(ctx, t.x, t.y, 120, 'rgba(255,178,92,0.06)'); });
+            world.entities.extractors.forEach(t => { if (inView(t.x, t.y, 130)) drawLight(ctx, t.x, t.y, 120, 'rgba(255,178,92,0.06)'); });
             ctx.restore();
 
-            if (currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.05)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+            if (world.currentWeather === 'bloodmoon') { ctx.fillStyle = 'rgba(255, 0, 0, 0.05)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
         }
 
         // Floating combat text sits above the darkness but still tracks the world.
         ctx.save(); ctx.translate(-cam.x, -cam.y);
-        entities.texts.forEach(txt => { if (inView(txt.x, txt.y, 60)) txt.draw(ctx); });
+        world.entities.texts.forEach(txt => { if (inView(txt.x, txt.y, 60)) txt.draw(ctx); });
         ctx.restore();
 
         // Threat arrow points at the incoming side, pinned to the screen edge.
-        if (gameState === 'DAY' && waveDirection !== -1 && phaseTimer <= 3.0) {
+        if (world.gameState === 'DAY' && world.waveDirection !== -1 && world.phaseTimer <= 3.0) {
             let flash = Math.floor(performance.now() / 250) % 2 === 0;
             if (flash) {
                 ctx.fillStyle = 'rgba(255, 50, 50, 0.6)';
                 ctx.beginPath();
-                if (waveDirection === 0) { ctx.moveTo(960, 40); ctx.lineTo(920, 100); ctx.lineTo(1000, 100); }
-                else if (waveDirection === 1) { ctx.moveTo(960, 1040); ctx.lineTo(920, 980); ctx.lineTo(1000, 980); }
-                else if (waveDirection === 2) { ctx.moveTo(40, 540); ctx.lineTo(100, 500); ctx.lineTo(100, 580); }
-                else if (waveDirection === 3) { ctx.moveTo(1880, 540); ctx.lineTo(1820, 500); ctx.lineTo(1820, 580); }
+                if (world.waveDirection === 0) { ctx.moveTo(960, 40); ctx.lineTo(920, 100); ctx.lineTo(1000, 100); }
+                else if (world.waveDirection === 1) { ctx.moveTo(960, 1040); ctx.lineTo(920, 980); ctx.lineTo(1000, 980); }
+                else if (world.waveDirection === 2) { ctx.moveTo(40, 540); ctx.lineTo(100, 500); ctx.lineTo(100, 580); }
+                else if (world.waveDirection === 3) { ctx.moveTo(1880, 540); ctx.lineTo(1820, 500); ctx.lineTo(1820, 580); }
                 ctx.fill();
             }
         }
@@ -5109,36 +5130,36 @@
     // A map this size is unnavigable without an overview.
     const MM_W = 300, MM_H = MM_W * WORLD_H / WORLD_W, MM_X = VIEW_W - MM_W - 20, MM_Y = 20;
     function drawMinimap(ctx) {
-        if (gameState !== 'DAY' && gameState !== 'NIGHT') return;
+        if (world.gameState !== 'DAY' && world.gameState !== 'NIGHT') return;
         const sx = MM_W / WORLD_W, sy = MM_H / WORLD_H;
         const mx = (wx) => MM_X + wx * sx, my = (wy) => MM_Y + wy * sy;
         ctx.save();
         ctx.globalAlpha = 0.82;
         ctx.fillStyle = 'rgba(9,11,8,0.92)'; ctx.fillRect(MM_X, MM_Y, MM_W, MM_H);
         ctx.globalAlpha = 1;
-        entities.obstacles.forEach(o => {
+        world.entities.obstacles.forEach(o => {
             ctx.fillStyle = 'rgba(60,110,170,0.6)';
             ctx.beginPath();
             ctx.ellipse(mx(o.x + o.w * POND_CX), my(o.y + o.h * POND_CY), o.w * POND_RX * sx, o.h * POND_RY * sy, 0, 0, Math.PI*2);
             ctx.fill();
         });
         ctx.fillStyle = 'rgba(120,180,90,0.6)';
-        entities.resources.forEach(r => { if (r.type !== 'cache') ctx.fillRect(mx(r.x)-1, my(r.y)-1, 2, 2); });
+        world.entities.resources.forEach(r => { if (r.type !== 'cache') ctx.fillRect(mx(r.x)-1, my(r.y)-1, 2, 2); });
         ctx.fillStyle = '#ffcc00';
-        entities.resources.forEach(r => { if (r.type === 'cache') ctx.fillRect(mx(r.x)-2, my(r.y)-2, 4, 4); });
-        entities.extractors.forEach(t => { ctx.fillStyle = '#7ef7d8'; ctx.fillRect(mx(t.x)-1.5, my(t.y)-1.5, 3, 3); });
-        entities.enemies.forEach(e => {
+        world.entities.resources.forEach(r => { if (r.type === 'cache') ctx.fillRect(mx(r.x)-2, my(r.y)-2, 4, 4); });
+        world.entities.extractors.forEach(t => { ctx.fillStyle = '#7ef7d8'; ctx.fillRect(mx(t.x)-1.5, my(t.y)-1.5, 3, 3); });
+        world.entities.enemies.forEach(e => {
             ctx.fillStyle = e.type === 'predator' ? '#ff9a3c' : (e.type === 'boss' || e.type === 'orcking' ? '#ff2b2b' :
                            (e.type === 'cyclop' || e.type === 'troll' ? '#ffb347' : (e.type === 'orcrider' ? '#ff8c42' : '#ff5555')));
             let sz = e.type === 'orcking' ? 8 : ((e.type === 'boss' || e.type === 'predator') ? 5 :
                      ((e.type === 'cyclop' || e.type === 'troll') ? 5 : (e.type === 'orcrider' ? 4 : 3)));
             ctx.fillRect(mx(e.x)-sz/2, my(e.y)-sz/2, sz, sz);
         });
-        entities.critters.forEach(c => { ctx.fillStyle = 'rgba(190,170,120,0.75)'; ctx.fillRect(mx(c.x)-1, my(c.y)-1, 2, 2); });
-        entities.npcs.forEach(n => { ctx.fillStyle = n.isShop ? '#5ce1e6' : '#e8d8a8'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
+        world.entities.critters.forEach(c => { ctx.fillStyle = 'rgba(190,170,120,0.75)'; ctx.fillRect(mx(c.x)-1, my(c.y)-1, 2, 2); });
+        world.entities.npcs.forEach(n => { ctx.fillStyle = n.isShop ? '#5ce1e6' : '#e8d8a8'; ctx.fillRect(mx(n.x)-2, my(n.y)-2, 4, 4); });
         // nexus
-        ctx.fillStyle = '#d9b25c'; ctx.fillRect(mx(base.x)-4, my(base.y)-4, 8, 8);
-        ctx.strokeStyle = '#fff6d8'; ctx.lineWidth = 1; ctx.strokeRect(mx(base.x)-4.5, my(base.y)-4.5, 9, 9);
+        ctx.fillStyle = '#d9b25c'; ctx.fillRect(mx(world.base.x)-4, my(world.base.y)-4, 8, 8);
+        ctx.strokeStyle = '#fff6d8'; ctx.lineWidth = 1; ctx.strokeRect(mx(world.base.x)-4.5, my(world.base.y)-4.5, 9, 9);
         // player
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(mx(player.x), my(player.y), 3, 0, Math.PI*2); ctx.fill();
         // camera window
@@ -5152,8 +5173,8 @@
 
     // Off-screen nexus marker, so you can always find your way home.
     function drawNexusCompass(ctx) {
-        if (gameState !== 'DAY' && gameState !== 'NIGHT') return;
-        let bsx = base.x - cam.x, bsy = base.y - cam.y;
+        if (world.gameState !== 'DAY' && world.gameState !== 'NIGHT') return;
+        let bsx = world.base.x - cam.x, bsy = world.base.y - cam.y;
         if (bsx > 60 && bsx < VIEW_W - 60 && bsy > 60 && bsy < VIEW_H - 60) return;
         let cx = VIEW_W/2, cy = VIEW_H/2;
         let ang = Math.atan2(bsy - cy, bsx - cx);
@@ -5165,7 +5186,7 @@
         ctx.restore();
         ctx.save();
         ctx.fillStyle = 'rgba(255,246,216,0.9)'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
-        ctx.fillText(Math.round(Math.hypot(base.x - player.x, base.y - player.y)) + 'm', ex, ey + 30);
+        ctx.fillText(Math.round(Math.hypot(world.base.x - player.x, world.base.y - player.y)) + 'm', ex, ey + 30);
         ctx.restore();
     }
 
@@ -5201,7 +5222,7 @@
             while (simAccumulator >= SIM_DT) { update(SIM_DT); simAccumulator -= SIM_DT; }
             draw();
         }
-        if (gameState !== 'OVER' && gameState !== 'MENU') requestAnimationFrame(gameLoop);
+        if (world.gameState !== 'OVER' && world.gameState !== 'MENU') requestAnimationFrame(gameLoop);
         else loopRunning = false;
     }
     applyAudioSettings();

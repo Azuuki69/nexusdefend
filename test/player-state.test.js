@@ -262,7 +262,7 @@ test('bosses take health rather than company, on the gentler curve', () => {
 });
 
 test('the scaling is actually wired into the three places that matter', () => {
-    assert.ok(/let count = Math\.round\(\(wave \* 2 \+ 6\) \* coopEnemyMult\(\)\)/.test(SRC),
+    assert.ok(/let count = Math\.round\(\(world\.wave \* 2 \+ 6\) \* coopEnemyMult\(\)\)/.test(SRC),
         'the wave count does not scale');
     assert.ok(/NEXUS_HP_GROWTH, w - 1\) \* coopToughMult\(\)/.test(SRC),
         'the Nexus does not harden with the party');
