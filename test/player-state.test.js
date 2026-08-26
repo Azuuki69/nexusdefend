@@ -23,6 +23,13 @@ import * as SIM from '../src/sim/constants.js';
 
 const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
 
+// The game is two files now: index.html is the client, src/sim/world.js is the half that can
+// run on a server. Tests about structure look at both; tests about the markup or the module
+// shape still look at index.html alone.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const WORLD = readFileSync(join(HERE, '..', 'src', 'sim', 'world.js'), 'utf8');
+const GAME = SRC + WORLD;
+
 /** Lift a top-level `const NAME = {...};` literal out of the game and evaluate it. */
 function lift(name) {
     const start = SRC.indexOf('const ' + name + ' = {');
@@ -68,6 +75,47 @@ const find = id => {
     }
     throw new Error('talent ' + id + ' not found');
 };
+
+/** Channel names offered by an object literal, whether written `x:` or `x() {}`. */
+/** Comments stripped. `[^\n]*` rather than `.*`: these files are CRLF, and in JavaScript
+ *  `.` does not match \r because \r is a line terminator - so `//.*$` strips nothing. */
+function noComments(text) { return text.replace(/\/\/[^\n]*/g, ''); }
+
+function channelsOf(text) {
+    // A channel name is an identifier in KEY POSITION: at depth 1 inside the literal, followed
+    // by `:` or `(`, and preceded by `{` or `,`. Depth alone is not enough - an arrow-bodied
+    // handler like `open: name => uiLog.push(...)` keeps the same depth, so `push` looked like
+    // a key. This is the same test that a rename needs, for the same reason.
+    const names = new Set();
+    let depth = 0;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '{' || c === '(' || c === '[') { depth++; continue; }
+        if (c === '}' || c === ')' || c === ']') { depth--; continue; }
+        if (depth !== 1) continue;
+        const m = /^([A-Za-z_$][\w$]*)\s*[:(]/.exec(text.slice(i));
+        if (!m) continue;
+        let k = i - 1;
+        while (k >= 0 && /\s/.test(text[k])) k--;
+        if (k >= 0 && (text[k] === '{' || text[k] === ',')) names.add(m[1]);
+        i += m[1].length - 1;
+    }
+    return [...names].sort();
+}
+
+/** The body of `const NAME = {...}` wherever it lives, by brace depth. */
+function literal(rawText, decl) {
+    const text = noComments(rawText);
+    const start = text.indexOf(decl);
+    if (start < 0) return '';
+    const open = text.indexOf('{', start);
+    let d = 0;
+    for (let i = open; i < text.length; i++) {
+        if (text[i] === '{') d++;
+        else if (text[i] === '}' && --d === 0) return text.slice(open, i + 1);
+    }
+    return '';
+}
 
 test('every talent closure takes the player it applies to', () => {
     for (const cls in talentData)
@@ -177,13 +225,17 @@ test('resetTalents keeps a boon that is currently running', () => {
 // past the sink to the implementation underneath.
 
 test('the presentation sink exists with all four channels', () => {
-    for (const decl of ['const fxLive = {', 'const fxRecord = {', 'let fx = fxLive;'])
-        assert.ok(SRC.includes(decl), 'missing: ' + decl);
-    for (const channel of ['sound:', 'particles:', 'shake:', 'text:']) {
-        const live = SRC.slice(SRC.indexOf('const fxLive = {'), SRC.indexOf('let fxLog'));
-        const rec = SRC.slice(SRC.indexOf('const fxRecord = {'), SRC.indexOf('let fx = fxLive;'));
-        assert.ok(live.includes(channel), 'fxLive has no ' + channel);
-        assert.ok(rec.includes(channel), 'fxRecord has no ' + channel);
+    for (const decl of ['const fxNull = {', 'const fxRecord = {', 'export let fx = fxNull;'])
+        assert.ok(WORLD.includes(decl), 'missing from world.js: ' + decl);
+    assert.ok(SRC.includes('const fxLive = {'), 'the client has no live sink to install');
+    assert.ok(SRC.includes('installFx(fxLive);'), 'the client never installs its sink');
+
+    // All three must agree, or a mode switch hits an undefined channel.
+    const wanted = ['particles', 'shake', 'sound', 'text'];
+    for (const [what, text] of [['fxNull', literal(WORLD, 'const fxNull = {')],
+                                ['fxRecord', literal(WORLD, 'const fxRecord = {')],
+                                ['fxLive', literal(SRC, 'const fxLive = {')]]) {
+        assert.deepEqual(channelsOf(text), wanted, what + ' offers the wrong channels');
     }
 });
 
@@ -193,22 +245,27 @@ test('the dispatchers go through the sink, never straight to the implementation'
         ['function spawnParticles(x, y, color, count) {', 'fx.particles(x, y, color, count);'],
         ['function addShake(amt) {', 'fx.shake(amt);'],
     ]) {
-        const i = SRC.indexOf(dispatch);
+        const i = GAME.indexOf(dispatch);
         assert.notEqual(i, -1, 'missing dispatcher: ' + dispatch);
-        assert.ok(SRC.slice(i, i + 160).includes(channel), dispatch + ' does not call ' + channel);
+        assert.ok(GAME.slice(i, i + 160).includes(channel), dispatch + ' does not call ' + channel);
     }
 });
 
 test('nothing bypasses the sink by calling the raw implementation', () => {
-    // fxLive is allowed to - that is its entire job. Nobody else may.
-    const live = SRC.slice(SRC.indexOf('const fxLive = {'), SRC.indexOf('let fxLog'));
+    // The `...Now` functions are the real audio and canvas work. Only fxLive may call them;
+    // everything else goes through playSound / spawnParticles / addShake so that a server can
+    // swap the destination.
+    const live = literal(SRC, 'const fxLive = {');
     for (const raw of ['playSoundNow(', 'spawnParticlesNow(', 'addShakeNow(']) {
         const total = SRC.split(raw).length - 1;
         const inLive = live.split(raw).length - 1;
         const declared = SRC.includes('function ' + raw) ? 1 : 0;
-        assert.equal(total - inLive - declared, 0,
-            raw + ' is called ' + (total - inLive - declared) + ' time(s) outside the sink');
+        const stray = total - inLive - declared;
+        assert.equal(stray, 0, raw + ' is called ' + stray + ' time(s) outside the sink');
     }
+    // and world.js must not reach for them at all - it has no audio to reach for
+    for (const raw of ['playSoundNow', 'spawnParticlesNow', 'addShakeNow', 'audioCtx'])
+        assert.ok(!WORLD.includes(raw), 'world.js references ' + raw);
 });
 
 test('FloatingText announces itself so a headless run sees the same words', () => {
@@ -259,18 +316,18 @@ test('bosses take health rather than company, on the gentler curve', () => {
 });
 
 test('the scaling is actually wired into the three places that matter', () => {
-    assert.ok(/let count = Math\.round\(\(world\.wave \* 2 \+ 6\) \* coopEnemyMult\(\)\)/.test(SRC),
+    assert.ok(/let count = Math\.round\(\(world\.wave \* 2 \+ 6\) \* coopEnemyMult\(\)\)/.test(GAME),
         'the wave count does not scale');
-    assert.ok(/NEXUS_HP_GROWTH, w - 1\) \* coopToughMult\(\)/.test(SRC),
+    assert.ok(/NEXUS_HP_GROWTH, w - 1\) \* coopToughMult\(\)/.test(GAME),
         'the Nexus does not harden with the party');
-    assert.ok(/this\.hp = Math\.floor\(this\.hp \* coopToughMult\(\)\);/.test(SRC),
+    assert.ok(/this\.hp = Math\.floor\(this\.hp \* coopToughMult\(\)\);/.test(GAME),
         'the boss does not scale');
 });
 
 test('the boss is scaled before maxHp is taken from hp', () => {
     // Otherwise the health bar reads over 100% and only appears once the boss is nearly dead.
-    const scale = SRC.indexOf('this.hp = Math.floor(this.hp * coopToughMult());');
-    const sync = SRC.indexOf('this.maxHp = this.hp;', scale);
+    const scale = GAME.indexOf('this.hp = Math.floor(this.hp * coopToughMult());');
+    const sync = GAME.indexOf('this.maxHp = this.hp;', scale);
     assert.ok(scale !== -1 && sync !== -1 && scale < sync,
         'boss scaling happens after maxHp is captured');
 });
@@ -320,30 +377,33 @@ test('nothing update() can reach touches the DOM', () => {
 });
 
 test('the UI sink exists with matching channels on both sides', () => {
-    const live = SRC.slice(SRC.indexOf('const uiLive = {'), SRC.indexOf('let uiLog'));
-    const head = SRC.slice(SRC.indexOf('const uiHeadless = {'), SRC.indexOf('let ui = uiLive;'));
-    assert.ok(live.length > 40 && head.length > 40, 'one of the sinks is missing');
-    const channels = s => [...s.matchAll(/^\s{8}(\w+):/gm)].map(m => m[1]).sort();
-    assert.deepEqual(channels(live), channels(head),
-        'the two sinks do not offer the same channels, so headless will hit an undefined');
+    const nul = literal(WORLD, 'const uiNull = {');
+    const head = literal(WORLD, 'const uiHeadless = {');
+    const live = literal(SRC, 'const uiLive = {');
+    assert.ok(nul && head && live, 'one of the three UI sinks is missing');
+    assert.deepEqual(channelsOf(head), channelsOf(nul),
+        'uiHeadless and uiNull disagree, so a mode switch hits an undefined');
+    assert.deepEqual(channelsOf(live), channelsOf(nul),
+        'the client sink and the module sink disagree');
+    assert.ok(SRC.includes('installUi(uiLive);'), 'the client never installs its UI sink');
 });
 
 test('headless keeps the world running while somebody shops', () => {
     // The whole simulation used to stop while a modal was open. Alone that is a pause; in
     // co-op it would freeze everyone else because one player opened the forge.
-    const head = SRC.slice(SRC.indexOf('const uiHeadless = {'), SRC.indexOf('let ui = uiLive;'));
+    const head = GAME.slice(GAME.indexOf('const uiHeadless = {'), GAME.indexOf('let ui = uiLive;'));
     assert.ok(/modalOpen:\s*\(\)\s*=>\s*false/.test(head),
         'the headless sink still lets a modal halt the world');
-    const live = SRC.slice(SRC.indexOf('const uiLive = {'), SRC.indexOf('let uiLog'));
+    const live = GAME.slice(GAME.indexOf('const uiLive = {'), GAME.indexOf('let uiLog'));
     assert.ok(/modalOpen:\s*\(\)\s*=>\s*anyModalOpenNow\(\)/.test(live),
         'the live sink no longer pauses, which changes single player');
 });
 
 test('update() asks the sink, never the document, whether a modal is open', () => {
-    assert.ok(SRC.includes('if (isPaused || ui.modalOpen()) { ui.hud(); return; }'),
+    assert.ok(GAME.includes('if (isPaused || ui.modalOpen()) { ui.hud(); return; }'),
         'the game loop does not gate on the sink');
     // anyModalOpenNow is the implementation; only uiLive may call it.
-    const outside = SRC.split('anyModalOpenNow(').length - 1 - 1 /* declaration */;
+    const outside = GAME.split('anyModalOpenNow(').length - 1 - 1 /* declaration */;
     assert.equal(outside, 1, 'anyModalOpenNow is called ' + outside + ' times; only uiLive should');
 });
 
@@ -392,8 +452,9 @@ test('the simulation rate is a named constant the server can differ from', () =>
 // conversion can silently break, both pinned here.
 
 test('the game is a module and there is no classic script left', () => {
-    assert.ok(/<script type="module">[\s\S]*--- The world ---/.test(SRC),
-        'the game script is not a module');
+    assert.ok(/<script type="module">/.test(SRC), 'the game script is not a module');
+    assert.ok(/import \{[\s\S]*?\} from '\.\/src\/sim\/world\.js';/.test(SRC),
+        'index.html does not import the simulation');
     const classic = SRC.match(/<script(?![^>]*type=)[^>]*>/g) || [];
     assert.deepEqual(classic, [], 'a classic script survived: ' + classic.join(', '));
 });
@@ -462,9 +523,9 @@ test('no simulation code reads the keyboard or the mouse', () => {
 });
 
 test('an intent carries everything the simulation needs from a player', () => {
-    const i = SRC.indexOf('function makeIntent()');
+    const i = GAME.indexOf('function makeIntent()');
     assert.notEqual(i, -1, 'makeIntent is gone');
-    const body = SRC.slice(i, SRC.indexOf('}', SRC.indexOf('return {', i)));
+    const body = GAME.slice(i, GAME.indexOf('}', GAME.indexOf('return {', i)));
     for (const field of ['moveX', 'moveY', 'aimX', 'aimY', 'attack', 'place', 'dash',
                          'ability', 'overcharge', 'interact', 'openTalents', 'openBuildings', 'seq'])
         assert.ok(body.includes(field + ':'), 'intent has no ' + field);
@@ -473,7 +534,7 @@ test('an intent carries everything the simulation needs from a player', () => {
 });
 
 test('every player gets their own intent', () => {
-    assert.ok(/this\.intent = makeIntent\(\);/.test(SRC),
+    assert.ok(/this\.intent = makeIntent\(\);/.test(GAME),
         'the Player constructor does not create an intent');
 });
 
@@ -487,8 +548,8 @@ test('input is read once per frame, not once per simulation step', () => {
 });
 
 test('held and edge-triggered actions are produced differently', () => {
-    const i = SRC.indexOf('function readLocalIntent(p)');
-    const body = SRC.slice(i, i + 1400);
+    const i = GAME.indexOf('function readLocalIntent(p)');
+    const body = GAME.slice(i, i + 1400);
     // edge actions go through the edge helper
     for (const a of ['ability', 'overcharge', 'interact', 'openTalents', 'openBuildings'])
         assert.ok(body.includes('i.' + a + ' = edge('), a + ' is not edge-triggered');

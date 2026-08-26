@@ -448,6 +448,14 @@
     //   - Modules are strict mode. Checked before converting: the source parses strict and
     //     assigns to no undeclared identifier.
     import { mulberry32, randomSeed } from './src/sim/rng.js';
+    import {
+        world, resetWorld, rnd, seedRun,
+        livingPlayers, killCredit, nearestPlayer, nearestPlayerDist, playersInRange,
+        headcount, coopEnemyMult, coopToughMult, nexusMaxHpFor,
+        makeBuffs, grantShopBuff, makeIntent, clampWorld, isCollidingWithObstacle,
+        fx, installFx, setFxMode, drainFx, playSound, spawnParticles, addShake,
+        ui, installUi, setUiMode, drainUi
+    } from './src/sim/world.js';
     import { VIEW_W, VIEW_H, WORLD_W, WORLD_H, WORLD_CX, WORLD_CY, SPAWN_RING, POND_CX, POND_CY,
         POND_RX, POND_RY, KING_WAVE_INTERVAL, KING_HP_MULT, KING_DMG_BASE, KING_SPD_MULT,
         KING_SLAM_RANGE, KING_SLAM_CD, KING_SLAM_DMG, HARPY_HP_MULT, HARPY_SPD_MULT, GOB_HP_MULT,
@@ -468,21 +476,12 @@
         MINING_YIELD_STEP, NEXUS_KEEPOUT, CACHES_PER_MAP, MERCHANT_FRAMES, HERO_WALK,
         ATTACK_ANIM_TIME, BODY_OFFSET_X, PREDATOR_BASE_HP, PREDATOR_HP_GROWTH, BEAR_SPAWN_CHANCE,
         BEAR_MIN_GAP_DAYS, RAIN_RADIUS, RAIN_DURATION, RAIN_TICK_DMG, RAIN_SPLINTERS, ACTOR_CLEAR,
-        CRITTER_CLEAR, NPC_CLEAR
+        CRITTER_CLEAR, NPC_CLEAR, ORC_DRAW_H, ORC_FEET, ORC_MELEE_RANGE, KING_DRAW_H, KING_FEET,
+        KING_RADIUS, GOB_DRAW_H, GOB_FEET, GOB_RADIUS, CYCLOP_DRAW_H, CYCLOP_FEET, CYCLOP_RADIUS,
+        TROLL_DRAW_H, TROLL_FEET, TROLL_RADIUS, RIDER_DRAW_H, RIDER_FEET, RIDER_RADIUS, EXTRACTOR_H,
+        EXTRACTOR_FEET, EXTRACTOR_SPACING, EXTRACTOR_HP, NEXUS_IMG, NEXUS_RADIUS
     } from './src/sim/constants.js';
 
-    // --- The world ----------------------------------------------------------------
-    // Everything a match *is*, gathered into one object.
-    //
-    // This is not tidiness. A Durable Object isolate can hold several matches at once, and
-    // anything left at module scope is shared between them - two matches would fight over one
-    // set of enemies. Per-match state has to hang off something per-match, so it moves here
-    // one binding at a time, each move checked against a recorded replay digest.
-    //
-    // Deliberately NOT in here: cam, ui, fx, audioSettings, screenShake, isPaused,
-    // placingBuilding and simAccumulator. Those describe this client's *view* of a match
-    // rather than the match itself, and a server has no business owning them.
-    let world = {};
 
     // ==========================================
     // --- SPRITE CALIBRATION SETTINGS ---
@@ -496,16 +495,6 @@
     // can be replayed from its seed alone. Purely visual randomness - particles, shake,
     // texture generation - deliberately stays on Math.random: the client must be free to
     // draw without pulling the simulation's sequence out of step.
-    world.currentSeed = 0;
-    let simRng = null;
-    function rnd() { return simRng ? simRng() : Math.random(); }
-    function seedRun(seed) {
-        world.currentSeed = (seed !== undefined && seed !== null)
-            ? (seed >>> 0)
-            : randomSeed();
-        simRng = mulberry32(world.currentSeed);
-        return world.currentSeed;
-    }
     // Handy from the console: replay a specific run with startGame('warrior', 12345).
     function currentRunSeed() { return world.currentSeed; }
 
@@ -543,7 +532,6 @@
         cam.x = Math.max(0, Math.min(WORLD_W - VIEW_W, player.x - VIEW_W / 2));
         cam.y = Math.max(0, Math.min(WORLD_H - VIEW_H, player.y - VIEW_H / 2));
     }
-    const clampWorld = (v, max, pad) => Math.max(pad, Math.min(max - pad, v));
     // Nine screens of world means most entities are off-camera on any given frame.
     const inView = (x, y, pad = 120) => x > cam.x - pad && x < cam.x + VIEW_W + pad && y > cam.y - pad && y < cam.y + VIEW_H + pad;
     // Ring position around the nexus, biased to one side (0=top 1=bottom 2=left 3=right).
@@ -601,7 +589,6 @@
         { sx: 228, sy: 39, sw: 214, sh: 277 },
         { sx: 442, sy: 40, sw: 225, sh: 280 }
     ];
-    const ORC_DRAW_H = 92, ORC_FEET = 26, ORC_MELEE_RANGE = 70;
 
     const orcKingSprite = new Image(); orcKingSprite.src = 'assets/textures/enemies/orcking.png';
     const KING_FRAMES = [
@@ -611,7 +598,6 @@
     ];
     // The King is a landmark: the player renders ~97px tall and a goblin ~80, so 260 reads
     // as genuinely huge without filling the screen.
-    const KING_DRAW_H = 260, KING_FEET = 70, KING_RADIUS = 80;
 
     // --- Harpy ------------------------------------------------------------------
     // Replaces the old purple flier. Fast and fragile, and because it is airborne it
@@ -634,7 +620,6 @@
         { sx: 235, sy: 72, sw: 210, sh: 247 },   // bow drawn
         { sx: 453, sy: 80, sw: 196, sh: 241 }    // wolf lunges - point blank
     ];
-    const GOB_DRAW_H = 104, GOB_FEET = 30, GOB_RADIUS = 19;
 
     // --- Cyclops (night miniboss) -------------------------------------------------
     // Turns up on some nights, not every one. Tanky and slow, and its club lands as a
@@ -645,7 +630,6 @@
         { sx: 238, sy: 70, sw: 215, sh: 247 },
         { sx: 458, sy: 50, sw: 194, sh: 272 }
     ];
-    const CYCLOP_DRAW_H = 168, CYCLOP_FEET = 46, CYCLOP_RADIUS = 34;
 
     // --- Troll (rare night spawn) -------------------------------------------------
     // Rarer than the cyclops, and it regenerates - chip damage alone never finishes it.
@@ -657,7 +641,6 @@
         { sx: 230, sy: 73, sw: 177, sh: 240 },
         { sx: 441, sy: 28, sw: 218, sh: 285 }    // overhead club, taller by design
     ];
-    const TROLL_DRAW_H = 142, TROLL_FEET = 40, TROLL_RADIUS = 27;
 
     // --- Orc warg-rider (rare) ----------------------------------------------------
     // Cavalry, so it is built around the run-up rather than the stand-up fight: give it
@@ -670,7 +653,6 @@
         { sx: 232, sy: 77, sw: 210, sh: 236 },   // warg at full stretch
         { sx: 450, sy: 51, sw: 210, sh: 264 }    // axe coming down
     ];
-    const RIDER_DRAW_H = 118, RIDER_FEET = 33, RIDER_RADIUS = 22;
 
     // --- Night lighting -----------------------------------------------------------
     // The old pass laid down 88% near-black and punched holes in it for the player, the
@@ -956,7 +938,6 @@
           give:"Four warg riders. Catch them before they build up speed, or they'll ride you down.",
           done:"Four riders unhorsed. That's a hard-won thing." }
     ];
-    world.activeQuest = null;
 
     // --- Wildlife -----------------------------------------------------------------
     // Passive: they never attack and nothing hunts them. Hit one and it bolts. Each sheet
@@ -997,7 +978,6 @@
     const forgeSprite = new Image(); forgeSprite.src = 'assets/textures/buildings/forge.png';
     const extractorSprite = new Image(); extractorSprite.src = 'assets/textures/buildings/extractor.png';
     const EXTRACTOR_CROP = { sx: 28, sy: 42, sw: 618, sh: 308 };
-    const EXTRACTOR_H = 118, EXTRACTOR_FEET = 40, EXTRACTOR_SPACING = 130, EXTRACTOR_HP = 200;
     // Payback was 0.75 days, which made three extractors an automatic purchase rather than
     // a choice. At 50 it is about 1.25 days, so building them costs you an early wave's defence.
 
@@ -1038,36 +1018,7 @@
         return Math.min(PARAGON_UNLOCK, total);
     }
     function extractorCount() { return world.entities.extractors.length; }
-    // The bear was a 300 resource lump sum - about sixty gathering actions from one kill.
-    // Scaling it keeps the fight worth taking late without being a night-one jackpot.
-    // A flat 500hp nexus died in about 1.3s at wave 10 and 0.3s at wave 20, so losing was a
-    // tripwire rather than attrition. Growing the pool with the wave gives leakage somewhere
-    // to land, which is what makes repairs and the brazier worth having.
-    // The nexus is the whole failure condition now: towers used to intercept whatever walked
-    // past you, and nothing does, so anything you cannot personally reach lands on it.
-    //
-    // It used to gain a flat 60 HP a wave while enemy damage climbed 1.1x a wave. Geometric
-    // beats linear, so the number of leakers it could survive fell every night - by wave 20 a
-    // single enemy chewing on it for the night was lethal, and no amount of flat HP fixes that
-    // shape. It now compounds at 1.09 against their 1.10, so it very slowly loses ground
-    // instead of falling off a cliff, and the late game stays playable.
-    // --- Co-op scaling -----------------------------------------------------------
-    // `count = wave * 2 + 6` was written for one player. Four of them would walk it.
-    //
-    // Two players are not twice as hard to kill as one: they cover each other, they hold two
-    // lanes, and their cooldowns overlap. So the horde grows by 0.6 a head rather than 1.0,
-    // and the party still feels stronger together than apart - which is the point of co-op.
-    //
-    // Bosses take the gentler curve, and take it as health rather than as numbers, because
-    // there is only ever one of them and four players delete it in seconds otherwise. The
-    // Nexus hardens on the same curve: more attackers reach it, so it has to hold longer.
-    //
-    // Every one of these is exactly 1.0 at a single player, so solo play is untouched.
-    function headcount() { return Math.max(1, world.players.length); }
-    function coopEnemyMult() { return 1 + COOP_ENEMY_STEP * (headcount() - 1); }
-    function coopToughMult() { return 1 + COOP_TOUGH_STEP * (headcount() - 1); }
 
-    function nexusMaxHpFor(w) { return Math.floor(NEXUS_BASE_HP * Math.pow(NEXUS_HP_GROWTH, w - 1) * coopToughMult()) + 100 * (world.forgeUpgrades.nexus ? world.forgeUpgrades.nexus.level : 0); }
     function bearLoot() { return BEAR_LOOT_BASE + BEAR_LOOT_PER_WAVE * world.wave; }
     const terrainSprites = { trees: new Image(), rocks: new Image() };
     terrainSprites.trees.src = 'assets/textures/terrains/trees.png';
@@ -1101,13 +1052,11 @@
     function resourceCountFor(day) { return Math.min(RES_MAX, RES_START + (day - 1) * RES_PER_DAY); }
     // The nexus is the thing the whole game is named after, so it is drawn at proper
     // landmark scale. Everything pinned to its footprint scales from these two numbers.
-    const NEXUS_IMG = 285, NEXUS_RADIUS = 85;
     const REPAIR_FRACTION = 0.25, REPAIR_W = 40, REPAIR_S = 40, REPAIR_M = 20;
     const FORGE_CROP = { sx: 112, sy: 38, sw: 475, sh: 296 };
     const FORGE_H = 132, FORGE_FEET = 46, FORGE_RANGE = 165;
     // The forge is no longer scenery the map hands you: it is raised from gathered wood and
     // stone like anything else, so until it is built there is nowhere to upgrade at.
-    world.forgeBuilding = null;
     function forgeX() { return world.forgeBuilding ? world.forgeBuilding.x : 0; }
     function forgeY() { return world.forgeBuilding ? world.forgeBuilding.y : 0; }
     function playerAtForge() { return world.forgeBuilding && world.gameState === 'DAY' && Math.hypot(player.x - world.forgeBuilding.x, player.y - world.forgeBuilding.y) < FORGE_RANGE; }
@@ -1297,28 +1246,10 @@
 
     // Positions are rounded because this stream is meant to go over a wire, and a float that
     // differs in its last bit is not a difference anybody can see.
-    let fxLog = [];
-    const fxRecord = {
-        sound:     type => fxLog.push(['sound', type]),
-        particles: (x, y, color, count) => fxLog.push(['particles', Math.round(x), Math.round(y), color, count]),
-        shake:     amt => fxLog.push(['shake', amt]),
-        text:      (x, y, text, color) => fxLog.push(['text', Math.round(x), Math.round(y), text, color])
-    };
 
-    let fx = fxLive;
 
     /** 'live' plays it, 'record' just remembers it. Returns the log so far and clears it. */
-    function setFxMode(mode) {
-        const drained = fxLog;
-        fxLog = [];
-        fx = (mode === 'record') ? fxRecord : fxLive;
-        return drained;
-    }
-    function drainFx() { const d = fxLog; fxLog = []; return d; }
 
-    function playSound(type) { fx.sound(type); }
-    function spawnParticles(x, y, color, count) { fx.particles(x, y, color, count); }
-    function addShake(amt) { fx.shake(amt); }
 
     function playSoundNow(type) {
         if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -1338,8 +1269,6 @@
     // `player` is still this client's own; `lastTime` is the browser's clock. Neither
     // belongs to the match, so neither moves into the world.
     let lastTime = 0, player;
-    world.gameState = 'MENU';
-    world.base = null;
 
     // --- Who is in the match ------------------------------------------------------
     // `players` is everyone; single player is simply a match with one. `player` is THIS
@@ -1347,52 +1276,13 @@
     // its behalf. Simulation code must never reach for it, because on a server there is no
     // "this client": the horde asks nearestPlayer() who to walk towards, and anything with
     // an area of effect asks playersInRange() who is standing in it.
-    world.players = [];
 
-    function livingPlayers() { return world.players.filter(p => p.hp > 0); }
 
-    // Who gets the experience, the lifesteal and the loot for a kill.
-    //
-    // takeDamage cannot answer this yet: its `attacker` argument is the enemy that hit you,
-    // not the player who hit it. Until damage carries the player who dealt it, credit goes
-    // to this client - correct for a single-player match, and wrong in co-op. This is
-    // deliberately the only place that assumption lives, so there is one thing to fix.
-    function killCredit() { return player; }
 
-    function nearestPlayer(x, y) {
-        let best = null, bestD = Infinity;
-        for (const p of world.players) {
-            if (p.hp <= 0) continue;
-            const d = Math.hypot(p.x - x, p.y - y);
-            if (d < bestD) { bestD = d; best = p; }
-        }
-        // Never null while anyone is in the match. The horde has to have something to walk
-        // at, and a party that is entirely down ends the run anyway.
-        return best || world.players[0] || null;
-    }
 
-    function nearestPlayerDist(x, y) {
-        const p = nearestPlayer(x, y);
-        return p ? Math.hypot(p.x - x, p.y - y) : Infinity;
-    }
 
-    function playersInRange(x, y, r) {
-        return world.players.filter(p => p.hp > 0 && Math.hypot(p.x - x, p.y - y) < r);
-    }
-    world.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
-    world.inventory = { wood: 50, stone: 50, mana: 20 };
-    world.wave = 1; world.phaseTimer = 60; world.totalKills = 0;
     let screenShake = 0; 
-    world.currentWeather = 'clear'; 
-    world.currentModifier = 'none';
     let isPaused = false;
-    world.waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
-    world.lastBearWave = -99;
-    world.lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
-    world.campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
-    world.campOneOffs = { skinning: false, beastcall: false };
-    world.campRationsDay = -1;
-    world.gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
     let achievements = [
         { id: 'first_blood', name: 'First Blood', desc: 'Slay your first enemy.', unlocked: false },
         { id: 'lumberjack', name: 'Lumberjack', desc: 'Gather 50 Wood.', unlocked: false },
@@ -1400,68 +1290,11 @@
         { id: 'builder', name: 'Architect', desc: 'Build 3 Extractors.', unlocked: false }
     ];
     
-    // `vampirism` is the fraction of damage dealt that comes back as health, not a flag: the
-    // ring and the warrior's Bloodthirst both feed it, and as a boolean the talent's second
-    // rank bought nothing and the tooltip's 3% was really the ring's 5%.
-    // Buffs belong to a player, not to the match. Two players in one co-op run have their own
-    // talents, their own trinkets and their own forge purchases, so vampirism, crit and thorns
-    // cannot live in a single global the way they used to.
-    //
-    // Each player carries two of these:
-    //   shopBuffs - what was *bought* (forge, camp, merchant, caches). Permanent.
-    //   buffs     - the live values: shopBuffs plus every talent rank on top.
-    //
-    // Splitting them is what makes an Amnesia Potion honest. resetTalents rebuilds `buffs` from
-    // `shopBuffs`, so talent contributions vanish and purchases survive. Before this, talents
-    // wrote into the global and nothing ever took them back out: buy Bloodthirst, reset, rebuy,
-    // and the vampirism stacked forever.
-    function makeBuffs(from) {
-        return from ? Object.assign({}, from)
-                    : { gatherYield: 1, speedMult: 1.0, bonusHp: 0, forgeAtkMult: 1.0, hasteMod: 1.0, vampirism: 0,
-            dmgReducMult: 1.0, thorns: 0, critChance: 0, critMult: 2.0, mpRegenBonus: 1.0, lifeOnKill: 0 };
-    }
 
-    // A purchase writes to both, so it is still there after the next reset.
-    function grantShopBuff(p, field, amount, multiply = false) {
-        if (!p) return;
-        if (multiply) { p.shopBuffs[field] *= amount; p.buffs[field] *= amount; }
-        else          { p.shopBuffs[field] += amount; p.buffs[field] += amount; }
-    }
 
-    world.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
 
     const keys = {}; let mouse = { x: 0, y: 0, sx: 0, sy: 0, clicked: false, rightClicked: false };
 
-    // --- Input as data -------------------------------------------------------------
-    // The simulation used to read the keyboard and the mouse directly. A server has neither,
-    // and in co-op every player has their own - so what the simulation gets instead is an
-    // intent: what one player wants this tick, already resolved from whatever produced it.
-    // The client fills one in each frame from `keys` and `mouse`; a server will fill one in
-    // from a network packet. Nothing downstream knows which happened.
-    //
-    // `aim` is in world coordinates, not screen, because the camera is the client's business.
-    //
-    // The two `...Spent` flags are not noise. Attack and place are HELD, not edge-triggered -
-    // holding the button keeps swinging, rate-limited by the weapon cooldown. But a click that
-    // lands on an NPC or a resource is used up by that, and must not also swing. The original
-    // did this by writing `mouse.clicked = false`, which lasted until the button came back up.
-    // A flag on the intent reproduces exactly that and still survives being sent over a wire.
-    function makeIntent() {
-        return {
-            moveX: 0, moveY: 0,          // -1..1 each, held
-            aimX: 0, aimY: 0,            // world coordinates being pointed at
-            attack: false,               // held
-            place: false,                // held (right button)
-            attackSpent: false, placeSpent: false,
-            dash: false,                 // held; the cooldown does the rate limiting
-            ability: false,              // edge
-            overcharge: false,           // edge
-            interact: false,             // edge
-            openTalents: false,          // edge
-            openBuildings: false,        // edge
-            seq: 0
-        };
-    }
 
     // Edge detection lives with the producer, which is what `keys['e'] = false` was really
     // doing: making a held key fire once.
@@ -1537,34 +1370,6 @@
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     function addShakeNow(amt) { screenShake = Math.max(screenShake, amt); }
     
-    function isCollidingWithObstacle(x, y, radius) {
-        for (let obs of world.entities.obstacles) {
-            if (obs.type === 'lake') {
-                // Ellipse test on the real water body (the old circle used the box width
-                // for both axes, so it blocked dry grass and let you wade in at the sides).
-                let cx = obs.x + obs.w * POND_CX;
-                let cy = obs.y + obs.h * POND_CY;
-                let rx = obs.w * POND_RX + radius;
-                let ry = obs.h * POND_RY + radius;
-                let dx = (x - cx) / rx; let dy = (y - cy) / ry;
-                if (dx*dx + dy*dy < 1) return true;
-            } else {
-                let closeX = Math.max(obs.x, Math.min(x, obs.x + obs.w)); let closeY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
-                let dx = x - closeX; let dy = y - closeY; if (dx*dx + dy*dy < radius*radius) return true;
-            }
-        }
-        for (let sp of world.entities.solids) {
-            let dx = x - sp.x; let dy = y - sp.y;
-            if (dx*dx + dy*dy < Math.pow(sp.r + radius, 2)) return true;
-        }
-        for (let r of world.entities.resources) {
-            if (r.solid) {
-                let dx = x - r.x; let dy = y - r.y;
-                if (dx*dx + dy*dy < Math.pow(r.solidRadius + radius, 2)) return true;
-            }
-        }
-        return false;
-    }
 
     function spawnParticlesNow(x, y, color, count) {
         for(let i=0; i<count; i++) {
@@ -3496,6 +3301,7 @@
     function quitToMenu() { if (confirmed('quitBtn')) resetGameToMenu(); }
 
     function restartRun() {
+        resetWorld();
         let cls = player ? player.cls : 'warrior';
         closeSettings();
         MODAL_IDS.forEach(id => closeModal(id));
@@ -3827,25 +3633,13 @@
         achievement: ach => achievementToastNow(ach)
     };
 
-    let uiLog = [];
-    const uiHeadless = {
-        modalOpen:   () => false,              // nobody is shopping on a server
-        open:        name => uiLog.push(['open', name]),
-        closeAll:    () => uiLog.push(['closeAll']),
-        phase:       (text) => uiLog.push(['phase', text]),
-        nightButton: show => uiLog.push(['nightButton', show]),
-        waveNumber:  w => uiLog.push(['wave', w]),
-        weather:     (text) => uiLog.push(['weather', text]),
-        buildPalette: () => {},
-        forgePanel:  () => {},
-        hud:         () => {},
-        gameOver:    () => uiLog.push(['gameOver']),
-        achievement: ach => uiLog.push(['achievement', ach.id])
-    };
+    // The module owns the dispatch; the browser owns the noise and the DOM. Handing the
+    // live implementations over is the only thing that makes this client rather than a
+    // server - a Durable Object simply never calls these.
+    installFx(fxLive);
+    installUi(uiLive);
 
-    let ui = uiLive;
-    function setUiMode(mode) { const d = uiLog; uiLog = []; ui = (mode === 'headless') ? uiHeadless : uiLive; return d; }
-    function drainUi() { const d = uiLog; uiLog = []; return d; }
+
 
     /** One name per window, so the simulation never says `getElementById`. */
     function openWindowNow(name) {
@@ -5265,6 +5059,9 @@
         get mouse()  { return mouse; },
         get ui()     { return ui; },
         get paused() { return isPaused; },
+        // Whether the rAF chain is alive. Worth exposing: a hidden browser pane never
+        // fires rAF at all, which looks exactly like a broken game until you check.
+        get loopRunning() { return loopRunning; },
         startGame, gameLoop, spawnWave, setWeather, generateMap, startNightEarly,
         setFxMode, drainFx, setUiMode, drainUi,
         /** Put the loop's clock somewhere known, so a synthetic run is reproducible. */

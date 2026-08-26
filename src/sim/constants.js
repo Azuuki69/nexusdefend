@@ -98,3 +98,14 @@ export const PREDATOR_BASE_HP = 1000, PREDATOR_HP_GROWTH = 1.15;
 export const BEAR_SPAWN_CHANCE = 0.22, BEAR_MIN_GAP_DAYS = 2;
 export const RAIN_RADIUS = 165, RAIN_DURATION = 3.0, RAIN_TICK_DMG = 0.55, RAIN_SPLINTERS = 5;
 export const ACTOR_CLEAR = 110, CRITTER_CLEAR = 70, NPC_CLEAR = 80;
+
+// Sizes and reaches the simulation needs. They share their lines with drawing
+// dimensions, so the statements move whole and the renderer imports them back.
+export const ORC_DRAW_H = 92, ORC_FEET = 26, ORC_MELEE_RANGE = 70;
+export const KING_DRAW_H = 260, KING_FEET = 70, KING_RADIUS = 80;
+export const GOB_DRAW_H = 104, GOB_FEET = 30, GOB_RADIUS = 19;
+export const CYCLOP_DRAW_H = 168, CYCLOP_FEET = 46, CYCLOP_RADIUS = 34;
+export const TROLL_DRAW_H = 142, TROLL_FEET = 40, TROLL_RADIUS = 27;
+export const RIDER_DRAW_H = 118, RIDER_FEET = 33, RIDER_RADIUS = 22;
+export const EXTRACTOR_H = 118, EXTRACTOR_FEET = 40, EXTRACTOR_SPACING = 130, EXTRACTOR_HP = 200;
+export const NEXUS_IMG = 285, NEXUS_RADIUS = 85;
