@@ -109,3 +109,8 @@ export const TROLL_DRAW_H = 142, TROLL_FEET = 40, TROLL_RADIUS = 27;
 export const RIDER_DRAW_H = 118, RIDER_FEET = 33, RIDER_RADIUS = 22;
 export const EXTRACTOR_H = 118, EXTRACTOR_FEET = 40, EXTRACTOR_SPACING = 130, EXTRACTOR_HP = 200;
 export const NEXUS_IMG = 285, NEXUS_RADIUS = 85;
+
+// Sizes and reaches the simulation needs. They share their lines with drawing
+// dimensions, so the statements move whole and the renderer imports them back.
+export const RES_START = 48, RES_PER_DAY = 8, RES_MAX = 130;
+export const MERCHANT_VISIT_DAYS = 4;

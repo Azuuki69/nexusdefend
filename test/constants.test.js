@@ -77,7 +77,11 @@ test('values the balance depends on are still what the game was tuned for', () =
     assert.equal(C.COOP_TOUGH_STEP, 0.5);
 });
 
-test('BUILDINGS stayed with the client, where the world is', () => {
-    assert.equal(C.BUILDINGS, undefined, 'BUILDINGS is back in the module and will throw');
-    assert.ok(/const BUILDINGS = \{/.test(SRC), 'BUILDINGS is not defined in index.html either');
+test('BUILDINGS is not in constants.js, because it needs a world', () => {
+    // Each entry counts what is already built, which reads world.entities. constants.js has no
+    // world - it broke the buildings panel the one time it lived there. entities.js does have
+    // one, which is where it belongs.
+    assert.equal(C.BUILDINGS, undefined, 'BUILDINGS is back in constants.js and will throw');
+    const ENTITIES = readFileSync(join(HERE, '..', 'src', 'sim', 'entities.js'), 'utf8');
+    assert.ok(/export const BUILDINGS = \{/.test(ENTITIES), 'BUILDINGS is not in entities.js either');
 });

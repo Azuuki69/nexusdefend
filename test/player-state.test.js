@@ -28,20 +28,26 @@ const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'in
 // shape still look at index.html alone.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORLD = readFileSync(join(HERE, '..', 'src', 'sim', 'world.js'), 'utf8');
-const GAME = SRC + WORLD;
+const ENTITIES = readFileSync(join(HERE, '..', 'src', 'sim', 'entities.js'), 'utf8');
+const GAME = SRC + WORLD + ENTITIES;
 
 /** Lift a top-level `const NAME = {...};` literal out of the game and evaluate it. */
 function lift(name) {
-    const start = SRC.indexOf('const ' + name + ' = {');
-    assert.notEqual(start, -1, name + ' not found in index.html');
-    const open = SRC.indexOf('{', start);
-    let depth = 0, end = -1;
-    for (let i = open; i < SRC.length; i++) {
-        if (SRC[i] === '{') depth++;
-        else if (SRC[i] === '}' && --depth === 0) { end = i + 1; break; }
+    // The literals live in index.html or in one of the sim modules now, so look in all of
+    // them rather than assuming which file a given table ended up in.
+    for (const text of [SRC, ENTITIES, WORLD]) {
+        const start = text.indexOf('const ' + name + ' = {');
+        if (start === -1) continue;
+        const open = text.indexOf('{', start);
+        let depth = 0;
+        for (let i = open; i < text.length; i++) {
+            if (text[i] === '{') depth++;
+            else if (text[i] === '}' && --depth === 0)
+                return (0, eval)('(' + text.slice(open, i + 1) + ')');
+        }
+        assert.fail(name + ' literal is unbalanced');
     }
-    assert.notEqual(end, -1, name + ' literal is unbalanced');
-    return (0, eval)('(' + SRC.slice(open, end) + ')');
+    assert.fail(name + ' not found in index.html, entities.js or world.js');
 }
 
 const talentData = lift('talentData');
@@ -227,14 +233,14 @@ test('resetTalents keeps a boon that is currently running', () => {
 test('the presentation sink exists with all four channels', () => {
     for (const decl of ['const fxNull = {', 'const fxRecord = {', 'export let fx = fxNull;'])
         assert.ok(WORLD.includes(decl), 'missing from world.js: ' + decl);
-    assert.ok(SRC.includes('const fxLive = {'), 'the client has no live sink to install');
-    assert.ok(SRC.includes('installFx(fxLive);'), 'the client never installs its sink');
+    assert.ok(GAME.includes('const fxLive = {'), 'the client has no live sink to install');
+    assert.ok(GAME.includes('installFx(fxLive);'), 'the client never installs its sink');
 
     // All three must agree, or a mode switch hits an undefined channel.
     const wanted = ['particles', 'shake', 'sound', 'text'];
     for (const [what, text] of [['fxNull', literal(WORLD, 'const fxNull = {')],
                                 ['fxRecord', literal(WORLD, 'const fxRecord = {')],
-                                ['fxLive', literal(SRC, 'const fxLive = {')]]) {
+                                ['fxLive', literal(GAME, 'const fxLive = {')]]) {
         assert.deepEqual(channelsOf(text), wanted, what + ' offers the wrong channels');
     }
 });
@@ -255,11 +261,11 @@ test('nothing bypasses the sink by calling the raw implementation', () => {
     // The `...Now` functions are the real audio and canvas work. Only fxLive may call them;
     // everything else goes through playSound / spawnParticles / addShake so that a server can
     // swap the destination.
-    const live = literal(SRC, 'const fxLive = {');
+    const live = literal(GAME, 'const fxLive = {');
     for (const raw of ['playSoundNow(', 'spawnParticlesNow(', 'addShakeNow(']) {
-        const total = SRC.split(raw).length - 1;
+        const total = GAME.split(raw).length - 1;
         const inLive = live.split(raw).length - 1;
-        const declared = SRC.includes('function ' + raw) ? 1 : 0;
+        const declared = GAME.includes('function ' + raw) ? 1 : 0;
         const stray = total - inLive - declared;
         assert.equal(stray, 0, raw + ' is called ' + stray + ' time(s) outside the sink');
     }
@@ -269,9 +275,9 @@ test('nothing bypasses the sink by calling the raw implementation', () => {
 });
 
 test('FloatingText announces itself so a headless run sees the same words', () => {
-    const i = SRC.indexOf('class FloatingText {');
+    const i = GAME.indexOf('class FloatingText {');
     assert.notEqual(i, -1);
-    assert.ok(SRC.slice(i, i + 320).includes('fx.text(x, y, text, color)'),
+    assert.ok(GAME.slice(i, i + 320).includes('fx.text(x, y, text, color)'),
         'FloatingText does not report through the sink');
 });
 
@@ -279,7 +285,7 @@ test('the sim classes still have their juice - the sink did not strip it', () =>
     // If a refactor ever quietly removed these calls the determinism test would still pass
     // while the game went silent, so the count is worth pinning down.
     const calls = ['playSound(', 'new FloatingText(', 'spawnParticles(', 'addShake('];
-    const total = calls.reduce((n, c) => n + SRC.split(c).length - 1, 0);
+    const total = calls.reduce((n, c) => n + GAME.split(c).length - 1, 0);
     assert.ok(total > 180, 'presentation calls dropped to ' + total + '; something stripped them');
 });
 
@@ -340,14 +346,14 @@ test('the boss is scaled before maxHp is taken from hp', () => {
 /** Everything update() can reach, by walking the call graph the way the game does. */
 function reachableFromUpdate() {
     const funcs = {};
-    const lines = SRC.split('\n');
+    const lines = GAME.split('\n');
     // Strip the CR first. The file is CRLF, and in JavaScript `.` does not match \r - it is a
     // line terminator - so /\/\/.*$/ matches nothing at all on a CRLF line and the comment
     // survives. Python's `.` does match \r, which is why the analysis scripts never saw this.
     const clean = lines.map(l => l.replace(/\r/g, '').replace(/\/\/.*$/, '')
                                   .replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""'));
     lines.forEach((l, i) => {
-        const m = l.match(/^\s*function (\w+)\(/);
+        const m = l.match(/^\s*(?:export )?function (\w+)\(/);
         if (!m) return;
         let d = 0;
         for (let j = i; j < Math.min(i + 400, lines.length); j++) {
@@ -379,13 +385,13 @@ test('nothing update() can reach touches the DOM', () => {
 test('the UI sink exists with matching channels on both sides', () => {
     const nul = literal(WORLD, 'const uiNull = {');
     const head = literal(WORLD, 'const uiHeadless = {');
-    const live = literal(SRC, 'const uiLive = {');
+    const live = literal(GAME, 'const uiLive = {');
     assert.ok(nul && head && live, 'one of the three UI sinks is missing');
     assert.deepEqual(channelsOf(head), channelsOf(nul),
         'uiHeadless and uiNull disagree, so a mode switch hits an undefined');
     assert.deepEqual(channelsOf(live), channelsOf(nul),
         'the client sink and the module sink disagree');
-    assert.ok(SRC.includes('installUi(uiLive);'), 'the client never installs its UI sink');
+    assert.ok(GAME.includes('installUi(uiLive);'), 'the client never installs its UI sink');
 });
 
 test('headless keeps the world running while somebody shops', () => {
