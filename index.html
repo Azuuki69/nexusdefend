@@ -1494,11 +1494,15 @@
     function checkAchievement(id) {
         let ach = achievements.find(a => a.id === id);
         if (ach && !ach.unlocked) {
-            ach.unlocked = true; playSound('levelup');
-            document.getElementById('toastName').innerText = ach.name; document.getElementById('toastDesc').innerText = ach.desc;
-            document.getElementById('achievementToast').classList.add('toast-visible');
-            setTimeout(() => document.getElementById('achievementToast').classList.remove('toast-visible'), 4000);
+            ach.unlocked = true; playSound('levelup'); ui.achievement(ach);
+            return;
         }
+    }
+    function achievementToastNow(ach) {
+        document.getElementById('toastName').innerText = ach.name;
+        document.getElementById('toastDesc').innerText = ach.desc;
+        document.getElementById('achievementToast').classList.add('toast-visible');
+        setTimeout(() => document.getElementById('achievementToast').classList.remove('toast-visible'), 4000);
     }
 
     // Paying 2 mana a second meant hitting this at dawn was worth 120 mana, against the ~16 a
@@ -1803,7 +1807,7 @@
     }
     function cancelPlacement() {
         if (!placingBuilding) return;
-        placingBuilding = null; updateBuildUI();
+        placingBuilding = null; ui.buildPalette();
         entities.texts.push(new FloatingText(player.x, player.y - 50, 'CANCELLED', '#9a9a90'));
     }
 
@@ -3222,7 +3226,7 @@
                 entities.texts.push(new FloatingText(mx, my - 60, "THE FORGE IS LIT", '#ffcc66'));
             }
             placingBuilding = null;
-            spawnParticles(mx, my, '#fff', 18); playSound('levelup'); addShake(6); updateBuildUI();
+            spawnParticles(mx, my, '#fff', 18); playSound('levelup'); addShake(6); ui.buildPalette();
         }
 
         draw(ctx) {
@@ -4366,7 +4370,7 @@
             currentModifier = 'none';
         }
         
-        let wt = document.getElementById('weatherText');
+        let __wtext = '', __wcol = '#fff';
         let txt = ""; let col = "#fff";
         if (currentWeather === 'bloodmoon') { txt += "BLOOD MOON "; col = "#ff3333"; }
         else if (currentWeather === 'blizzard') { txt += "BLIZZARD "; col = "#aaddff"; }
@@ -4375,8 +4379,9 @@
         if (currentModifier === 'swarm') { txt += (txt ? " | " : "") + "SWARM"; }
         else if (currentModifier === 'armored') { txt += (txt ? " | " : "") + "ARMORED HORDE"; }
         
-        wt.innerText = txt;
-        wt.style.color = col === '#fff' && txt.includes('SWARM') ? '#ffcc00' : col;
+        __wtext = txt;
+        __wcol = col === '#fff' && txt.includes('SWARM') ? '#ffcc00' : col;
+        ui.weather(__wtext, __wcol);
     }
 
     function startGame(selectedClass, seed) {
@@ -4510,8 +4515,70 @@
         waveDirection = -1; // Reset for next day
     }
 
-    function triggerGameOver() { 
-        gameState = 'OVER'; document.getElementById('phaseText').innerText = "GAME OVER"; 
+    // --- UI sink ------------------------------------------------------------------
+    // The other half of the headless problem. update() opens windows, writes the phase
+    // banner, and asks whether a modal is open; a Durable Object has no document to ask.
+    // Same shape as the presentation sink: the browser installs the real one, a headless
+    // run installs a recorder, and the call sites never learn which is which.
+    //
+    // `modalOpen` is the one that is not merely cosmetic. Today the entire world stops while
+    // a shop window is up. That is fine alone and impossible in co-op, where one player
+    // browsing the forge would freeze everybody else. The headless sink answers false, so on
+    // a server the world keeps running while somebody shops, and locally it still reads the
+    // DOM so single player pauses exactly as it always has. The decision now lives in one
+    // place instead of being welded into the game loop.
+    const uiLive = {
+        modalOpen:   () => anyModalOpenNow(),
+        open:        name => openWindowNow(name),
+        closeAll:    () => closeAllWindowsNow(),
+        phase:       (text, color) => { const e = document.getElementById('phaseText'); e.innerText = text; e.style.color = color; },
+        nightButton: show => document.getElementById('earlyNightBtn').classList[show ? 'remove' : 'add']('hidden'),
+        waveNumber:  w => { document.getElementById('ui-wave').innerText = w; },
+        weather:     (text, color) => { const e = document.getElementById('weatherText'); e.innerText = text; e.style.color = color; },
+        buildPalette: () => updateBuildUI(),
+        forgePanel:  () => updateForgeUI(),
+        hud:         () => syncHudNow(),
+        gameOver:    () => gameOverPanelNow(),
+        achievement: ach => achievementToastNow(ach)
+    };
+
+    let uiLog = [];
+    const uiHeadless = {
+        modalOpen:   () => false,              // nobody is shopping on a server
+        open:        name => uiLog.push(['open', name]),
+        closeAll:    () => uiLog.push(['closeAll']),
+        phase:       (text) => uiLog.push(['phase', text]),
+        nightButton: show => uiLog.push(['nightButton', show]),
+        waveNumber:  w => uiLog.push(['wave', w]),
+        weather:     (text) => uiLog.push(['weather', text]),
+        buildPalette: () => {},
+        forgePanel:  () => {},
+        hud:         () => {},
+        gameOver:    () => uiLog.push(['gameOver']),
+        achievement: ach => uiLog.push(['achievement', ach.id])
+    };
+
+    let ui = uiLive;
+    function setUiMode(mode) { const d = uiLog; uiLog = []; ui = (mode === 'headless') ? uiHeadless : uiLive; return d; }
+    function drainUi() { const d = uiLog; uiLog = []; return d; }
+
+    /** One name per window, so the simulation never says `getElementById`. */
+    function openWindowNow(name) {
+        if (name === 'talent')        openTalentMenu();
+        else if (name === 'buildings') openBuildings();
+        else if (name === 'camp')      openCamp();
+        else if (name === 'forge')     openForge();
+        else if (name === 'merchant')  document.getElementById('merchantOverlay').classList.remove('hidden');
+    }
+    function closeAllWindowsNow() {
+        closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('campOverlay');
+        closeModal('talentOverlay'); closeModal('buildingsOverlay');
+    }
+
+    function triggerGameOver() { gameState = 'OVER'; ui.gameOver(); }
+
+    function gameOverPanelNow() { 
+        document.getElementById('phaseText').innerText = "GAME OVER"; 
         document.getElementById('gameOverOverlay').classList.remove('hidden'); 
         document.getElementById('go-waves').innerText = wave; document.getElementById('go-kills').innerText = totalKills; 
         document.getElementById('go-dmg').innerText = gameStats.dmg; document.getElementById('go-wood').innerText = gameStats.wood;
@@ -4521,24 +4588,24 @@
     // Any window that takes over the screen also stops the clock. The talent tree and the
     // Buildings window both open at night, and reading them used to cost you the wave - the
     // horde kept walking while you were nose-deep in a menu.
-    function anyModalOpen() { return MODAL_IDS.some(id => !document.getElementById(id).classList.contains('hidden')); }
+    function anyModalOpenNow() { return MODAL_IDS.some(id => !document.getElementById(id).classList.contains('hidden')); }
 
     function update(dt) {
         updateCamera();
         mouse.x = mouse.sx + cam.x; mouse.y = mouse.sy + cam.y;
         if (gameState === 'OVER') return;
-        if (isPaused || anyModalOpen()) { syncHud(); return; }
+        if (isPaused || ui.modalOpen()) { ui.hud(); return; }
         if (screenShake > 0) screenShake -= dt * 30;
 
-        if (keys['t']) { openTalentMenu(); keys['t'] = false; }
-        if (keys['b']) { if (placingBuilding) cancelPlacement(); else openBuildings(); keys['b'] = false; }
+        if (keys['t']) { ui.open('talent'); keys['t'] = false; }
+        if (keys['b']) { if (placingBuilding) cancelPlacement(); else ui.open('buildings'); keys['b'] = false; }
         if (keys['r'] && gameState === 'DAY') {
             let shop = entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
             let wayfarer = entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
-            if (shop) { document.getElementById('merchantOverlay').classList.remove('hidden'); keys['r'] = false; }
+            if (shop) { ui.open('merchant'); keys['r'] = false; }
             else if (wayfarer) { wayfarer.talk(); keys['r'] = false; }
-            else if (Math.hypot(player.x - CAMP_NPC_X, player.y - CAMP_NPC_Y) < CAMP_RANGE) { openCamp(); keys['r'] = false; }
-            else if (playerAtForge()) { openForge(); keys['r'] = false; }
+            else if (Math.hypot(player.x - CAMP_NPC_X, player.y - CAMP_NPC_Y) < CAMP_RANGE) { ui.open('camp'); keys['r'] = false; }
+            else if (playerAtForge()) { ui.open('forge'); keys['r'] = false; }
         }
 
         phaseTimer -= dt;
@@ -4553,8 +4620,8 @@
         if (phaseTimer <= 0) {
             if (gameState === 'DAY') {
                 gameState = 'NIGHT'; phaseTimer = 90; setWeather();
-                document.getElementById('phaseText').innerText = wave % 5 === 0 ? "BOSS WAVE - DEFEND!" : "NIGHT PHASE - DEFEND!";
-                document.getElementById('phaseText').style.color = '#ff4d4d'; document.getElementById('earlyNightBtn').classList.add('hidden');
+                ui.phase(wave % 5 === 0 ? "BOSS WAVE - DEFEND!" : "NIGHT PHASE - DEFEND!", '#ff4d4d');
+                ui.nightButton(false);
                 
                 // Clear day buffs
                 players.forEach(p => { if (p.hasDaySpeed) { p.buffs.speedMult -= 1.0; p.hasDaySpeed = false; } });
@@ -4574,13 +4641,12 @@
                     }
                 });
                 
-                closeModal('forgeOverlay'); closeModal('merchantOverlay'); closeModal('campOverlay'); closeModal('talentOverlay');
-                closeModal('buildingsOverlay'); placingBuilding = null; updateBuildUI(); spawnWave();
+                ui.closeAll(); placingBuilding = null; ui.buildPalette(); spawnWave();
             } else {
                 gameState = 'DAY'; wave++; phaseTimer = 60; setWeather();
-                document.getElementById('phaseText').innerText = merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER";
-                document.getElementById('phaseText').style.color = '#fff'; document.getElementById('earlyNightBtn').classList.remove('hidden');
-                document.getElementById('ui-wave').innerText = wave; base.recalcMaxHp(); base.repairedToday = false; generateMap(); updateBuildUI();
+                ui.phase(merchantVisits(wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER", '#fff');
+                ui.nightButton(true);
+                ui.waveNumber(wave); base.recalcMaxHp(); base.repairedToday = false; generateMap(); ui.buildPalette();
                 if (merchantVisits(wave)) entities.npcs.push(new Merchant());
                 entities.npcs.push(new Wanderer());
                 stockWildlife();
@@ -4590,8 +4656,8 @@
         if (mouse.clicked) {
             let clickedInteractable = false;
             if (gameState === 'DAY') {
-                entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) document.getElementById('merchantOverlay').classList.remove('hidden'); else npc.talk(); clickedInteractable = true; } });
-                if (!clickedInteractable && playerAtForge() && Math.hypot(mouse.x - forgeX(), mouse.y - forgeY()) < 90) { openForge(); clickedInteractable = true; }
+                entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
+                if (!clickedInteractable && playerAtForge() && Math.hypot(mouse.x - forgeX(), mouse.y - forgeY()) < 90) { ui.open('forge'); clickedInteractable = true; }
             }
             if (!clickedInteractable) {
                 entities.resources.forEach(r => {
@@ -4618,7 +4684,7 @@
                                     if (chosen === 'weapon') { grantShopBuff(player, 'forgeAtkMult', 0.1); player.recalcStats(); }
                                     if (chosen === 'mining') { grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); }
                                     if (chosen === 'speed') { grantShopBuff(player, 'speedMult', 0.05); }
-                                    entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); updateForgeUI();
+                                    entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); ui.forgePanel();
                                 }
                             }
                         } else {
@@ -4650,7 +4716,7 @@
 
         let extractorsBefore = entities.extractors.length;
         entities.npcs = entities.npcs.filter(n => !n.markedForDeletion); entities.critters = entities.critters.filter(c => !c.markedForDeletion); entities.extractors = entities.extractors.filter(t => !t.markedForDeletion);
-        if (entities.extractors.length !== extractorsBefore) updateBuildUI();   // a destroyed extractor frees its slot
+        if (entities.extractors.length !== extractorsBefore) ui.buildPalette();   // a destroyed extractor frees its slot
         entities.enemies = entities.enemies.filter(e => !e.markedForDeletion); entities.projectiles = entities.projectiles.filter(p => !p.markedForDeletion);
         entities.resources = entities.resources.filter(r => !r.markedForDeletion); entities.effects = entities.effects.filter(ef => !ef.markedForDeletion);
         entities.texts = entities.texts.filter(txt => !txt.markedForDeletion); entities.particles = entities.particles.filter(p => !p.markedForDeletion);
@@ -4658,12 +4724,12 @@
 
         if (player.hp <= 0 || base.hp <= 0) { triggerGameOver(); }
 
-        syncHud();
+        ui.hud();
     }
 
     // Split out of update() so it still runs while a window has the clock stopped - otherwise
     // buying at the forge left the resource pills reading the old numbers until you closed it.
-    function syncHud() {
+    function syncHudNow() {
         flashResource('ui-wood', inventory.wood); flashResource('ui-stone', inventory.stone); flashResource('ui-mana', inventory.mana);
         document.getElementById('ui-atk').innerText = player.atk;
         document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`; document.getElementById('mpBar').style.width = `${(player.mp/player.maxMp)*100}%`;

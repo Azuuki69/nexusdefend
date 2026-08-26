@@ -277,3 +277,71 @@ test('the boss is scaled before maxHp is taken from hp', () => {
     assert.ok(scale !== -1 && sync !== -1 && scale < sync,
         'boss scaling happens after maxHp is captured');
 });
+
+// --- the UI sink -------------------------------------------------------------------------
+// update() used to reach 18 DOM-touching functions, 60 getElementById calls deep. A Durable
+// Object has no document. Same sink pattern as the presentation layer: uiLive drives the real
+// windows, uiHeadless records and answers `modalOpen` with false.
+
+/** Everything update() can reach, by walking the call graph the way the game does. */
+function reachableFromUpdate() {
+    const funcs = {};
+    const lines = SRC.split('\n');
+    const clean = lines.map(l => l.replace(/\/\/.*$/, '').replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""'));
+    lines.forEach((l, i) => {
+        const m = l.match(/^\s*function (\w+)\(/);
+        if (!m) return;
+        let d = 0;
+        for (let j = i; j < Math.min(i + 400, lines.length); j++) {
+            d += (lines[j].match(/\{/g) || []).length - (lines[j].match(/\}/g) || []).length;
+            if (j > i && d <= 0) { funcs[m[1]] = [i, j]; break; }
+        }
+    });
+    const body = f => clean.slice(funcs[f][0], funcs[f][1] + 1).join('\n');
+    const seen = new Set(), q = ['update'];
+    while (q.length) {
+        const f = q.shift();
+        if (seen.has(f) || !funcs[f]) continue;
+        seen.add(f);
+        for (const [, c] of body(f).matchAll(/\b(\w+)\s*\(/g)) if (funcs[c] && c !== f) q.push(c);
+    }
+    return { seen, body, funcs };
+}
+
+test('nothing update() can reach touches the DOM', () => {
+    const { seen, body, funcs } = reachableFromUpdate();
+    const offenders = [...seen]
+        .filter(f => funcs[f] && body(f).includes('document.'))
+        .map(f => f + ' (line ' + (funcs[f][0] + 1) + ')');
+    assert.deepEqual(offenders, [],
+        'the simulation can still reach the DOM through: ' + offenders.join(', '));
+    assert.ok(seen.size > 20, 'the call graph walk found only ' + seen.size + ' functions; it is not working');
+});
+
+test('the UI sink exists with matching channels on both sides', () => {
+    const live = SRC.slice(SRC.indexOf('const uiLive = {'), SRC.indexOf('let uiLog'));
+    const head = SRC.slice(SRC.indexOf('const uiHeadless = {'), SRC.indexOf('let ui = uiLive;'));
+    assert.ok(live.length > 40 && head.length > 40, 'one of the sinks is missing');
+    const channels = s => [...s.matchAll(/^\s{8}(\w+):/gm)].map(m => m[1]).sort();
+    assert.deepEqual(channels(live), channels(head),
+        'the two sinks do not offer the same channels, so headless will hit an undefined');
+});
+
+test('headless keeps the world running while somebody shops', () => {
+    // The whole simulation used to stop while a modal was open. Alone that is a pause; in
+    // co-op it would freeze everyone else because one player opened the forge.
+    const head = SRC.slice(SRC.indexOf('const uiHeadless = {'), SRC.indexOf('let ui = uiLive;'));
+    assert.ok(/modalOpen:\s*\(\)\s*=>\s*false/.test(head),
+        'the headless sink still lets a modal halt the world');
+    const live = SRC.slice(SRC.indexOf('const uiLive = {'), SRC.indexOf('let uiLog'));
+    assert.ok(/modalOpen:\s*\(\)\s*=>\s*anyModalOpenNow\(\)/.test(live),
+        'the live sink no longer pauses, which changes single player');
+});
+
+test('update() asks the sink, never the document, whether a modal is open', () => {
+    assert.ok(SRC.includes('if (isPaused || ui.modalOpen()) { ui.hud(); return; }'),
+        'the game loop does not gate on the sink');
+    // anyModalOpenNow is the implementation; only uiLive may call it.
+    const outside = SRC.split('anyModalOpenNow(').length - 1 - 1 /* declaration */;
+    assert.equal(outside, 1, 'anyModalOpenNow is called ' + outside + ' times; only uiLive should');
+});
