@@ -437,6 +437,15 @@
     </div>
 </div>
 
+<!-- The simulation lives in real ES modules so the same code can run headless under
+     node --test today and inside a Durable Object later. The main script below stays a
+     classic script because 42 inline onclick handlers depend on its functions being
+     global. Module scripts are deferred, so Sim lands well before the menu is clicked. -->
+<script type="module">
+    import { mulberry32, randomSeed } from './src/sim/rng.js';
+    window.Sim = { mulberry32, randomSeed };
+</script>
+
 <script>
     // ==========================================
     // --- SPRITE CALIBRATION SETTINGS ---
@@ -444,6 +453,24 @@
     // ==========================================
     const SPRITE_COLS = 10; 
     const SPRITE_ROWS = 4;
+
+    // --- Seeded randomness -------------------------------------------------------
+    // Anything that changes world state draws from here rather than Math.random, so a run
+    // can be replayed from its seed alone. Purely visual randomness - particles, shake,
+    // texture generation - deliberately stays on Math.random: the client must be free to
+    // draw without pulling the simulation's sequence out of step.
+    let currentSeed = 0;
+    let simRng = null;
+    function rnd() { return simRng ? simRng() : Math.random(); }
+    function seedRun(seed) {
+        currentSeed = (seed !== undefined && seed !== null)
+            ? (seed >>> 0)
+            : (window.Sim ? window.Sim.randomSeed() : (Math.random() * 0xFFFFFFFF) >>> 0);
+        simRng = window.Sim ? window.Sim.mulberry32(currentSeed) : null;
+        return currentSeed;
+    }
+    // Handy from the console: replay a specific run with startGame('warrior', 12345).
+    function currentRunSeed() { return currentSeed; }
 
     function resize() { const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080); document.getElementById('gameContainer').style.transform = `scale(${scale})`; }
     window.addEventListener('resize', resize); resize();
@@ -493,8 +520,8 @@
         let last = null;
         // Retry: landing inside one of the lakes leaves the spawn permanently stuck.
         for (let attempt = 0; attempt < 24; attempt++) {
-            let ang = base_ang + (Math.random() - 0.5) * 1.3;
-            let r = SPAWN_RING + Math.random() * 250;
+            let ang = base_ang + (rnd() - 0.5) * 1.3;
+            let r = SPAWN_RING + rnd() * 250;
             last = { x: clampWorld(WORLD_CX + Math.cos(ang) * r, WORLD_W, 40),
                      y: clampWorld(WORLD_CY + Math.sin(ang) * r, WORLD_H, 40) };
             if (!isCollidingWithObstacle(last.x, last.y, 45)) return last;
@@ -1069,7 +1096,7 @@
     ];
     const SCENERY_WEIGHT_TOTAL = SCENERY.reduce((a, g) => a + g.w, 0);
     function rollScenery() {
-        let r = Math.random() * SCENERY_WEIGHT_TOTAL;
+        let r = rnd() * SCENERY_WEIGHT_TOTAL;
         for (const g of SCENERY) { r -= g.w; if (r <= 0) return g; }
         return SCENERY[0];
     }
@@ -1924,7 +1951,7 @@
     }
 
     class Merchant {
-        constructor() { this.isShop = true; let fromLeft = Math.random() > 0.5; this.x = WORLD_CX + (fromLeft ? -1500 : 1500); this.y = WORLD_CY + (Math.random()*400 - 200); this.radius = 20; this.targetX = WORLD_CX + (Math.random()*500 - 250); this.targetY = WORLD_CY - 320 - Math.random()*160; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
+        constructor() { this.isShop = true; let fromLeft = rnd() > 0.5; this.x = WORLD_CX + (fromLeft ? -1500 : 1500); this.y = WORLD_CY + (rnd()*400 - 200); this.radius = 20; this.targetX = WORLD_CX + (rnd()*500 - 250); this.targetY = WORLD_CY - 320 - rnd()*160; this.markedForDeletion = false; this.frame = 0; this.frameTimer = 0; this.facing = 1; this.moving = true; }
         update(dt) {
             if (gameState === 'NIGHT') { this.targetX = WORLD_CX - 2600; }
             let dx = this.targetX - this.x; let dy = this.targetY - this.y; let len = Math.hypot(dx, dy);
@@ -1970,7 +1997,7 @@
             // to be checked here - dropped inside a trunk he can never walk out of it.
             this.x = WORLD_CX; this.y = WORLD_CY - 400;
             for (let t = 0; t < 40; t++) {
-                let a = Math.random() * Math.PI * 2, d = 500 + Math.random() * 1700;
+                let a = rnd() * Math.PI * 2, d = 500 + rnd() * 1700;
                 let nx = clampWorld(WORLD_CX + Math.cos(a) * d, WORLD_W, 150);
                 let ny = clampWorld(WORLD_CY + Math.sin(a) * d, WORLD_H, 150);
                 if (!isCollidingWithObstacle(nx, ny, 20)) { this.x = nx; this.y = ny; break; }
@@ -1982,8 +2009,8 @@
         }
         pickWaypoint() {
             for (let i = 0; i < 24; i++) {
-                let tx = 150 + Math.random() * (WORLD_W - 300);
-                let ty = 150 + Math.random() * (WORLD_H - 300);
+                let tx = 150 + rnd() * (WORLD_W - 300);
+                let ty = 150 + rnd() * (WORLD_H - 300);
                 if (!isCollidingWithObstacle(tx, ty, this.radius)) { this.targetX = tx; this.targetY = ty; return; }
             }
             this.targetX = WORLD_CX; this.targetY = WORLD_CY;
@@ -2011,7 +2038,7 @@
 
             let dx = this.targetX - this.x, dy = this.targetY - this.y, len = Math.hypot(dx, dy);
             if (len < 14) {
-                this.pause = WANDER_PAUSE_MIN + Math.random() * (WANDER_PAUSE_MAX - WANDER_PAUSE_MIN);
+                this.pause = WANDER_PAUSE_MIN + rnd() * (WANDER_PAUSE_MAX - WANDER_PAUSE_MIN);
                 this.moving = false; this.frame = 0; this.pickWaypoint(); return;
             }
             this.moving = true;
@@ -2085,7 +2112,7 @@
 
     function questOffer() {
         let pool = QUESTS.filter(q => wave >= q.minWave);
-        return pool[Math.floor(Math.random() * pool.length)];
+        return pool[Math.floor(rnd() * pool.length)];
     }
     function startQuest(q) {
         activeQuest = { id: q.id, kind: q.kind, target: q.target, need: q.need,
@@ -2169,7 +2196,7 @@
         pool.push("Bear's worth more than it looks, if you can take it. But it only prowls by daylight.");
         pool.push("I've walked from the coast. There's nothing left out there but what's coming here.");
         pool.push("Chop what you can before dusk. The forest thickens each day, but so do they.");
-        return pool[Math.floor(Math.random() * pool.length)];
+        return pool[Math.floor(rnd() * pool.length)];
     }
 
     class Critter {
@@ -2178,16 +2205,16 @@
             this.x = x; this.y = y; this.radius = this.def.radius;
             this.hp = this.def.hp; this.maxHp = this.def.hp;
             this.markedForDeletion = false;
-            this.facing = Math.random() < 0.5 ? -1 : 1;
+            this.facing = rnd() < 0.5 ? -1 : 1;
             this.frame = CRITTER_IDLE; this.frameTimer = 0;
-            this.pause = Math.random() * CRITTER_PAUSE_MAX;
-            this.fleeTimer = 0; this.grazing = Math.random() < 0.5;
+            this.pause = rnd() * CRITTER_PAUSE_MAX;
+            this.fleeTimer = 0; this.grazing = rnd() < 0.5;
             this.tx = x; this.ty = y;
             this.pickWaypoint();
         }
         pickWaypoint() {
             for (let i = 0; i < 16; i++) {
-                let a = Math.random() * Math.PI * 2, r = 300 + Math.random() * 550;
+                let a = rnd() * Math.PI * 2, r = 300 + rnd() * 550;
                 let tx = clampWorld(this.x + Math.cos(a) * r, WORLD_W, 120);
                 let ty = clampWorld(this.y + Math.sin(a) * r, WORLD_H, 120);
                 if (!isCollidingWithObstacle(tx, ty, this.radius)) { this.tx = tx; this.ty = ty; return; }
@@ -2206,7 +2233,7 @@
                 questKill('critter', this.type);
                 spawnParticles(this.x, this.y, '#8f3a3a', 16);
                 playSound('hit');
-                if (campOneOffs.skinning || Math.random() < this.def.meat) entities.items.push(new Item(this.x, this.y, 'hp'));
+                if (campOneOffs.skinning || rnd() < this.def.meat) entities.items.push(new Item(this.x, this.y, 'hp'));
             }
         }
         update(dt) {
@@ -2216,7 +2243,7 @@
                 let a = Math.atan2(this.y - player.y, this.x - player.x);   // straight away from you
                 tx = this.x + Math.cos(a) * 500; ty = this.y + Math.sin(a) * 500;
                 moveSpd = this.def.flee;
-                if (this.fleeTimer <= 0) { this.pause = 1.0 + Math.random(); this.pickWaypoint(); }
+                if (this.fleeTimer <= 0) { this.pause = 1.0 + rnd(); this.pickWaypoint(); }
             } else if (this.pause > 0) {
                 this.pause -= dt;
                 this.frameTimer += dt;
@@ -2229,7 +2256,7 @@
             }
             let dx = tx - this.x, dy = ty - this.y, len = Math.hypot(dx, dy);
             if (len < 16 && this.fleeTimer <= 0) {
-                this.pause = CRITTER_PAUSE_MIN + Math.random() * (CRITTER_PAUSE_MAX - CRITTER_PAUSE_MIN);
+                this.pause = CRITTER_PAUSE_MIN + rnd() * (CRITTER_PAUSE_MAX - CRITTER_PAUSE_MIN);
                 this.frame = CRITTER_IDLE; this.frameTimer = 0; return;
             }
             let step = moveSpd * (dt * 60), ang = Math.atan2(dy, dx), moved = false;
@@ -2276,8 +2303,8 @@
             let have = entities.critters.filter(c => c.type === type).length;
             for (let i = have; i < CRITTER_POP[type]; i++) {
                 for (let t = 0; t < 40; t++) {
-                    let x = 200 + Math.random() * (WORLD_W - 400);
-                    let y = 200 + Math.random() * (WORLD_H - 400);
+                    let x = 200 + rnd() * (WORLD_W - 400);
+                    let y = 200 + rnd() * (WORLD_H - 400);
                     if (Math.hypot(x - WORLD_CX, y - WORLD_CY) < CRITTER_KEEPOUT) continue;
                     if (isCollidingWithObstacle(x, y, CRITTERS[type].radius)) continue;
                     entities.critters.push(new Critter(type, x, y));
@@ -2513,7 +2540,7 @@
 
             // Critical strikes: only your own hits can crit, not environmental damage.
             let isCrit = false;
-            if (isPlayerSource && source === 'player' && playerBuffs.critChance > 0 && Math.random() < playerBuffs.critChance) {
+            if (isPlayerSource && source === 'player' && playerBuffs.critChance > 0 && rnd() < playerBuffs.critChance) {
                 dmg = Math.floor(dmg * playerBuffs.critMult); isCrit = true;
             }
             
@@ -2625,9 +2652,9 @@
 
                         let pColor = this.type === 'golem' ? '#777' : (this.type === 'harpy' ? '#7a6a3a' : '#5b9e32');
                         spawnParticles(this.x, this.y, pColor, this.radius);
-                        if (Math.random() < 0.1) entities.items.push(new Item(this.x, this.y, Math.random()>0.5?'hp':'mp'));
+                        if (rnd() < 0.1) entities.items.push(new Item(this.x, this.y, rnd()>0.5?'hp':'mp'));
                         // Night visitors are a fight you did not pick, so they always pay out.
-                        if (this.type === 'cyclop' || this.type === 'troll') entities.items.push(new Item(this.x, this.y, Math.random()>0.5?'hp':'mp'));
+                        if (this.type === 'cyclop' || this.type === 'troll') entities.items.push(new Item(this.x, this.y, rnd()>0.5?'hp':'mp'));
                         
                         if (this.type === 'bomber') { entities.effects.push(new Effect(this.x, this.y, 100, '#ffaa00', 0.5, 40, false, false, 'none', 'enemy')); addShake(15); playSound('explosion'); }
                     }
@@ -2952,7 +2979,7 @@
                 entities.effects.push(new Effect(mouse.x, mouse.y, r, '#4dff4d', RAIN_DURATION, this.atk * RAIN_TICK_DMG, false, true, 'none', 'player', 'arrowrain'));
                 if (this.rainSplinters) {
                     for (let i = 0; i < RAIN_SPLINTERS; i++) {
-                        let a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
+                        let a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r;
                         entities.projectiles.push(new Projectile(mouse.x + Math.cos(a)*d, mouse.y + Math.sin(a)*d, 0, 0, this.atk * 1.5, true, '#ffaa00', 0, false, 0, true, 'fire', 'player'));
                     }
                 }
@@ -3283,7 +3310,7 @@
                 this.aura = 'speed';        // a war-drum, never a medic
                 this.auraPulse = 0;
             } else if (this.type === 'boss' || this.type === 'orcking') {
-                this.aura = Math.random() > 0.5 ? 'heal' : 'speed';
+                this.aura = rnd() > 0.5 ? 'heal' : 'speed';
                 this.auraPulse = 0;
             } else {
                 this.aura = 'none';
@@ -4056,7 +4083,7 @@
         entities.critters.concat(entities.npcs).forEach(a => {
             if (!isCollidingWithObstacle(a.x, a.y, a.radius)) return;
             for (let t = 0; t < 30; t++) {
-                let ang = Math.random() * Math.PI * 2, d = 90 + Math.random() * 260;
+                let ang = rnd() * Math.PI * 2, d = 90 + rnd() * 260;
                 let nx = clampWorld(a.x + Math.cos(ang) * d, WORLD_W, 100);
                 let ny = clampWorld(a.y + Math.sin(ang) * d, WORLD_H, 100);
                 if (!isCollidingWithObstacle(nx, ny, a.radius)) { a.x = nx; a.y = ny; return; }
@@ -4078,9 +4105,9 @@
         // Ground detail, scaled to the area. Placed after the ponds so nothing is
         // scattered across open water.
         for(let i=0; i<260; i++) {
-            let dx = Math.random() * WORLD_W, dy = Math.random() * WORLD_H;
+            let dx = rnd() * WORLD_W, dy = rnd() * WORLD_H;
             if (isCollidingWithObstacle(dx, dy, 0)) continue;
-            entities.decorations.push({ x: dx, y: dy, type: Math.random() > 0.5 ? 'grass' : 'pebble', size: Math.random() * 3 + 2 });
+            entities.decorations.push({ x: dx, y: dy, type: rnd() > 0.5 ? 'grass' : 'pebble', size: rnd() * 3 + 2 });
         }
 
 
@@ -4089,21 +4116,21 @@
             // Retry placement so resources never overlap each other, obstacles, or the base
             let placed = false;
             for (let attempt = 0; attempt < 20 && !placed; attempt++) {
-                let x = Math.random() * (WORLD_W - 120) + 60; let y = Math.random() * (WORLD_H - 120) + 60;
+                let x = rnd() * (WORLD_W - 120) + 60; let y = rnd() * (WORLD_H - 120) + 60;
                 if (Math.hypot(x-WORLD_CX, y-WORLD_CY) < 260) continue;
                 if (Math.hypot(x-CAMP_X, y-CAMP_Y) < 220) continue;
                 if (tooCloseToActor(actorSpots, x, y)) continue;
                 if (isCollidingWithObstacle(x, y, 45)) continue;
                 let overlapsResource = entities.resources.some(r => Math.hypot(r.x - x, r.y - y) < 135);
                 if (overlapsResource) continue;
-                entities.resources.push(new Resource(x, y, Math.random() > 0.5 ? 'wood' : 'stone'));
+                entities.resources.push(new Resource(x, y, rnd() > 0.5 ? 'wood' : 'stone'));
                 placed = true;
             }
         }
 
         // Spawn Mystery Caches - deliberately rare, they are a bonus not a staple
         for(let i=0; i<CACHES_PER_MAP; i++) {
-            let cx = Math.random() * (WORLD_W - 200) + 100; let cy = Math.random() * (WORLD_H - 200) + 100;
+            let cx = rnd() * (WORLD_W - 200) + 100; let cy = rnd() * (WORLD_H - 200) + 100;
             let overlapsResource = entities.resources.some(r => Math.hypot(r.x - cx, r.y - cy) < 90);
             if (tooCloseToActor(actorSpots, cx, cy)) continue;
             if (Math.hypot(cx-WORLD_CX, cy-WORLD_CY) > 400 && !isCollidingWithObstacle(cx, cy, 30) && !overlapsResource) {
@@ -4114,21 +4141,21 @@
         // Non-gatherable trees and rocks, so the world looks wooded without every
         // trunk being a resource node.
         for(let i=0; i<420; i++) {
-            let dx = Math.random() * WORLD_W, dy = Math.random() * WORLD_H;
+            let dx = rnd() * WORLD_W, dy = rnd() * WORLD_H;
             if (isCollidingWithObstacle(dx, dy, 20)) continue;
             if (Math.hypot(dx - WORLD_CX, dy - WORLD_CY) < 230) continue;
             if (Math.hypot(dx - CAMP_X, dy - CAMP_Y) < 220) continue;
             if (tooCloseToActor(actorSpots, dx, dy)) continue;
             let g = rollScenery();
-            let b = g.boxes[Math.floor(Math.random() * g.boxes.length)];
-            let dh = g.h * (0.82 + Math.random() * 0.36);
+            let b = g.boxes[Math.floor(rnd() * g.boxes.length)];
+            let dh = g.h * (0.82 + rnd() * 0.36);
             let dwid = dh * (b[2] / b[3]);
             // Clearance scales with the canopy so a big tree never sits on top of a node.
             let clear = Math.max(90, dwid * 0.6);
             if (entities.resources.some(r => Math.hypot(r.x - dx, r.y - dy) < clear)) continue;
             entities.decorations.push({ x: dx, y: dy, type: 'scenery', sheet: g.sheet,
                 sx: b[0], sy: b[1], sw: b[2], sh: b[3], h: dh,
-                flip: Math.random() < 0.5, canopy: !!g.canopy });
+                flip: rnd() < 0.5, canopy: !!g.canopy });
             if (g.solid) entities.solids.push({ x: dx, y: dy, r: dwid * g.solid });
         }
         freeBuriedActors();
@@ -4137,8 +4164,8 @@
         entities.decorations.sort((a, b) => a.y - b.y);
         
         // Sleeping bear: an occasional visitor, never on consecutive days
-        if (wave - lastBearWave >= BEAR_MIN_GAP_DAYS && Math.random() < BEAR_SPAWN_CHANCE) {
-            let ba = Math.random() * Math.PI * 2, bd = 700 + Math.random() * 1500;
+        if (wave - lastBearWave >= BEAR_MIN_GAP_DAYS && rnd() < BEAR_SPAWN_CHANCE) {
+            let ba = rnd() * Math.PI * 2, bd = 700 + rnd() * 1500;
             let px = clampWorld(WORLD_CX + Math.cos(ba) * bd, WORLD_W, 80);
             let py = clampWorld(WORLD_CY + Math.sin(ba) * bd, WORLD_H, 80);
             if (!isCollidingWithObstacle(px, py, 50)) {
@@ -4150,14 +4177,14 @@
     }
     
     function setWeather() {
-        let rand = Math.random();
+        let rand = rnd();
         if (gameState === 'NIGHT') {
             if (rand < 0.1) currentWeather = 'bloodmoon';
             else if (rand < 0.2) currentWeather = 'fog';
             else if (rand < 0.3) currentWeather = 'blizzard';
             else currentWeather = 'clear';
             
-            let modRand = Math.random();
+            let modRand = rnd();
             if (modRand < 0.2) currentModifier = 'swarm';
             else if (modRand < 0.4) currentModifier = 'armored';
             else currentModifier = 'none';
@@ -4180,7 +4207,8 @@
         wt.style.color = col === '#fff' && txt.includes('SWARM') ? '#ffcc00' : col;
     }
 
-    function startGame(selectedClass) {
+    function startGame(selectedClass, seed) {
+        seedRun(seed);
         document.getElementById('mainMenu').classList.add('hidden'); document.getElementById('hud').classList.remove('hidden');
         if(audioCtx.state === 'suspended') audioCtx.resume(); 
         
@@ -4195,6 +4223,11 @@
         forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
         entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
         forgeBuilding = null; placingBuilding = null; buildingTab = 'forge';
+        // gameState first: setWeather branches on it, and it was still holding the previous
+        // run's phase here. A fresh game could roll night weather - a blood moon on day one -
+        // and because the night branch draws twice and the day branch once, the whole seeded
+        // sequence shifted depending on how the last run ended.
+        gameState = 'DAY';
         currentWeather = 'clear'; currentModifier = 'none'; setWeather();
         
         player = new Player(selectedClass); base = new Base();
@@ -4233,18 +4266,18 @@
     // never on a boss night - a King plus a cyclops on the same wave is not a fight, it is
     // a pile-on, and boss nights read better when the boss is the story.
     function rollNightVisitor(type, chance, minWave, gap, label, count) {
-        if (wave < minWave || wave % 5 === 0 || wave - lastVisitorWave[type] < gap || Math.random() >= chance) return;
+        if (wave < minWave || wave % 5 === 0 || wave - lastVisitorWave[type] < gap || rnd() >= chance) return;
         lastVisitorWave[type] = wave;
         // A warband rides in together, not merely from the same compass point: picking a
         // fresh ringSpawn each time scatters them a screen apart, which reads as three
         // strays rather than a charge. Form the rest up around the leader instead.
-        let side = Math.floor(Math.random() * 4);
+        let side = Math.floor(rnd() * 4);
         let first = ringSpawn(side);
         entities.enemies.push(new Enemy(first.x, first.y, type));
         for (let i = 1; i < (count || 1); i++) {
             let px = first.x, py = first.y, placed = false;
             for (let tryN = 0; tryN < 12 && !placed; tryN++) {
-                let a = Math.random() * Math.PI * 2, d = 55 + Math.random() * 75;
+                let a = rnd() * Math.PI * 2, d = 55 + rnd() * 75;
                 let cx = clampWorld(first.x + Math.cos(a) * d, WORLD_W, 60);
                 let cy = clampWorld(first.y + Math.sin(a) * d, WORLD_H, 60);
                 if (!isCollidingWithObstacle(cx, cy, 30)) { px = cx; py = cy; placed = true; }
@@ -4258,7 +4291,7 @@
 
     function spawnWave() {
         if (wave % 5 === 0) {
-            let bpos = ringSpawn(waveDirection === -1 ? Math.floor(Math.random()*4) : waveDirection);
+            let bpos = ringSpawn(waveDirection === -1 ? Math.floor(rnd()*4) : waveDirection);
             // Every tenth wave the Orc King turns up instead of the usual boss.
             let bossType = (wave % KING_WAVE_INTERVAL === 0) ? 'orcking' : 'boss';
             entities.enemies.push(new Enemy(bpos.x, bpos.y, bossType));
@@ -4275,9 +4308,9 @@
         if (currentModifier === 'swarm') count *= 2;
         
         for(let i=0; i<count; i++) {
-            let side = waveDirection !== -1 ? waveDirection : Math.floor(Math.random() * 4);
+            let side = waveDirection !== -1 ? waveDirection : Math.floor(rnd() * 4);
             let pos = ringSpawn(side); let x = pos.x, y = pos.y;
-            let rand = Math.random(); let type = 'goblin';
+            let rand = rnd(); let type = 'goblin';
             
             // Scaled wave spawning including new enemies
             if (wave > 0 && rand > 0.35) type = 'wolf';
@@ -4300,7 +4333,7 @@
         rollNightVisitor('cyclop', CYCLOP_CHANCE, CYCLOP_MIN_WAVE, CYCLOP_GAP, "A CYCLOPS STIRS", 1);
         rollNightVisitor('troll', TROLL_CHANCE, TROLL_MIN_WAVE, TROLL_GAP, "A TROLL PROWLS", 1);
         rollNightVisitor('orcrider', RIDER_CHANCE, RIDER_MIN_WAVE, RIDER_GAP, "WARG RIDERS!",
-                         RIDER_PACK_MIN + Math.floor(Math.random() * (RIDER_PACK_MAX - RIDER_PACK_MIN + 1)));
+                         RIDER_PACK_MIN + Math.floor(rnd() * (RIDER_PACK_MAX - RIDER_PACK_MIN + 1)));
 
         waveDirection = -1; // Reset for next day
     }
@@ -4340,7 +4373,7 @@
         
         // Threat Indicator Logic
         if (gameState === 'DAY' && phaseTimer <= 3.0 && waveDirection === -1) {
-            waveDirection = Math.floor(Math.random() * 4);
+            waveDirection = Math.floor(rnd() * 4);
         }
 
         if (gameState === 'NIGHT' && entities.enemies.length === 0) phaseTimer = 0;
@@ -4395,7 +4428,7 @@
                         
                         if (r.type === 'cache') {
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
-                            let rand = Math.random();
+                            let rand = rnd();
                             if (rand < 0.33) {
                                 inventory.mana += 50; entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
                             } else if (rand < 0.66) {
@@ -4408,7 +4441,7 @@
                                 if (!upgs.length) {
                                     inventory.mana += 50; entities.texts.push(new FloatingText(r.x, r.y - 20, "+50 MANA", '#00ffff'));
                                 } else {
-                                    let chosen = upgs[Math.floor(Math.random()*upgs.length)];
+                                    let chosen = upgs[Math.floor(rnd()*upgs.length)];
                                     forgeUpgrades[chosen].level++;
                                     if (chosen === 'weapon') { playerBuffs.forgeAtkMult += 0.1; player.recalcStats(); }
                                     if (chosen === 'mining') { playerBuffs.gatherYield += MINING_YIELD_STEP; }

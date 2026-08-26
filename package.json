@@ -1,0 +1,10 @@
+{
+  "name": "nexusdefend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Co-op survival defence. Client renders; the simulation in src/sim runs headless so the same code can be the authority on a Cloudflare Durable Object.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
