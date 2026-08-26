@@ -345,3 +345,43 @@ test('update() asks the sink, never the document, whether a modal is open', () =
     const outside = SRC.split('anyModalOpenNow(').length - 1 - 1 /* declaration */;
     assert.equal(outside, 1, 'anyModalOpenNow is called ' + outside + ' times; only uiLive should');
 });
+
+// --- fixed timestep ----------------------------------------------------------------------
+// The game was written for 60fps: `dt * 60` is used throughout as "one frame's worth", and a
+// few terms (particle damping, `vx *= 0.9`) are not scaled by dt at all. Under a variable dt
+// that means a 144Hz monitor and a 60Hz one ran measurably different physics, and a server
+// could reproduce neither. The loop now advances in whole fixed steps.
+
+test('the loop advances in whole fixed steps, never a raw frame delta', () => {
+    const i = SRC.indexOf('function gameLoop(timestamp)');
+    assert.notEqual(i, -1, 'gameLoop is gone');
+    const loop = SRC.slice(i, i + 900);
+    assert.ok(/while \(simAccumulator >= SIM_DT\) \{ update\(SIM_DT\);/.test(loop),
+        'the loop does not step a fixed accumulator');
+    assert.ok(!/update\(dt\)/.test(loop), 'the loop still hands update() a raw frame delta');
+});
+
+test('a stall cannot spiral into hundreds of catch-up steps', () => {
+    const i = SRC.indexOf('function gameLoop(timestamp)');
+    const loop = SRC.slice(i, i + 900);
+    assert.ok(/if \(elapsed > MAX_CATCHUP\) elapsed = MAX_CATCHUP;/.test(loop),
+        'a backgrounded tab would try to make up the whole gap in one frame');
+    assert.ok(/if \(!\(elapsed > 0\)\) elapsed = 0;/.test(loop),
+        'a negative or NaN timestamp would run the simulation backwards');
+    const cap = SRC.match(/const MAX_CATCHUP = ([0-9.]+);/);
+    assert.ok(cap && parseFloat(cap[1]) > 0 && parseFloat(cap[1]) <= 1,
+        'MAX_CATCHUP is missing or not a sane fraction of a second');
+});
+
+test('the accumulator is reset when a run starts', () => {
+    // Otherwise the leftover from the previous run is spent as extra steps on frame one.
+    assert.ok(/lastTime = performance\.now\(\); simAccumulator = 0;/.test(SRC),
+        'startGame does not clear the accumulator');
+});
+
+test('the simulation rate is a named constant the server can differ from', () => {
+    const hz = SRC.match(/const SIM_HZ = (\d+);/);
+    assert.ok(hz, 'SIM_HZ is not declared');
+    assert.equal(parseInt(hz[1], 10), 60, 'the client rate moved; check the game still feels right');
+    assert.ok(/const SIM_DT = 1 \/ SIM_HZ;/.test(SRC), 'SIM_DT is not derived from SIM_HZ');
+});
