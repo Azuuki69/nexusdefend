@@ -1495,6 +1495,61 @@
     world.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
 
     const keys = {}; let mouse = { x: 0, y: 0, sx: 0, sy: 0, clicked: false, rightClicked: false };
+
+    // --- Input as data -------------------------------------------------------------
+    // The simulation used to read the keyboard and the mouse directly. A server has neither,
+    // and in co-op every player has their own - so what the simulation gets instead is an
+    // intent: what one player wants this tick, already resolved from whatever produced it.
+    // The client fills one in each frame from `keys` and `mouse`; a server will fill one in
+    // from a network packet. Nothing downstream knows which happened.
+    //
+    // `aim` is in world coordinates, not screen, because the camera is the client's business.
+    //
+    // The two `...Spent` flags are not noise. Attack and place are HELD, not edge-triggered -
+    // holding the button keeps swinging, rate-limited by the weapon cooldown. But a click that
+    // lands on an NPC or a resource is used up by that, and must not also swing. The original
+    // did this by writing `mouse.clicked = false`, which lasted until the button came back up.
+    // A flag on the intent reproduces exactly that and still survives being sent over a wire.
+    function makeIntent() {
+        return {
+            moveX: 0, moveY: 0,          // -1..1 each, held
+            aimX: 0, aimY: 0,            // world coordinates being pointed at
+            attack: false,               // held
+            place: false,                // held (right button)
+            attackSpent: false, placeSpent: false,
+            dash: false,                 // held; the cooldown does the rate limiting
+            ability: false,              // edge
+            overcharge: false,           // edge
+            interact: false,             // edge
+            openTalents: false,          // edge
+            openBuildings: false,        // edge
+            seq: 0
+        };
+    }
+
+    // Edge detection lives with the producer, which is what `keys['e'] = false` was really
+    // doing: making a held key fire once.
+    let prevKeys = {};
+    function readLocalIntent(p) {
+        if (!p || !p.intent) return;
+        const i = p.intent, edge = k => !!keys[k] && !prevKeys[k];
+        i.moveX = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
+        i.moveY = (keys['s'] ? 1 : 0) - (keys['w'] ? 1 : 0);
+        i.aimX = mouse.sx + cam.x;
+        i.aimY = mouse.sy + cam.y;
+        if (!mouse.clicked) i.attackSpent = false;
+        if (!mouse.rightClicked) i.placeSpent = false;
+        i.attack = !!mouse.clicked && !i.attackSpent;
+        i.place = !!mouse.rightClicked && !i.placeSpent;
+        i.dash = !!keys['shift'];
+        i.ability = edge('e');
+        i.overcharge = edge('q');
+        i.interact = edge('r');
+        i.openTalents = edge('t');
+        i.openBuildings = edge('b');
+        i.seq++;
+        prevKeys = Object.assign({}, keys);
+    }
     
     window.addEventListener('keydown', e => {
         keys[e.key.toLowerCase()] = true;
@@ -2907,6 +2962,7 @@
             this.walkDist = 0;      // ground covered on foot, drives the walk cycle
             
             // Bought upgrades outlive an Amnesia Potion; resetTalents rebuilds `buffs` from these.
+            this.intent = makeIntent();     // what this player wants; filled in by client or server
             this.shopBuffs = makeBuffs();
             this.resetTalents(true);
         }
@@ -2996,7 +3052,7 @@
                 if (Math.random() < 0.5) spawnParticles(this.x, this.y, '#fff', 1); 
             } else {
                 let dx = 0, dy = 0;
-                if (keys['w']) dy -= 1; if (keys['s']) dy += 1; if (keys['a']) dx -= 1; if (keys['d']) dx += 1;
+                dx += this.intent.moveX; dy += this.intent.moveY;
                 if (dx !== 0 || dy !== 0) {
                     let len = Math.sqrt(dx*dx + dy*dy); 
                     let speed = this.spd * this.buffs.speedMult * (world.currentWeather==='blizzard'?0.7:1) * (dt*60);
@@ -3012,7 +3068,7 @@
             }
 
             this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, this.y));
-            if (this.abTimer <= 0) this.angle = Math.atan2(mouse.y - this.y, mouse.x - this.x); else this.abTimer -= dt;
+            if (this.abTimer <= 0) this.angle = Math.atan2(this.intent.aimY - this.y, this.intent.aimX - this.x); else this.abTimer -= dt;
             if (this.abilityCooldownTimer > 0) this.abilityCooldownTimer -= dt;
             this.lastAttack -= dt;
             if (this.mp < this.maxMp) this.mp += dt * 2 * this.mpRegenMod * this.buffs.mpRegenBonus;
@@ -3021,11 +3077,11 @@
             if (this.shiftCd > 0) this.shiftCd -= dt;
 
             // Shift Utility Skill
-            if (keys['shift'] && this.shiftCd <= 0 && this.dashTimer <= 0) {
+            if (this.intent.dash && this.shiftCd <= 0 && this.dashTimer <= 0) {
                 playSound('shoot');
                 if (this.cls === 'mage' || this.cls === 'priest') {
                     let dist = 250;
-                    let ang = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+                    let ang = Math.atan2(this.intent.aimY - this.y, this.intent.aimX - this.x);
                     let targetX = this.x + Math.cos(ang) * dist;
                     let targetY = this.y + Math.sin(ang) * dist;
                     
@@ -3041,7 +3097,7 @@
                 } else {
                     this.dashTimer = 0.2;
                     let dx = 0, dy = 0;
-                    if (keys['w']) dy -= 1; if (keys['s']) dy += 1; if (keys['a']) dx -= 1; if (keys['d']) dx += 1;
+                    dx += this.intent.moveX; dy += this.intent.moveY;
                     if (dx !== 0 || dy !== 0) this.dashAngle = Math.atan2(dy, dx);
                     else this.dashAngle = this.angle;
                     this.invincibleTimer = Math.max(this.invincibleTimer || 0, 0.2); 
@@ -3055,12 +3111,12 @@
             if (ocNow !== this.wasOvercharged) { this.wasOvercharged = ocNow; this.recalcStats(); }
 
             // Overcharge is a night-only button, so say so rather than swallowing the press.
-            if (keys['q'] && world.gameState !== 'NIGHT') {
+            if (this.intent.overcharge && world.gameState !== 'NIGHT') {
                 playSound('error');
                 world.entities.texts.push(new FloatingText(this.x, this.y - 50, "THE NEXUS ONLY WAKES AT NIGHT", '#9a9a90'));
-                keys['q'] = false;
+                this.intent.overcharge = false;
             }
-            if (keys['q'] && world.base.overchargeCd <= 0 && world.gameState === 'NIGHT') {
+            if (this.intent.overcharge && world.base.overchargeCd <= 0 && world.gameState === 'NIGHT') {
                 world.base.overchargeActive = 5.0;
                 world.base.overchargeCd = 45.0;
                 // `this`, not the global: the nova is powered by whoever pressed the key.
@@ -3068,13 +3124,13 @@
                 addShake(20); playSound('explosion');
                 world.entities.texts.push(new FloatingText(world.base.x, world.base.y - 80, "NEXUS OVERCHARGE!", '#00ffff'));
                 this.wasOvercharged = true; this.recalcStats();   // take effect on this frame, not the next
-                keys['q'] = false;
+                this.intent.overcharge = false;
             }
 
-            if (keys['e'] && this.mp >= this.data.abCost && this.abTimer <= 0 && this.abilityCooldownTimer <= 0) {
-                this.useAbility(); this.abilityCooldownTimer = this.data.abCd * this.buffs.hasteMod; keys['e'] = false;
+            if (this.intent.ability && this.mp >= this.data.abCost && this.abTimer <= 0 && this.abilityCooldownTimer <= 0) {
+                this.useAbility(); this.abilityCooldownTimer = this.data.abCd * this.buffs.hasteMod; this.intent.ability = false;
             }
-            if (mouse.rightClicked && world.gameState === 'DAY') { this.placeBuilding(); mouse.rightClicked = false; }
+            if (this.intent.place && world.gameState === 'DAY') { this.placeBuilding(); this.intent.placeSpent = true; this.intent.place = false; }
             
             if (this.abTimer > 0 && this.cls === 'warrior') {
                 this.angle += dt * 15; this.whirlTick -= dt;
@@ -3092,7 +3148,7 @@
             }
 
             // STATIC ANIMATION LOGIC FOR ALL CLASSES
-            let isMoving = (keys['w'] || keys['s'] || keys['a'] || keys['d']) && this.dashTimer <= 0;
+            let isMoving = (this.intent.moveX !== 0 || this.intent.moveY !== 0) && this.dashTimer <= 0;
             
             this.frameY = 0; // Only 1 row now!
 
@@ -3118,7 +3174,7 @@
         visualMidX() {
             let per = BODY_OFFSET_X[this.cls];
             let off = per ? (per[this.frameX] || 0) : 0;
-            return off * (mouse.x < this.x ? -1 : 1);
+            return off * (this.intent.aimX < this.x ? -1 : 1);
         }
 
         // The player's origin sits at the feet, not the middle of the figure, so anything meant to
@@ -3146,8 +3202,8 @@
             this.mp -= this.data.abCost; playSound('shoot');
             if (this.cls === 'warrior') { 
                 if (this.leapSlam) { 
-                    this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, mouse.x));
-                    this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, mouse.y));
+                    this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, this.intent.aimX));
+                    this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, this.intent.aimY));
                     world.entities.effects.push(new Effect(this.x, this.y, 100, '#ff4d4d', 0.2, 0, false, false, 'none', 'player')); 
                     addShake(10); 
                     this.invincibleTimer = 0.5;
@@ -3155,18 +3211,18 @@
                 this.abTimer = 1.5; this.abMaxTimer = 1.5; this.whirlTick = 0; this.whirlSpin = 0; this.whirlPulse = 0;
             } 
             else if (this.cls === 'mage') { 
-                world.entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player', 'meteor')); 
-                if (this.scorchedEarth) world.entities.effects.push(new Effect(mouse.x, mouse.y, 150 * this.meteorMod, '#ff3300', 5.0, this.atk * 0.5, false, true, 'fire', 'player', 'scorched'));
+                world.entities.effects.push(new Effect(this.intent.aimX, this.intent.aimY, 150 * this.meteorMod, '#ff6600', 1.0, this.atk * 3, this.meteorFreezes, false, 'fire', 'player', 'meteor')); 
+                if (this.scorchedEarth) world.entities.effects.push(new Effect(this.intent.aimX, this.intent.aimY, 150 * this.meteorMod, '#ff3300', 5.0, this.atk * 0.5, false, true, 'fire', 'player', 'scorched'));
                 addShake(15); 
             } 
             else if (this.cls === 'archer') {
                 // Rain of Arrows: a volley that keeps falling on the marked ground.
                 let r = RAIN_RADIUS * this.rainMod;
-                world.entities.effects.push(new Effect(mouse.x, mouse.y, r, '#4dff4d', RAIN_DURATION, this.atk * RAIN_TICK_DMG, false, true, 'none', 'player', 'arrowrain'));
+                world.entities.effects.push(new Effect(this.intent.aimX, this.intent.aimY, r, '#4dff4d', RAIN_DURATION, this.atk * RAIN_TICK_DMG, false, true, 'none', 'player', 'arrowrain'));
                 if (this.rainSplinters) {
                     for (let i = 0; i < RAIN_SPLINTERS; i++) {
                         let a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r;
-                        world.entities.projectiles.push(new Projectile(mouse.x + Math.cos(a)*d, mouse.y + Math.sin(a)*d, 0, 0, this.atk * 1.5, true, '#ffaa00', 0, false, 0, true, 'fire', 'player'));
+                        world.entities.projectiles.push(new Projectile(this.intent.aimX + Math.cos(a)*d, this.intent.aimY + Math.sin(a)*d, 0, 0, this.atk * 1.5, true, '#ffaa00', 0, false, 0, true, 'fire', 'player'));
                     }
                 }
                 addShake(6);
@@ -3229,7 +3285,7 @@
         placeBuilding() {
             if (!placingBuilding) return;
             let key = placingBuilding, b = BUILDINGS[key], c = buildingCost(key);
-            let mx = mouse.x, my = mouse.y;
+            let mx = this.intent.aimX, my = this.intent.aimY;
             let deny = (msg) => { playSound('error'); world.entities.texts.push(new FloatingText(mx, my - 20, msg, '#ff4d4d')); };
 
             if (b.count() >= b.max) { deny(b.name.toUpperCase() + " LIMIT " + b.count() + "/" + b.max); return; }
@@ -3302,14 +3358,14 @@
             // DRAW CLASS SPRITE
             if (!isWhirling) ctx.rotate(this.angle); // Rotate to face mouse only if not whirling
             
-            let flip = (mouse.x < this.x && !isWhirling) ? -1 : 1;
+            let flip = (this.intent.aimX < this.x && !isWhirling) ? -1 : 1;
             
             // To keep the character upright and just flipped left/right when pointing
             if (!isWhirling) {
                 ctx.rotate(-this.angle); // Undo rotation to keep sprite upright
                 ctx.scale(flip, 1);
             } else {
-                 ctx.scale((mouse.x < this.x) ? -1 : 1, 1);
+                 ctx.scale((this.intent.aimX < this.x) ? -1 : 1, 1);
             }
             
             // Determine which sprite to use based on chosen class
@@ -4615,20 +4671,20 @@
 
     function update(dt) {
         updateCamera();
-        mouse.x = mouse.sx + cam.x; mouse.y = mouse.sy + cam.y;
         if (world.gameState === 'OVER') return;
         if (isPaused || ui.modalOpen()) { ui.hud(); return; }
         if (screenShake > 0) screenShake -= dt * 30;
 
-        if (keys['t']) { ui.open('talent'); keys['t'] = false; }
-        if (keys['b']) { if (placingBuilding) cancelPlacement(); else ui.open('buildings'); keys['b'] = false; }
-        if (keys['r'] && world.gameState === 'DAY') {
+        const intent = player ? player.intent : makeIntent();
+        if (intent.openTalents) { ui.open('talent'); intent.openTalents = false; }
+        if (intent.openBuildings) { if (placingBuilding) cancelPlacement(); else ui.open('buildings'); intent.openBuildings = false; }
+        if (intent.interact && world.gameState === 'DAY') {
             let shop = world.entities.npcs.find(npc => npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < 150);
             let wayfarer = world.entities.npcs.find(npc => !npc.isShop && Math.hypot(player.x - npc.x, player.y - npc.y) < TALK_RANGE);
-            if (shop) { ui.open('merchant'); keys['r'] = false; }
-            else if (wayfarer) { wayfarer.talk(); keys['r'] = false; }
-            else if (Math.hypot(player.x - CAMP_NPC_X, player.y - CAMP_NPC_Y) < CAMP_RANGE) { ui.open('camp'); keys['r'] = false; }
-            else if (playerAtForge()) { ui.open('forge'); keys['r'] = false; }
+            if (shop) { ui.open('merchant'); intent.interact = false; }
+            else if (wayfarer) { wayfarer.talk(); intent.interact = false; }
+            else if (Math.hypot(player.x - CAMP_NPC_X, player.y - CAMP_NPC_Y) < CAMP_RANGE) { ui.open('camp'); intent.interact = false; }
+            else if (playerAtForge()) { ui.open('forge'); intent.interact = false; }
         }
 
         world.phaseTimer -= dt;
@@ -4676,16 +4732,16 @@
             }
         }
 
-        if (mouse.clicked) {
+        if (intent.attack) {
             let clickedInteractable = false;
             if (world.gameState === 'DAY') {
-                world.entities.npcs.forEach(npc => { if (Math.hypot(mouse.x - npc.x, mouse.y - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
-                if (!clickedInteractable && playerAtForge() && Math.hypot(mouse.x - forgeX(), mouse.y - forgeY()) < 90) { ui.open('forge'); clickedInteractable = true; }
+                world.entities.npcs.forEach(npc => { if (Math.hypot(intent.aimX - npc.x, intent.aimY - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
+                if (!clickedInteractable && playerAtForge() && Math.hypot(intent.aimX - forgeX(), intent.aimY - forgeY()) < 90) { ui.open('forge'); clickedInteractable = true; }
             }
             if (!clickedInteractable) {
                 world.entities.resources.forEach(r => {
                     // Hit radius now matches each resource's real sprite size (r.radius), not a guessed constant
-                    if (Math.hypot(mouse.x - r.x, mouse.y - r.y) < r.radius && Math.hypot(player.x - r.x, player.y - r.y) < r.radius + 130) {
+                    if (Math.hypot(intent.aimX - r.x, intent.aimY - r.y) < r.radius && Math.hypot(player.x - r.x, player.y - r.y) < r.radius + 130) {
                         
                         if (r.type === 'cache') {
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
@@ -4727,7 +4783,10 @@
                     }
                 });
             }
-            if (clickedInteractable) mouse.clicked = false; else player.attack(); 
+            // A click used on something interactable is spent: it must not also swing, and
+            // must stay spent until the button comes back up.
+            if (clickedInteractable) { intent.attackSpent = true; intent.attack = false; }
+            else player.attack(); 
         }
 
         player.update(dt); world.base.update(dt);
@@ -5217,6 +5276,9 @@
         lastTime = timestamp;
         if (!(elapsed > 0)) elapsed = 0;                        // a backgrounded tab hands back nonsense
         if (elapsed > MAX_CATCHUP) elapsed = MAX_CATCHUP;       // and so does a long stall
+        // Read the local input once per frame, not once per simulation step: two steps in
+        // one frame must not see two presses of the same key.
+        readLocalIntent(player);
         if (!isPaused) {
             simAccumulator += elapsed;
             // Whole steps only. The leftover stays in the accumulator for next frame, so the

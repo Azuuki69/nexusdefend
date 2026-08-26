@@ -287,7 +287,11 @@ test('the boss is scaled before maxHp is taken from hp', () => {
 function reachableFromUpdate() {
     const funcs = {};
     const lines = SRC.split('\n');
-    const clean = lines.map(l => l.replace(/\/\/.*$/, '').replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""'));
+    // Strip the CR first. The file is CRLF, and in JavaScript `.` does not match \r - it is a
+    // line terminator - so /\/\/.*$/ matches nothing at all on a CRLF line and the comment
+    // survives. Python's `.` does match \r, which is why the analysis scripts never saw this.
+    const clean = lines.map(l => l.replace(/\r/g, '').replace(/\/\/.*$/, '')
+                                  .replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""'));
     lines.forEach((l, i) => {
         const m = l.match(/^\s*function (\w+)\(/);
         if (!m) return;
@@ -425,4 +429,75 @@ test('the test handle exists and the game does not read it', () => {
     // it is a door for tests, not a back channel for the game
     const uses = SRC.split('__nexus').length - 1;
     assert.equal(uses, 1, '__nexus is referenced ' + uses + ' times; the game should never read it');
+});
+
+// --- input as data -----------------------------------------------------------------------
+// The simulation read `keys` and `mouse` directly. A server has neither, and in co-op every
+// player has their own, so the simulation takes an intent instead: what one player wants this
+// tick, already resolved from whatever device produced it.
+
+test('no simulation code reads the keyboard or the mouse', () => {
+    const lines = SRC.split('\n');
+    // Strip the CR first. The file is CRLF, and in JavaScript `.` does not match \r - it is a
+    // line terminator - so /\/\/.*$/ matches nothing at all on a CRLF line and the comment
+    // survives. Python's `.` does match \r, which is why the analysis scripts never saw this.
+    const clean = lines.map(l => l.replace(/\r/g, '').replace(/\/\/.*$/, '')
+                                  .replace(/"[^"]*"|'[^']*'|`[^`]*`/g, '""'));
+    const marks = [];
+    lines.forEach((l, i) => {
+        const m = l.match(/^\s*(?:class|function)\s+(\w+)/);
+        if (m) marks.push([i, m[1]]);
+    });
+    const region = i => {
+        let r = '(top)';
+        for (const [ln, nm] of marks) { if (ln <= i) r = nm; else break; }
+        return r;
+    };
+    const SIM = new Set(['Player', 'Enemy', 'Entity', 'Projectile', 'Critter', 'Base', 'update',
+        'spawnWave', 'Wanderer', 'Merchant', 'Item', 'Effect', 'Resource', 'Extractor',
+        'Obstacle', 'Particle', 'FloatingText']);
+    const offenders = [];
+    clean.forEach((l, i) => {
+        if (/\b(keys|mouse)\b/.test(l) && SIM.has(region(i)))
+            offenders.push(region(i) + ':' + (i + 1) + ' ' + lines[i].trim().slice(0, 60));
+    });
+    assert.deepEqual(offenders, [], 'simulation still reads raw input:\n  ' + offenders.join('\n  '));
+});
+
+test('an intent carries everything the simulation needs from a player', () => {
+    const i = SRC.indexOf('function makeIntent()');
+    assert.notEqual(i, -1, 'makeIntent is gone');
+    const body = SRC.slice(i, SRC.indexOf('}', SRC.indexOf('return {', i)));
+    for (const field of ['moveX', 'moveY', 'aimX', 'aimY', 'attack', 'place', 'dash',
+                         'ability', 'overcharge', 'interact', 'openTalents', 'openBuildings', 'seq'])
+        assert.ok(body.includes(field + ':'), 'intent has no ' + field);
+    // aim must be world coordinates - the camera is the client's business
+    assert.ok(/aimX: 0, aimY: 0/.test(body));
+});
+
+test('every player gets their own intent', () => {
+    assert.ok(/this\.intent = makeIntent\(\);/.test(SRC),
+        'the Player constructor does not create an intent');
+});
+
+test('input is read once per frame, not once per simulation step', () => {
+    // Two steps in one frame must not see two presses of the same key.
+    const loop = SRC.slice(SRC.indexOf('function gameLoop(timestamp)'));
+    const read = loop.indexOf('readLocalIntent(player);');
+    const stepLoop = loop.indexOf('while (simAccumulator >= SIM_DT)');
+    assert.ok(read !== -1 && stepLoop !== -1, 'the loop is not shaped as expected');
+    assert.ok(read < stepLoop, 'readLocalIntent runs inside the step loop');
+});
+
+test('held and edge-triggered actions are produced differently', () => {
+    const i = SRC.indexOf('function readLocalIntent(p)');
+    const body = SRC.slice(i, i + 1400);
+    // edge actions go through the edge helper
+    for (const a of ['ability', 'overcharge', 'interact', 'openTalents', 'openBuildings'])
+        assert.ok(body.includes('i.' + a + ' = edge('), a + ' is not edge-triggered');
+    // held actions read the device state directly
+    assert.ok(/i\.dash = !!keys\['shift'\]/.test(body), 'dash should be held, not edged');
+    // and the two spend-latches exist, or a click on an NPC would also swing
+    assert.ok(/if \(!mouse\.clicked\) i\.attackSpent = false;/.test(body), 'no attack spend-latch');
+    assert.ok(/if \(!mouse\.rightClicked\) i\.placeSpent = false;/.test(body), 'no place spend-latch');
 });
