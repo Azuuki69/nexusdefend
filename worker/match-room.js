@@ -19,8 +19,8 @@
 //     is a client saying something, not a fact.
 
 import { createWorld, useWorld, seedRun, setFxMode, drainFx, livingPlayers } from '../src/sim/world.js';
-import { Base, Player } from '../src/sim/entities.js';
-import { stepWorld, generateMap } from '../src/sim/tick.js';
+import { Base, Player, Merchant, Wanderer, merchantVisits } from '../src/sim/entities.js';
+import { stepWorld, generateMap, stockWildlife } from '../src/sim/tick.js';
 import { encodeSnapshot, encodeRoster } from '../src/net/protocol.js';
 
 const TICK_HZ = 20;
@@ -66,6 +66,11 @@ export class MatchRoom {
         this.world.base = new Base();
         this.world.gameState = 'DAY';
         generateMap();
+        // Everything a local run gets at dawn. Without these the world had no merchant, no
+        // wayfarer and no wildlife - a map with nothing living on it.
+        if (merchantVisits(this.world.wave)) this.world.entities.npcs.push(new Merchant());
+        this.world.entities.npcs.push(new Wanderer());
+        stockWildlife();
 
         // Nothing here can play a sound or draw a particle, so the presentation calls the
         // simulation makes become a list instead. The client renders them.
@@ -113,7 +118,12 @@ export class MatchRoom {
             seed: w.currentSeed,
             obstacles: w.entities.obstacles.map(o => ({ type: o.type, x: Math.round(o.x), y: Math.round(o.y), w: o.w, h: o.h })),
             resources: w.entities.resources.map(r => ({ type: r.type, x: Math.round(r.x), y: Math.round(r.y), radius: r.radius })),
-            decorations: w.entities.decorations.map(d => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y) })),
+            // Verbatim: every one of these fields is a sprite-sheet rectangle the renderer
+            // needs. Sending x and y alone left the client with 614 nameless dots.
+            decorations: w.entities.decorations,
+            // What a tree actually collides with. Without these the client predicts straight
+            // through trunks the server stops at, and drifts further with every step.
+            solids: w.entities.solids.map(s => ({ x: Math.round(s.x), y: Math.round(s.y), r: Math.round(s.r) })),
             npcs: w.entities.npcs.map(n => ({ shop: !!n.isShop, x: Math.round(n.x), y: Math.round(n.y) }))
         };
     }

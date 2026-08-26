@@ -148,6 +148,8 @@ export class MatchClient {
         const w = useWorld(this.world);
         w.entities.obstacles = msg.obstacles.map(o => Object.assign(new Obstacle(o.x, o.y, o.w, o.h, o.type), o));
         w.entities.decorations = msg.decorations.map(d => ({ ...d }));
+        // Collision, so prediction stops where the server stops.
+        w.entities.solids = (msg.solids || []).map(s => ({ ...s }));
         w.entities.resources = msg.resources.map(r => {
             const res = new Resource(r.x, r.y, r.type);
             res.radius = r.radius;

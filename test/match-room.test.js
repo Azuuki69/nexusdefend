@@ -304,3 +304,59 @@ describe('MatchRoom runs the real game', () => {
         c.close();
     });
 });
+
+// --- the map has to carry everything -------------------------------------------------------
+// Two bugs shipped here and both were invisible to every existing test, because a snapshot can
+// be perfectly correct about a world the client cannot draw or collide with.
+//
+//   * decorations were sent as bare positions. Every sprite is a rectangle out of a sheet, and
+//     none of that was sent, so the map rendered as empty grass.
+//   * solids were not sent at all. The server stopped a player at a tree trunk; the client,
+//     knowing of no trunk, predicted straight through and drifted further every step until the
+//     view no longer contained anybody.
+
+describe('the map message', () => {
+    test('carries the sprite data the renderer needs', { skip }, async () => {
+        const c = connect(room('map-art'), 'p1', '&cls=warrior&seed=4242');
+        await c.ready;
+        const map = await c.until(m => m.find(x => x.t === 'map'));
+
+        const kinds = {};
+        for (const d of map.decorations) kinds[d.type] = (kinds[d.type] || 0) + 1;
+        assert.ok(kinds.scenery > 50, 'almost no scenery: ' + JSON.stringify(kinds));
+
+        const scenery = map.decorations.find(d => d.type === 'scenery');
+        for (const field of ['sheet', 'sx', 'sy', 'sw', 'sh', 'h'])
+            assert.notEqual(scenery[field], undefined,
+                'a scenery piece has no ' + field + ', so it cannot be drawn');
+
+        const grass = map.decorations.find(d => d.type === 'grass');
+        assert.notEqual(grass && grass.size, undefined, 'grass has no size');
+        c.close();
+    });
+
+    test('carries the collision the client predicts against', { skip }, async () => {
+        const c = connect(room('map-solid'), 'p1', '&seed=4242');
+        await c.ready;
+        const map = await c.until(m => m.find(x => x.t === 'map'));
+        assert.ok(Array.isArray(map.solids), 'no solids at all');
+        assert.ok(map.solids.length > 20, 'only ' + map.solids.length + ' solids; trees are not blocking');
+        for (const s of map.solids.slice(0, 5))
+            for (const f of ['x', 'y', 'r'])
+                assert.ok(Number.isFinite(s[f]), 'a solid has no ' + f);
+        c.close();
+    });
+
+    test('the world is populated, not just generated', { skip }, async () => {
+        // initWorld() used to call generateMap() and stop, so a match had no merchant, no
+        // wayfarer and no wildlife - a map with nothing living on it.
+        const c = connect(room('map-alive'), 'p1', '&seed=4242');
+        await c.ready;
+        const map = await c.until(m => m.find(x => x.t === 'map'));
+        assert.ok(map.npcs.length >= 1, 'nobody to talk to');
+
+        const snap = await c.until(m => m.find(x => x.t === 'snap' && x.critters.length > 0), 5000);
+        assert.ok(snap.critters.length > 5, 'only ' + snap.critters.length + ' critters; the map is empty');
+        c.close();
+    });
+});
