@@ -6,6 +6,8 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { MSG, decodeSnapshot, decodeRoster } from '../src/net/protocol.js';
+
 const BASE = 'http://127.0.0.1:8787';
 const WS = 'ws://127.0.0.1:8787';
 
@@ -35,9 +37,27 @@ after(() => { for (const ws of open) { try { ws.close(); } catch {} } open.clear
 /** Connect, collect messages, and resolve once `want(msgs)` is satisfied or time runs out. */
 function connect(matchId, playerId, extra = '') {
     const ws = new WebSocket(`${WS}/ws/match/${matchId}?player=${playerId}${extra}`);
+    ws.binaryType = 'arraybuffer';
     open.add(ws);
     const msgs = [];
-    ws.addEventListener('message', (e) => msgs.push(JSON.parse(e.data)));
+    // Welcome and map are text and arrive once. Snapshots and the roster are binary and arrive
+    // constantly - decoded here so the tests above can go on reading plain objects.
+    let roster = new Map();
+    let header = null;
+    ws.addEventListener('message', (e) => {
+        if (!(e.data instanceof ArrayBuffer)) { msgs.push(JSON.parse(e.data)); return; }
+        const kind = new DataView(e.data).getUint8(0);
+        if (kind === MSG.ROSTER) {
+            const r = decodeRoster(e.data);
+            roster = new Map(r.players.map(p => [p.slot, p]));
+            msgs.push(r);
+            return;
+        }
+        const out = decodeSnapshot(e.data, roster, header);
+        if (!out) return;                 // a snapshot before the first header; the client drops these too
+        header = out.header;
+        msgs.push(out.snap);
+    });
     const ready = new Promise((res, rej) => {
         ws.addEventListener('open', res);
         ws.addEventListener('error', rej);

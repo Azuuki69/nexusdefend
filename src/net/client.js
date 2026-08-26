@@ -17,6 +17,7 @@
 
 import { world, useWorld, createWorld, seedRun, fx } from '../sim/world.js';
 import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer } from '../sim/entities.js';
+import { MSG, decodeSnapshot, decodeRoster } from './protocol.js';
 
 const INPUT_HZ = 30;
 
@@ -68,13 +69,23 @@ export class MatchClient {
         this.world = null;
         /** Set once the map has arrived; until then there is nothing to draw. */
         this.ready = false;
+
+        // Slot -> {id, cls}. Snapshots refer to a player by slot, so this has to arrive first.
+        this.roster = new Map();
+        // The static half of a snapshot, kept because most ticks do not resend it.
+        this.header = null;
+        // Bytes in, for anyone who wants to know what the match actually costs.
+        this.bytesIn = 0;
+        this.snapshotsIn = 0;
     }
 
     connect() {
         return new Promise((resolve, reject) => {
             this.ws = new WebSocket(this.url);
+            this.ws.binaryType = 'arraybuffer';   // or the browser hands back Blobs
             this.ws.addEventListener('open', () => { this.connected = true; });
             this.ws.addEventListener('message', ev => {
+                if (ev.data instanceof ArrayBuffer) { this.onBinary(ev.data); return; }
                 let msg;
                 try { msg = JSON.parse(ev.data); } catch { return; }
                 if (msg.t === 'welcome') {
@@ -96,6 +107,25 @@ export class MatchClient {
                 if (this.opts.onClose) this.opts.onClose();
             });
         });
+    }
+
+    /** Everything sent per tick comes down here. */
+    onBinary(ab) {
+        this.bytesIn += ab.byteLength;
+        const kind = new DataView(ab).getUint8(0);
+        if (kind === MSG.ROSTER) {
+            const r = decodeRoster(ab);
+            this.roster = new Map(r.players.map(p => [p.slot, p]));
+            return;
+        }
+        if (kind !== MSG.SNAPSHOT) return;
+        const out = decodeSnapshot(ab, this.roster, this.header);
+        // Null means the header has never arrived - the very first snapshot after connecting
+        // can land before the roster. Dropping it costs 50ms and beats inventing a world.
+        if (!out) return;
+        this.header = out.header;
+        this.snapshotsIn++;
+        this.onSnapshot(out.snap);
     }
 
     onWelcome(msg) {
@@ -163,7 +193,13 @@ export class MatchClient {
 
         reconcile(w.entities.enemies, snap.enemies,
             s => new Enemy(s.x, s.y, s.type),
-            (e, s) => { target(e, s); e.hp = s.hp; e.maxHp = s.maxHp; });
+            (e, s) => {
+                target(e, s);
+                // Health comes as a byte fraction: the client draws a bar, and 1/255 is finer
+                // than the bar is wide. maxHp is whatever this client's own sim gave the
+                // creature when it built it, which is the same number the server used.
+                e.hp = s.hpPct * e.maxHp;
+            });
 
         reconcile(w.entities.items, snap.items,
             s => new Item(s.x, s.y, s.type),

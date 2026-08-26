@@ -21,6 +21,7 @@
 import { createWorld, useWorld, seedRun, setFxMode, drainFx, livingPlayers } from '../src/sim/world.js';
 import { Base, Player } from '../src/sim/entities.js';
 import { stepWorld, generateMap } from '../src/sim/tick.js';
+import { encodeSnapshot, encodeRoster } from '../src/net/protocol.js';
 
 const TICK_HZ = 20;
 const TICK_MS = 1000 / TICK_HZ;
@@ -43,6 +44,16 @@ export class MatchRoom {
         this.emptySince = null;
         this.tick = 0;
         this.world = null;
+
+        // A player's roster slot. Sending a one-byte slot every tick instead of a string id is
+        // most of why a snapshot fits in a few hundred bytes.
+        this.slots = new Map();      // netId -> slot
+        this.nextSlot = 0;
+        // The static half of a snapshot - phase, wave, weather, the Nexus - is usually the same
+        // as last tick, so it is only sent when it changes. A client that has just arrived has
+        // no copy of it, hence the flag.
+        this.prevHeader = null;
+        this.forceHeader = true;
     }
 
     // ---------------------------------------------------------------- world
@@ -72,6 +83,7 @@ export class MatchRoom {
         const w = this.enter();
         const p = new Player(CLASSES.has(cls) ? cls : 'warrior');
         p.netId = netId;
+        if (!this.slots.has(netId)) this.slots.set(netId, this.nextSlot++ & 0xff);
         w.players.push(p);
         w.base.recalcMaxHp();        // the Nexus hardens with the party
         return p;
@@ -149,7 +161,12 @@ export class MatchRoom {
         let next = Date.now() + TICK_MS;
         const run = () => {
             const events = this.step();
-            this.broadcast(this.snapshot(events));
+            const snap = this.snapshot(events);
+            const { buffer, header } = encodeSnapshot(
+                snap, this.slots, this.forceHeader ? null : this.prevHeader);
+            this.prevHeader = header;
+            this.forceHeader = false;
+            this.broadcast(buffer);
 
             if (this.clients.size === 0) {
                 if (this.emptySince === null) this.emptySince = Date.now();
@@ -170,17 +187,26 @@ export class MatchRoom {
         if (this.timer !== null) { clearTimeout(this.timer); this.timer = null; }
     }
 
-    broadcast(msg) {
-        const payload = JSON.stringify(msg);
+    broadcast(payload) {
         for (const [ws] of this.clients) {
             try { ws.send(payload); } catch { this.drop(ws); }
         }
     }
 
+    /** Who is in the match, by slot. Sent on any change, never per tick. */
+    rosterMessage() {
+        return encodeRoster([...this.clients.values()].map(p => ({
+            slot: this.slots.get(p.netId) ?? 0, id: p.netId, cls: p.cls
+        })));
+    }
+
     drop(ws) {
         const p = this.clients.get(ws);
         this.clients.delete(ws);
-        if (p) this.removePlayer(p);
+        if (p) {
+            this.removePlayer(p);
+            if (this.clients.size) this.broadcast(this.rosterMessage());
+        }
     }
 
     // ---------------------------------------------------------------- connections
@@ -219,8 +245,14 @@ export class MatchRoom {
         server.addEventListener('close', close);
         server.addEventListener('error', close);
 
-        server.send(JSON.stringify({ t: 'welcome', you: netId, cls: player.cls, seed: this.world.currentSeed, hz: TICK_HZ }));
+        server.send(JSON.stringify({
+            t: 'welcome', you: netId, cls: player.cls,
+            slot: this.slots.get(netId), seed: this.world.currentSeed, hz: TICK_HZ
+        }));
         server.send(JSON.stringify(this.mapMessage()));
+        // The party changed, and the newcomer has no static header yet.
+        this.broadcast(this.rosterMessage());
+        this.forceHeader = true;
         this.startLoop();
 
         return new Response(null, { status: 101, webSocket: client });
