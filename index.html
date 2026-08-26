@@ -31,6 +31,33 @@
         h1 { font-family: var(--font-head); font-size: 68px; font-weight: 900; margin-bottom: 6px; letter-spacing: 4px; background: linear-gradient(180deg, #fff6d8 0%, var(--gold-bright) 35%, var(--gold) 65%, #a9822f 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 35px rgba(255,220,140,0.35); text-transform: uppercase; }
         h1::after { content: ''; display: block; width: 260px; height: 3px; margin: 14px auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
         .class-container { display: flex; gap: 22px; margin-top: 34px; }
+
+        /* --- Front menu ------------------------------------------------------------- */
+        .menu-screen { display: flex; flex-direction: column; align-items: center; }
+        .menu-screen.hidden { display: none; }
+        .menu-stack { display: flex; flex-direction: column; gap: 16px; margin-top: 40px; width: 320px; }
+        .menu-btn {
+            font-family: var(--font-head); font-size: 22px; letter-spacing: 1px;
+            padding: 18px 24px; cursor: pointer; color: var(--gold-bright);
+            background: linear-gradient(180deg, rgba(38,42,34,0.96), rgba(16,18,14,0.97));
+            border: 2px solid var(--gold-dim); border-radius: 10px;
+            box-shadow: 0 10px 22px rgba(0,0,0,0.45); transition: transform .12s, border-color .12s, box-shadow .12s;
+        }
+        .menu-btn:hover { border-color: var(--gold); transform: translateY(-3px); box-shadow: 0 16px 30px rgba(0,0,0,0.55); }
+        .menu-btn:active { transform: translateY(0); }
+        .menu-btn.ghost { font-size: 16px; padding: 12px 20px; color: #cfc7ae; border-color: #4a4636; background: rgba(14,16,12,0.9); }
+        .menu-hint { color: #b9b3a0; font-size: 15px; margin: 18px 0 0; max-width: 520px; text-align: center; }
+        .menu-sub { color: #8d876f; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-top: 6px; }
+        .match-row { display: flex; gap: 10px; margin-top: 22px; }
+        #matchName {
+            font-family: var(--font-body); font-size: 18px; padding: 12px 16px; width: 260px;
+            color: var(--gold-bright); background: rgba(10,12,9,0.95);
+            border: 2px solid var(--gold-dim); border-radius: 8px; text-align: center;
+        }
+        #matchName:focus { outline: none; border-color: var(--gold); }
+        #matchStatus { min-height: 22px; }
+        #matchStatus.bad { color: #ff8a8a; }
+        #matchStatus.good { color: #8fe08f; }
         .class-card { position: relative; background: linear-gradient(180deg, rgba(28,32,26,0.95), rgba(12,14,11,0.96)); border: 2px solid #4a4a42; border-radius: 12px; padding: 22px 20px; width: 250px; cursor: pointer; transition: 0.25s ease; text-align: center; box-shadow: 0 10px 24px rgba(0,0,0,0.6); }
         .class-card:hover { border-color: var(--gold); transform: translateY(-8px); box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(217,178,92,0.35); }
         .class-card h2 { font-family: var(--font-head); color: var(--gold-bright); margin-top: 0; border-bottom: 1px solid var(--panel-border-dim); padding-bottom: 12px; letter-spacing: 1px; font-size: 21px; }
@@ -247,11 +274,42 @@
 
     <div id="mainMenu" class="overlay">
         <h1>DEFEND THE NEXUS</h1>
+        <p class="menu-sub">Hold the Nexus until dawn</p>
+
+        <div id="menuHome" class="menu-screen">
+            <div class="menu-stack">
+                <button class="menu-btn" onclick="menuSingle()">Single-player</button>
+                <button class="menu-btn" onclick="menuMulti()">Multiplayer</button>
+                <button class="menu-btn" onclick="menuSettings()">Settings</button>
+            </div>
+        </div>
+
+        <div id="menuClass" class="menu-screen hidden">
+        <p class="menu-hint" id="menuClassHint">Choose your class</p>
         <div class="class-container">
-            <div class="class-card" onclick="startGame('warrior')"><h2>Warrior</h2><ul><li>Melee Arc Attack</li><li>Heavy armour, short reach</li><li>Ability (E): Whirlwind</li></ul></div>
-            <div class="class-card" onclick="startGame('mage')"><h2>Mage</h2><ul><li>Ranged Fireballs</li><li>Deep mana, fragile</li><li>Ability (E): Meteor</li></ul></div>
-            <div class="class-card" onclick="startGame('archer')"><h2>Archer</h2><ul><li>Fast Ranged Arrows</li><li>Longest reach, quick on foot</li><li>Ability (E): Rain of Arrows</li></ul></div>
-            <div class="class-card" onclick="startGame('priest')"><h2>Priest</h2><ul><li>Holy Magic</li><li>Sustains itself and the Nexus</li><li>Ability (E): Holy Nova</li></ul></div>
+            <div class="class-card" onclick="menuPick('warrior')"><h2>Warrior</h2><ul><li>Melee Arc Attack</li><li>Heavy armour, short reach</li><li>Ability (E): Whirlwind</li></ul></div>
+            <div class="class-card" onclick="menuPick('mage')"><h2>Mage</h2><ul><li>Ranged Fireballs</li><li>Deep mana, fragile</li><li>Ability (E): Meteor</li></ul></div>
+            <div class="class-card" onclick="menuPick('archer')"><h2>Archer</h2><ul><li>Fast Ranged Arrows</li><li>Longest reach, quick on foot</li><li>Ability (E): Rain of Arrows</li></ul></div>
+            <div class="class-card" onclick="menuPick('priest')"><h2>Priest</h2><ul><li>Holy Magic</li><li>Sustains itself and the Nexus</li><li>Ability (E): Holy Nova</li></ul></div>
+        </div>
+            <div class="menu-stack" style="width: 200px; margin-top: 28px;">
+                <button class="menu-btn ghost" onclick="menuHome()">Back</button>
+            </div>
+        </div>
+
+        <div id="menuMatch" class="menu-screen hidden">
+            <p class="menu-hint">
+                Everyone who types the same match name lands in the same world.<br>
+                Share it with a friend, or leave it as it is and tell them what it says.
+            </p>
+            <div class="match-row">
+                <input id="matchName" maxlength="24" spellcheck="false" placeholder="match name">
+                <button class="menu-btn" style="font-size:18px; padding:12px 22px;" onclick="menuJoin()">Join</button>
+            </div>
+            <p class="menu-hint" id="matchStatus"></p>
+            <div class="menu-stack" style="width: 200px; margin-top: 10px;">
+                <button class="menu-btn ghost" onclick="menuClassScreen()">Back</button>
+            </div>
         </div>
     </div>
 
@@ -1797,14 +1855,23 @@
     function resetGameToMenu() {
         // Stop the run properly - without this the loop kept simulating behind the menu.
         world.gameState = 'MENU'; isPaused = false;
+        leaveMatch();               // a run reached from a match should also leave the match
         closeSettings();
+        menuHome();
         MODAL_IDS.forEach(id => closeModal(id));
         document.getElementById('gameOverOverlay').classList.add('hidden');
         document.getElementById('hud').classList.add('hidden');
         document.getElementById('mainMenu').classList.remove('hidden');
     }
 
-    function openSettings() { isPaused = true; resetDangerBtns(); applyAudioSettings(); document.getElementById('pauseOverlay').classList.remove('hidden'); }
+    function menuSettings() {
+        // Same settings panel, but Retry and Main Menu mean nothing when there is no run.
+        openSettings();
+        document.getElementById('retryBtn').classList.add('hidden');
+        document.getElementById('quitBtn').classList.add('hidden');
+    }
+
+    function openSettings() { isPaused = true; resetDangerBtns(); applyAudioSettings(); document.getElementById('retryBtn').classList.remove('hidden'); document.getElementById('quitBtn').classList.remove('hidden'); document.getElementById('pauseOverlay').classList.remove('hidden'); }
     function closeSettings() { isPaused = false; resetDangerBtns(); document.getElementById('pauseOverlay').classList.add('hidden'); }
 
     // Retry and Main Menu both throw the run away, so they ask twice.
@@ -2470,6 +2537,85 @@
         });
         if (!loopRunning) { loopRunning = true; requestAnimationFrame(gameLoop); }
         return client;
+    }
+
+    // --- Front menu -------------------------------------------------------------------
+    // Which mode the class picker is feeding, and which class was picked. Both are only
+    // meaningful while the menu is up.
+    let menuMode = 'local';
+    let menuClass = 'warrior';
+
+    function showMenuScreen(id) {
+        for (const s of ['menuHome', 'menuClass', 'menuMatch'])
+            document.getElementById(s).classList.toggle('hidden', s !== id);
+    }
+
+    function menuHome() { showMenuScreen('menuHome'); }
+
+    function menuSingle() {
+        menuMode = 'local';
+        document.getElementById('menuClassHint').innerText = 'Choose your class';
+        showMenuScreen('menuClass');
+    }
+
+    function menuMulti() {
+        menuMode = 'online';
+        document.getElementById('menuClassHint').innerText =
+            'Choose your class, then pick a match to join';
+        showMenuScreen('menuClass');
+    }
+
+    function menuClassScreen() { showMenuScreen('menuClass'); }
+
+    /** A class card was clicked. Where that leads depends on the mode chosen a screen ago. */
+    function menuPick(cls) {
+        menuClass = cls;
+        if (menuMode === 'local') { startGame(cls); return; }
+        const field = document.getElementById('matchName');
+        // A suggested name beats an empty box: something to read out to a friend.
+        if (!field.value) field.value = suggestMatchName();
+        setMatchStatus('');
+        showMenuScreen('menuMatch');
+        field.focus();
+        field.select();
+    }
+
+    /** Two short words are easier to say down a phone than eight random characters. */
+    function suggestMatchName() {
+        const a = ['bright', 'quiet', 'iron', 'amber', 'north', 'hollow', 'silver', 'red'];
+        const b = ['grove', 'gate', 'ember', 'hollow', 'ridge', 'watch', 'spire', 'ford'];
+        const pick = list => list[Math.floor(Math.random() * list.length)];
+        return pick(a) + '-' + pick(b);
+    }
+
+    function setMatchStatus(text, kind) {
+        const el = document.getElementById('matchStatus');
+        el.innerText = text;
+        el.className = 'menu-hint' + (kind ? ' ' + kind : '');
+    }
+
+    async function menuJoin() {
+        const raw = (document.getElementById('matchName').value || '').trim();
+        // The server only routes on these characters, so clean it here rather than failing
+        // later. Runs of punctuation collapse to one dash and the ends are trimmed, so
+        // "My Match!! 2024" becomes "my-match-2024" rather than "my-match---2024".
+        const id = raw.toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/-{2,}/g, '-')
+            .replace(/^[-_]+|[-_]+$/g, '')
+            .slice(0, 24);
+        if (!id) { setMatchStatus('Give the match a name first.', 'bad'); return; }
+
+        setMatchStatus('Joining ' + id + '...');
+        try {
+            await joinMatch(id, menuClass);
+            setMatchStatus('');
+        } catch (e) {
+            // The usual cause is the game being served from somewhere with no match server
+            // behind it - GitHub Pages, for instance.
+            setMatchStatus('Could not reach a match server at ' + location.host
+                + '. Multiplayer needs the game served by the worker.', 'bad');
+        }
     }
 
     function leaveMatch() {
@@ -3326,6 +3472,7 @@
     // HTML uses, nothing more - a bridge, not a public API.
     Object.assign(window, {
         joinMatch, leaveMatch,
+        menuHome, menuSingle, menuMulti, menuClassScreen, menuPick, menuJoin, menuSettings,
         startGame, buyMerchant, buyForge, buyCamp, closeModal, setVolume, toggleMute, startNightEarly, selectTalentPath, selectBuildingTab, retryRun, restartRun, resetGameToMenu, quitToMenu, openBuildings, closeSettings, buyTalent, buyParagon, armBuilding
     });
 </script>
