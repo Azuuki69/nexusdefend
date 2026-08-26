@@ -25,41 +25,55 @@ import { mulberry32, randomSeed } from './rng.js';
 // Deliberately NOT in here: cam, ui, fx, audioSettings, screenShake, isPaused,
 // placingBuilding and simAccumulator. Those describe this client's *view* of a match
 // rather than the match itself, and a server has no business owning them.
-export const world = {};
-
-/** Put the world back to how a run starts. Called by startGame and by a restart. */
-export function resetWorld() {
-    world.currentSeed = 0;
-    world.activeQuest = null;
-    world.forgeBuilding = null;
-    world.gameState = 'MENU';
-    world.base = null;
-    world.players = [];
-    world.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
-    world.inventory = { wood: 50, stone: 50, mana: 20 };
-    world.wave = 1; world.phaseTimer = 60; world.totalKills = 0;
-    world.currentWeather = 'clear';
-    world.currentModifier = 'none';
-    world.waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
-    world.lastBearWave = -99;
-    world.lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
-    world.campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
-    world.campOneOffs = { skinning: false, beastcall: false };
-    world.campRationsDay = -1;
-    world.gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
-    world.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
+/** A brand-new match. Everything a game needs and nothing it does not. */
+export function createWorld() {
+    const w = {};
+    w.rng = null;              // the seeded stream, per match rather than per module
+    w.currentSeed = 0;
+    w.activeQuest = null;
+    w.forgeBuilding = null;
+    w.gameState = 'MENU';
+    w.base = null;
+    w.players = [];
+    w.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };
+    w.inventory = { wood: 50, stone: 50, mana: 20 };
+    w.wave = 1; w.phaseTimer = 60; w.totalKills = 0;
+    w.currentWeather = 'clear';
+    w.currentModifier = 'none';
+    w.waveDirection = -1; // 0=Top, 1=Bottom, 2=Left, 3=Right
+    w.lastBearWave = -99;
+    w.lastVisitorWave = { cyclop: -99, troll: -99, orcrider: -99 };
+    w.campUpgrades = { jerkin: { level: 0 }, haft: { level: 0 }, stride: { level: 0 } };
+    w.campOneOffs = { skinning: false, beastcall: false };
+    w.campRationsDay = -1;
+    w.gameStats = { dmg: 0, kills: 0, wood: 0, stone: 0, extractors: 0 };
+    w.forgeUpgrades = { weapon: { level: 0 }, mining: { level: 0 }, speed: { level: 0 }, nexus: { level: 0 }, whetstone: { level: 0 } };
+    return w;
 }
-resetWorld();
+
+// Not `const`. Durable Objects share module scope - measured, not assumed - so a server
+// with two live matches has to be able to say which one it is ticking. Live bindings mean
+// every importer follows the swap.
+//
+// The contract that makes this safe: a tick is SYNCHRONOUS. useWorld() then step, with no
+// await in between, so two matches can never interleave. Put an await inside the tick and
+// this breaks silently.
+export let world = createWorld();
+
+/** Point the simulation at a match. Returns it, for convenience. */
+export function useWorld(w) { world = w; return world; }
+
+/** Start this match over. */
+export function resetWorld() { world = createWorld(); return world; }
 
 // --- Seeded randomness ---------------------------------------------------------------
-let simRng = null;
 
-export function rnd() { return simRng ? simRng() : Math.random(); }
+export function rnd() { return world.rng ? world.rng() : Math.random(); }
 export function seedRun(seed) {
     world.currentSeed = (seed !== undefined && seed !== null)
         ? (seed >>> 0)
         : randomSeed();
-    simRng = mulberry32(world.currentSeed);
+    world.rng = mulberry32(world.currentSeed);
     return world.currentSeed;
 }
 

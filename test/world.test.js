@@ -224,3 +224,52 @@ test('the same seed builds the same match headless', async () => {
     assert.notEqual(run(99), run(1234), 'two seeds gave the same match');
     W.resetWorld();
 });
+
+// --- one world per match -----------------------------------------------------------------
+// Measured, not assumed: four Durable Objects hitting the same worker all reported the same
+// module identity, and each read what the previous had written to module scope. Durable
+// Objects share module scope. A module-level world would be shared between live matches.
+
+test('createWorld hands out genuinely separate matches', async () => {
+    const E = await import('../src/sim/entities.js');
+    const T = await import('../src/sim/tick.js');
+
+    const build = (seed, cls) => {
+        const w = W.createWorld();
+        W.useWorld(w);
+        W.seedRun(seed);
+        w.base = new E.Base();
+        w.players.push(new E.Player(cls));
+        w.gameState = 'DAY';
+        T.generateMap();
+        w.gameState = 'NIGHT';
+        T.spawnWave();
+        return w;
+    };
+    const a = build(111, 'warrior'), b = build(222, 'mage');
+
+    assert.notEqual(a, b);
+    assert.notEqual(a.entities, b.entities, 'two matches share one entity bag');
+    assert.notEqual(a.rng, b.rng, 'two matches share one random stream');
+
+    const bBefore = b.entities.enemies.map(e => Math.round(e.x)).join(',');
+    W.useWorld(a);
+    for (let i = 0; i < 120; i++) T.stepWorld(1 / 60);
+    assert.equal(b.entities.enemies.map(e => Math.round(e.x)).join(','), bBefore,
+        'ticking one match moved the other one');
+    W.resetWorld();
+});
+
+test('the seeded stream belongs to the match, not the module', () => {
+    const a = W.createWorld(), b = W.createWorld();
+    W.useWorld(a); W.seedRun(7);
+    const first = [W.rnd(), W.rnd()];
+    W.useWorld(b); W.seedRun(7);
+    W.rnd(); W.rnd(); W.rnd();               // burn through b's stream
+    W.useWorld(a);
+    const next = [W.rnd(), W.rnd()];
+    W.useWorld(a); W.seedRun(7);
+    assert.deepEqual([W.rnd(), W.rnd()], first, 'reseeding a match did not restart its stream');
+    assert.notDeepEqual(next, first, 'the two draws should differ; a advanced past them');
+    W.resetWorld();
+});

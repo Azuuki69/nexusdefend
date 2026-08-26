@@ -130,6 +130,7 @@ export class MatchRoom {
 
     async fetch(request) {
         const url = new URL(request.url);
+
         const playerId = (url.searchParams.get('player') || '').slice(0, 32) || crypto.randomUUID();
 
         if (!this.world) {
