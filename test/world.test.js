@@ -172,3 +172,55 @@ test('livingPlayers is what a co-op run should end on', () => {
     assert.equal(W.livingPlayers().length, 0, 'the party is down now');
     W.resetWorld();
 });
+
+// --- a whole match, headless -------------------------------------------------------------
+// The point of Phase 1: a Durable Object can run the game. This does exactly what a server
+// would - build a world, generate a map, spawn a wave, tick - with no browser at all.
+
+test('a match runs from nothing in plain Node', async () => {
+    const T = await import('../src/sim/tick.js');
+    const E = await import('../src/sim/entities.js');
+
+    W.resetWorld();
+    W.seedRun(4242);
+    W.world.base = new E.Base();
+    W.world.players.push(new E.Player('warrior'));
+    W.world.gameState = 'DAY';
+
+    T.generateMap();
+    assert.ok(W.world.entities.resources.length > 10, 'the map has no resources on it');
+
+    W.world.gameState = 'NIGHT';
+    T.spawnWave();
+    assert.ok(W.world.entities.enemies.length > 0, 'no wave arrived');
+
+    const before = W.world.base.hp;
+    for (let i = 0; i < 1200; i++) T.stepWorld(1 / 60);
+    assert.ok(W.world.base.hp < before, 'twenty seconds of night and the Nexus took no damage');
+    W.resetWorld();
+});
+
+test('the same seed builds the same match headless', async () => {
+    const T = await import('../src/sim/tick.js');
+    const E = await import('../src/sim/entities.js');
+
+    const run = seed => {
+        W.resetWorld();
+        W.seedRun(seed);
+        W.world.base = new E.Base();
+        W.world.players.push(new E.Player('warrior'));
+        W.world.gameState = 'DAY';
+        T.generateMap();
+        W.world.gameState = 'NIGHT';
+        T.spawnWave();
+        for (let i = 0; i < 600; i++) T.stepWorld(1 / 60);
+        return JSON.stringify({
+            nexus: Math.round(W.world.base.hp),
+            enemies: W.world.entities.enemies.map(e => [e.type, Math.round(e.x), Math.round(e.y)]),
+            resources: W.world.entities.resources.length
+        });
+    };
+    assert.equal(run(99), run(99), 'the same seed gave two different matches');
+    assert.notEqual(run(99), run(1234), 'two seeds gave the same match');
+    W.resetWorld();
+});

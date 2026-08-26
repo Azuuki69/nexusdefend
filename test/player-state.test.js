@@ -29,7 +29,8 @@ const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'in
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORLD = readFileSync(join(HERE, '..', 'src', 'sim', 'world.js'), 'utf8');
 const ENTITIES = readFileSync(join(HERE, '..', 'src', 'sim', 'entities.js'), 'utf8');
-const GAME = SRC + WORLD + ENTITIES;
+const TICK = readFileSync(join(HERE, '..', 'src', 'sim', 'tick.js'), 'utf8');
+const GAME = SRC + WORLD + ENTITIES + TICK;
 
 /** Lift a top-level `const NAME = {...};` literal out of the game and evaluate it. */
 function lift(name) {

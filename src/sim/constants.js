@@ -114,3 +114,11 @@ export const NEXUS_IMG = 285, NEXUS_RADIUS = 85;
 // dimensions, so the statements move whole and the renderer imports them back.
 export const RES_START = 48, RES_PER_DAY = 8, RES_MAX = 130;
 export const MERCHANT_VISIT_DAYS = 4;
+
+// Sizes and reaches the simulation needs. They share their lines with drawing
+// dimensions, so the statements move whole and the renderer imports them back.
+export const TENT_H = 140, TENT_FEET = 18, TENT_SOLID = 52;
+export const CRITTER_POP = { boar: 4, deer: 5, rabbit: 7 };
+export const CRITTER_KEEPOUT = 500;        // they graze the wilds, not the nexus lawn
+export const FORGE_H = 132, FORGE_FEET = 46, FORGE_RANGE = 165;
+export const EARLY_NIGHT_MANA_PER_SEC = 0.25;
