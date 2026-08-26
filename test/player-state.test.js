@@ -166,3 +166,60 @@ test('resetTalents keeps a boon that is currently running', () => {
     p.resetTalents();
     assert.equal(p.buffs.speedMult, 2.0, 'the running day-speed boon was lost');
 });
+
+// --- the presentation sink ---------------------------------------------------------------
+// Simulation code cannot run on a server while it is calling into an AudioContext and a
+// canvas. Rather than rewrite ~80 call sites into an event queue, the four entry points
+// dispatch through a swappable sink: the browser installs the real one, a headless run
+// installs a recorder. These guard the property that makes that work - that nothing reaches
+// past the sink to the implementation underneath.
+
+test('the presentation sink exists with all four channels', () => {
+    for (const decl of ['const fxLive = {', 'const fxRecord = {', 'let fx = fxLive;'])
+        assert.ok(SRC.includes(decl), 'missing: ' + decl);
+    for (const channel of ['sound:', 'particles:', 'shake:', 'text:']) {
+        const live = SRC.slice(SRC.indexOf('const fxLive = {'), SRC.indexOf('let fxLog'));
+        const rec = SRC.slice(SRC.indexOf('const fxRecord = {'), SRC.indexOf('let fx = fxLive;'));
+        assert.ok(live.includes(channel), 'fxLive has no ' + channel);
+        assert.ok(rec.includes(channel), 'fxRecord has no ' + channel);
+    }
+});
+
+test('the dispatchers go through the sink, never straight to the implementation', () => {
+    for (const [dispatch, channel] of [
+        ['function playSound(type) {', 'fx.sound(type);'],
+        ['function spawnParticles(x, y, color, count) {', 'fx.particles(x, y, color, count);'],
+        ['function addShake(amt) {', 'fx.shake(amt);'],
+    ]) {
+        const i = SRC.indexOf(dispatch);
+        assert.notEqual(i, -1, 'missing dispatcher: ' + dispatch);
+        assert.ok(SRC.slice(i, i + 160).includes(channel), dispatch + ' does not call ' + channel);
+    }
+});
+
+test('nothing bypasses the sink by calling the raw implementation', () => {
+    // fxLive is allowed to - that is its entire job. Nobody else may.
+    const live = SRC.slice(SRC.indexOf('const fxLive = {'), SRC.indexOf('let fxLog'));
+    for (const raw of ['playSoundNow(', 'spawnParticlesNow(', 'addShakeNow(']) {
+        const total = SRC.split(raw).length - 1;
+        const inLive = live.split(raw).length - 1;
+        const declared = SRC.includes('function ' + raw) ? 1 : 0;
+        assert.equal(total - inLive - declared, 0,
+            raw + ' is called ' + (total - inLive - declared) + ' time(s) outside the sink');
+    }
+});
+
+test('FloatingText announces itself so a headless run sees the same words', () => {
+    const i = SRC.indexOf('class FloatingText {');
+    assert.notEqual(i, -1);
+    assert.ok(SRC.slice(i, i + 320).includes('fx.text(x, y, text, color)'),
+        'FloatingText does not report through the sink');
+});
+
+test('the sim classes still have their juice - the sink did not strip it', () => {
+    // If a refactor ever quietly removed these calls the determinism test would still pass
+    // while the game went silent, so the count is worth pinning down.
+    const calls = ['playSound(', 'new FloatingText(', 'spawnParticles(', 'addShake('];
+    const total = calls.reduce((n, c) => n + SRC.split(c).length - 1, 0);
+    assert.ok(total > 180, 'presentation calls dropped to ' + total + '; something stripped them');
+});

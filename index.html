@@ -1304,7 +1304,51 @@
     function toggleMute() { audioSettings.muted = !audioSettings.muted; applyAudioSettings(); playSound('pickup'); }
     // Browsers block audio until a gesture, so this is called from the class pick.
     function startMusic() { if (audioCtx.state === 'suspended') audioCtx.resume(); bgMusic.play().catch(() => {}); }
-    function playSound(type) {
+    // --- Presentation sink --------------------------------------------------------
+    // Simulation code calls playSound / spawnParticles / addShake / FloatingText wherever it
+    // wants, and that is how it should read - `playSound('hit')` at the point of the hit says
+    // what it means. None of it can run on a server, though: there is no AudioContext, no
+    // canvas, and nobody to shake.
+    //
+    // So the four entry points dispatch through a sink instead of doing the work themselves.
+    // In the browser the sink is the real thing. A headless run installs the recording sink,
+    // which appends to a list and does nothing else - the same stream of events the client
+    // would have drawn, which is exactly what a snapshot has to carry to a remote player.
+    //
+    // Four edits rather than eighty: the call sites never learn which sink is installed.
+    const fxLive = {
+        sound:     type => playSoundNow(type),
+        particles: (x, y, color, count) => spawnParticlesNow(x, y, color, count),
+        shake:     amt => addShakeNow(amt),
+        text:      () => {}          // FloatingText is already an entity; nothing extra to do
+    };
+
+    // Positions are rounded because this stream is meant to go over a wire, and a float that
+    // differs in its last bit is not a difference anybody can see.
+    let fxLog = [];
+    const fxRecord = {
+        sound:     type => fxLog.push(['sound', type]),
+        particles: (x, y, color, count) => fxLog.push(['particles', Math.round(x), Math.round(y), color, count]),
+        shake:     amt => fxLog.push(['shake', amt]),
+        text:      (x, y, text, color) => fxLog.push(['text', Math.round(x), Math.round(y), text, color])
+    };
+
+    let fx = fxLive;
+
+    /** 'live' plays it, 'record' just remembers it. Returns the log so far and clears it. */
+    function setFxMode(mode) {
+        const drained = fxLog;
+        fxLog = [];
+        fx = (mode === 'record') ? fxRecord : fxLive;
+        return drained;
+    }
+    function drainFx() { const d = fxLog; fxLog = []; return d; }
+
+    function playSound(type) { fx.sound(type); }
+    function spawnParticles(x, y, color, count) { fx.particles(x, y, color, count); }
+    function addShake(amt) { fx.shake(amt); }
+
+    function playSoundNow(type) {
         if(audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(sfxBus); let now = audioCtx.currentTime;
@@ -1455,7 +1499,7 @@
     }
     
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-    function addShake(amt) { screenShake = Math.max(screenShake, amt); }
+    function addShakeNow(amt) { screenShake = Math.max(screenShake, amt); }
     
     function isCollidingWithObstacle(x, y, radius) {
         for (let obs of entities.obstacles) {
@@ -1486,7 +1530,7 @@
         return false;
     }
 
-    function spawnParticles(x, y, color, count) {
+    function spawnParticlesNow(x, y, color, count) {
         for(let i=0; i<count; i++) {
             let angle = Math.random() * Math.PI * 2; let speed = Math.random() * 5 + 2;
             entities.particles.push(new Particle(x, y, Math.cos(angle)*speed, Math.sin(angle)*speed, color));
@@ -2427,7 +2471,7 @@
     }
 
     class FloatingText {
-        constructor(x, y, text, color) { this.x = x; this.y = y; this.text = text; this.color = color; this.life = 1.0; this.vy = -30; this.markedForDeletion = false; }
+        constructor(x, y, text, color) { fx.text(x, y, text, color); this.x = x; this.y = y; this.text = text; this.color = color; this.life = 1.0; this.vy = -30; this.markedForDeletion = false; }
         update(dt) { this.y += this.vy * dt; this.life -= dt; if (this.life <= 0) this.markedForDeletion = true; }
         draw(ctx) { ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color; ctx.font = "bold 20px Arial"; ctx.textAlign = "center"; ctx.shadowColor = '#000'; ctx.shadowBlur = 4; ctx.fillText(this.text, this.x, this.y); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; }
     }
@@ -2974,7 +3018,8 @@
             if (keys['q'] && base.overchargeCd <= 0 && gameState === 'NIGHT') {
                 base.overchargeActive = 5.0;
                 base.overchargeCd = 45.0;
-                entities.effects.push(new Effect(base.x, base.y, 400, '#00ffff', 0.5, player.atk * 3, false, false, 'none', 'player'));
+                // `this`, not the global: the nova is powered by whoever pressed the key.
+                entities.effects.push(new Effect(base.x, base.y, 400, '#00ffff', 0.5, this.atk * 3, false, false, 'none', 'player'));
                 addShake(20); playSound('explosion');
                 entities.texts.push(new FloatingText(base.x, base.y - 80, "NEXUS OVERCHARGE!", '#00ffff'));
                 this.wasOvercharged = true; this.recalcStats();   // take effect on this frame, not the next
