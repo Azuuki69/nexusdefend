@@ -124,3 +124,86 @@ test('online mode is a separate path, and local play still simulates', () => {
     assert.ok(/if \(handleLocalIntents\(SIM_DT\)\) stepWorld\(SIM_DT\);/.test(INDEX),
         'local play stopped running the simulation');
 });
+
+// --- prediction ---------------------------------------------------------------------------
+// Without it your character waits a full round trip before it moves. With it you move on the
+// frame you press the key, and the server corrects you afterwards if it saw something else.
+//
+// The whole thing rests on one property: replaying an input must produce exactly what the
+// server produced from the same input. That is why movement was split into its own method
+// rather than copied into the client.
+
+test('movement is its own method, so both ends can run the same one', () => {
+    const ENT = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'sim', 'entities.js'), 'utf8');
+    assert.ok(/    stepMovement\(dt\) \{/.test(ENT), 'there is no stepMovement to replay');
+    assert.ok(/    update\(dt\) \{\r?\n        this\.stepMovement\(dt\);/.test(ENT),
+        'update() no longer starts by moving, so the server and the prediction have diverged');
+});
+
+test('replaying the same inputs lands in the same place', () => {
+    // This is the property reconciliation depends on. If it were false, every correction would
+    // introduce its own error.
+    W.resetWorld();
+    W.seedRun(4242);
+    W.world.base = new E.Base();
+
+    const run = () => {
+        const p = new E.Player('warrior');
+        p.x = 1000; p.y = 1000;
+        for (const [mx, my] of [[1, 0], [1, 0], [0.7, 0.7], [0, 1], [-1, 0], [0, 0]]) {
+            p.intent.moveX = mx; p.intent.moveY = my;
+            p.stepMovement(1 / 60);
+        }
+        return [Math.round(p.x * 1000), Math.round(p.y * 1000)];
+    };
+    assert.deepEqual(run(), run(), 'the same inputs produced two different positions');
+    W.resetWorld();
+});
+
+test('a replay of N steps equals doing them once', () => {
+    W.resetWorld();
+    W.seedRun(1);
+    W.world.base = new E.Base();
+    const inputs = [[1, 0], [1, 0], [1, 0], [0, 1], [0, 1]];
+
+    const straight = new E.Player('warrior');
+    straight.x = 1000; straight.y = 1000;
+    for (const [mx, my] of inputs) {
+        straight.intent.moveX = mx; straight.intent.moveY = my;
+        straight.stepMovement(1 / 60);
+    }
+
+    // the same player, rewound to the start and replayed - which is what reconcile() does
+    const replayed = new E.Player('warrior');
+    replayed.x = 5000; replayed.y = 5000;      // somewhere wrong
+    replayed.x = 1000; replayed.y = 1000;      // ...corrected by the server
+    for (const [mx, my] of inputs) {
+        replayed.intent.moveX = mx; replayed.intent.moveY = my;
+        replayed.stepMovement(1 / 60);
+    }
+    assert.equal(Math.round(replayed.x * 100), Math.round(straight.x * 100),
+        'a replay did not land where the original did');
+    assert.equal(Math.round(replayed.y * 100), Math.round(straight.y * 100));
+    W.resetWorld();
+});
+
+test('the client predicts, reconciles, and does not ease its own player', () => {
+    assert.ok(SRC.includes('predict(dt) {'), 'the client cannot predict');
+    assert.ok(SRC.includes('reconcile(me, s) {'), 'the client cannot reconcile');
+    assert.ok(SRC.includes('me.stepMovement(dt);'),
+        'prediction does not run the simulation’s own movement');
+    assert.ok(/this\.unconfirmed = this\.unconfirmed\.filter\(u => u\.seq > s\.seq\);/.test(SRC),
+        'confirmed inputs are never dropped, so the queue grows forever');
+    assert.ok(/w\.players\.forEach\(p => \{ if \(p\.netId !== this\.you\) ease\(p\); \}\);/.test(SRC),
+        'the local player is eased as well as predicted, which fights itself');
+    const INDEX = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
+    assert.ok(INDEX.includes('net.predict(elapsed);'), 'the loop never predicts');
+});
+
+test('the unconfirmed queue is bounded', () => {
+    // A disconnect or a stall must not leave a thousand steps to replay.
+    assert.ok(/if \(this\.unconfirmed\.length > \d+\) this\.unconfirmed\.shift\(\);/.test(SRC),
+        'the replay buffer has no bound');
+});

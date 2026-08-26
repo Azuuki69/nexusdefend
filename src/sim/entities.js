@@ -742,7 +742,14 @@ export class Player extends Entity {
                 gained > 1 ? "LEVEL UP x" + gained + "!" : "LEVEL UP!", '#ffcc00'));
         }
     }
-    update(dt) {
+    /**
+     * One step of walking or dashing, and nothing else.
+     *
+     * Split out of update() so a client can predict its own movement by running the same
+     * code the server will run. A second implementation would agree today and drift the
+     * first time either side is touched.
+     */
+    stepMovement(dt) {
         if (this.dashTimer > 0) {
             this.dashTimer -= dt;
             let speed = 1200 * dt; 
@@ -769,6 +776,10 @@ export class Player extends Entity {
         }
 
         this.x = Math.max(this.radius, Math.min(WORLD_W-this.radius, this.x)); this.y = Math.max(this.radius, Math.min(WORLD_H-this.radius, this.y));
+    }
+
+    update(dt) {
+        this.stepMovement(dt);
         if (this.abTimer <= 0) this.angle = Math.atan2(this.intent.aimY - this.y, this.intent.aimX - this.x); else this.abTimer -= dt;
         if (this.abilityCooldownTimer > 0) this.abilityCooldownTimer -= dt;
         this.lastAttack -= dt;

@@ -7,13 +7,13 @@
 //
 // What it deliberately does NOT do yet:
 //
-//   * predict. Your own movement waits for the server to confirm it, which is a round trip of
-//     lag on your own character. That is Phase 3, and it is the difference between "correct"
-//     and "feels good".
 //   * interpolate properly. Remote things are eased toward where the server last put them,
 //     which hides 20Hz stepping but is not a real interpolation buffer.
+//   * predict anything but movement. Attacks, abilities and dashes still wait for the server.
+//     Movement is the one you feel.
 //
-// Both are honest gaps rather than oversights: correctness first, feel second.
+// What it DOES do is predict your own walking: you move the instant you press a key, and the
+// server corrects you afterwards if it disagreed.
 
 import { world, useWorld, createWorld, seedRun, fx } from '../sim/world.js';
 import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer } from '../sim/entities.js';
@@ -77,6 +77,12 @@ export class MatchClient {
         // Bytes in, for anyone who wants to know what the match actually costs.
         this.bytesIn = 0;
         this.snapshotsIn = 0;
+
+        // Inputs applied locally but not yet confirmed. Replayed on top of whatever the server
+        // says, so a correction does not throw away the keys you pressed since.
+        this.unconfirmed = [];
+        /** How far the server disagreed with the last prediction, in world units. */
+        this.lastError = 0;
     }
 
     connect() {
@@ -181,7 +187,13 @@ export class MatchClient {
             },
             (p, s) => {
                 p.netId = s.id;
-                target(p, s);
+                if (s.id === this.you) {
+                    // Ours: replay what the server has not seen yet instead of snapping to it.
+                    this.reconcile(p, s);
+                    p.netX = p.x; p.netY = p.y;
+                } else {
+                    target(p, s);
+                }
                 p.hp = s.hp; p.maxHp = s.maxHp;
                 p.mp = s.mp; p.maxMp = s.maxMp;
                 p.level = s.level;
@@ -233,6 +245,49 @@ export class MatchClient {
     }
 
     /**
+     * Run the player's own movement locally, before the server has answered. Called once a
+     * frame with the frame's own dt, so prediction runs at the display rate rather than the
+     * tick rate.
+     */
+    predict(dt) {
+        const me = this.localPlayer();
+        if (!me || !this.world) return;
+        useWorld(this.world);
+        const i = me.intent;
+        this.unconfirmed.push({ seq: this.seq, dt, moveX: i.moveX, moveY: i.moveY });
+        // A second of frames is far more than any sane round trip; past that something is very
+        // wrong and replaying a thousand steps would only make it worse.
+        if (this.unconfirmed.length > 120) this.unconfirmed.shift();
+        me.stepMovement(dt);
+    }
+
+    /**
+     * The server has spoken. Put the player where it says they were, then replay everything
+     * they have done since.
+     */
+    reconcile(me, s) {
+        useWorld(this.world);
+        const before = { x: me.x, y: me.y };
+
+        me.x = s.x;
+        me.y = s.y;
+        this.unconfirmed = this.unconfirmed.filter(u => u.seq > s.seq);
+        for (const u of this.unconfirmed) {
+            me.intent.moveX = u.moveX;
+            me.intent.moveY = u.moveY;
+            me.stepMovement(u.dt);
+        }
+        this.lastError = Math.hypot(me.x - before.x, me.y - before.y);
+
+        // A small disagreement is smoothed away rather than snapped, or every packet would
+        // twitch the camera. A large one is a real correction and is applied outright.
+        if (this.lastError < 60) {
+            me.x = before.x + (me.x - before.x) * 0.25;
+            me.y = before.y + (me.y - before.y) * 0.25;
+        }
+    }
+
+    /**
      * Ease everything toward where the server last put it. Called once a frame, not once a
      * tick, so it smooths 20Hz updates into whatever the display is doing.
      */
@@ -245,7 +300,8 @@ export class MatchClient {
             e.y += (e.netY - e.y) * k;
         };
         const w = this.world;
-        w.players.forEach(ease);
+        // Everyone but us: we are predicted, and easing would fight the prediction.
+        w.players.forEach(p => { if (p.netId !== this.you) ease(p); });
         w.entities.enemies.forEach(ease);
         w.entities.critters.forEach(ease);
         w.entities.items.forEach(ease);

@@ -2510,6 +2510,9 @@
             // player for the camera, the HUD and the sprite, so it cannot run before then.
             if (!player) { if (loopRunning) requestAnimationFrame(gameLoop); return; }
             readLocalIntent(player);
+            // Move ourselves now rather than waiting for the round trip; the server
+            // corrects us when its answer arrives.
+            net.predict(elapsed);
             updateCamera();
             net.smooth(elapsed);
             if (screenShake > 0) screenShake -= elapsed * 30;
