@@ -437,16 +437,18 @@
     </div>
 </div>
 
-<!-- The simulation lives in real ES modules so the same code can run headless under
-     node --test today and inside a Durable Object later. The main script below stays a
-     classic script because 42 inline onclick handlers depend on its functions being
-     global. Module scripts are deferred, so Sim lands well before the menu is clicked. -->
-<script type="module">
-    import { mulberry32, randomSeed } from './src/sim/rng.js';
-    window.Sim = { mulberry32, randomSeed };
-</script>
 
-<script>
+
+<script type="module">
+    // The game is a module so it can import from src/sim/. Two consequences worth knowing:
+    //
+    //   - Module scope is not global scope, so the inline onclick handlers in the markup
+    //     above would not find their functions. The bridge at the bottom of this script puts
+    //     exactly those names back on `window`, which keeps the HTML unchanged.
+    //   - Modules are strict mode. Checked before converting: the source parses strict and
+    //     assigns to no undeclared identifier.
+    import { mulberry32, randomSeed } from './src/sim/rng.js';
+
     // --- The world ----------------------------------------------------------------
     // Everything a match *is*, gathered into one object.
     //
@@ -478,8 +480,8 @@
     function seedRun(seed) {
         world.currentSeed = (seed !== undefined && seed !== null)
             ? (seed >>> 0)
-            : (window.Sim ? window.Sim.randomSeed() : (Math.random() * 0xFFFFFFFF) >>> 0);
-        simRng = window.Sim ? window.Sim.mulberry32(world.currentSeed) : null;
+            : randomSeed();
+        simRng = mulberry32(world.currentSeed);
         return world.currentSeed;
     }
     // Handy from the console: replay a specific run with startGame('warrior', 12345).
@@ -5226,6 +5228,35 @@
         else loopRunning = false;
     }
     applyAudioSettings();
+
+    // --- Test handle ---------------------------------------------------------------
+    // The replay harness drives the game from outside the module: start a run, step the loop
+    // on its own clock, read the world back, compare digests. Module scope is private, so
+    // this is the door - deliberately narrow and read by nothing inside the game. Getters
+    // rather than a snapshot, because `world` and `player` are rebound on every new run.
+    window.__nexus = {
+        get world()  { return world; },
+        get player() { return player; },
+        get keys()   { return keys; },
+        get mouse()  { return mouse; },
+        get ui()     { return ui; },
+        get paused() { return isPaused; },
+        startGame, gameLoop, spawnWave, setWeather, generateMap, startNightEarly,
+        setFxMode, drainFx, setUiMode, drainUi,
+        /** Put the loop's clock somewhere known, so a synthetic run is reproducible. */
+        resetClock(t) { lastTime = t; simAccumulator = 0; },
+        setPaused(v) { isPaused = !!v; },
+        /** Panels, for smoke-testing that they still render after a refactor. */
+        panels: { updateBuildUI, updateBuildingsUI, updateForgeUI, updateCampUI, updateTrinkets,
+                  openTalentMenu, renderTalentMenu }
+    };
+
+    // --- Inline handler bridge ----------------------------------------------------
+    // The markup calls these directly (onclick="buyForge('weapon')"). Exactly the names the
+    // HTML uses, nothing more - a bridge, not a public API.
+    Object.assign(window, {
+        startGame, buyMerchant, buyForge, buyCamp, closeModal, setVolume, toggleMute, startNightEarly, selectTalentPath, selectBuildingTab, retryRun, restartRun, resetGameToMenu, quitToMenu, openBuildings, closeSettings, buyTalent, buyParagon, armBuilding
+    });
 </script>
 </body>
 </html>

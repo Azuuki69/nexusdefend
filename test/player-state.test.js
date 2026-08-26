@@ -385,3 +385,44 @@ test('the simulation rate is a named constant the server can differ from', () =>
     assert.equal(parseInt(hz[1], 10), 60, 'the client rate moved; check the game still feels right');
     assert.ok(/const SIM_DT = 1 \/ SIM_HZ;/.test(SRC), 'SIM_DT is not derived from SIM_HZ');
 });
+
+// --- the module conversion ---------------------------------------------------------------
+// The game had to become a module before it could import from src/sim/. Two things that
+// conversion can silently break, both pinned here.
+
+test('the game is a module and there is no classic script left', () => {
+    assert.ok(/<script type="module">[\s\S]*--- The world ---/.test(SRC),
+        'the game script is not a module');
+    const classic = SRC.match(/<script(?![^>]*type=)[^>]*>/g) || [];
+    assert.deepEqual(classic, [], 'a classic script survived: ' + classic.join(', '));
+});
+
+test('every inline handler in the markup has a name bridged onto window', () => {
+    // Module scope is not global scope. An onclick the bridge forgets is a dead button, and
+    // nothing throws until somebody clicks it.
+    const used = new Set();
+    for (const m of SRC.matchAll(/\bon(?:click|input|change)="([^"]*)"/g)) {
+        const fn = m[1].match(/^\s*([A-Za-z_$][\w$]*)\s*\(/);
+        if (fn) used.add(fn[1]);
+    }
+    assert.ok(used.size >= 15, 'only found ' + used.size + ' inline handlers; the scan is wrong');
+    const bridge = SRC.slice(SRC.indexOf('Object.assign(window, {'));
+    const bridged = new Set((bridge.slice(0, bridge.indexOf('}')).match(/[A-Za-z_$][\w$]*/g) || []));
+    const missing = [...used].filter(n => !bridged.has(n));
+    assert.deepEqual(missing, [], 'inline handlers with no bridge: ' + missing.join(', '));
+});
+
+test('the markup the game needs is still there', () => {
+    // A bad anchor in a scripted edit once deleted the pause overlay and the whole HUD.
+    for (const id of ['hud', 'mainMenu', 'pauseOverlay', 'forgeOverlay', 'merchantOverlay',
+                      'campOverlay', 'talentOverlay', 'buildingsOverlay', 'gameOverOverlay',
+                      'phaseText', 'weatherText', 'ui-wave', 'musicVol', 'sfxVol'])
+        assert.ok(SRC.includes('id="' + id + '"'), 'missing element: #' + id);
+});
+
+test('the test handle exists and the game does not read it', () => {
+    assert.ok(SRC.includes('window.__nexus = {'), 'the replay harness has no way in');
+    // it is a door for tests, not a back channel for the game
+    const uses = SRC.split('__nexus').length - 1;
+    assert.equal(uses, 1, '__nexus is referenced ' + uses + ' times; the game should never read it');
+});
