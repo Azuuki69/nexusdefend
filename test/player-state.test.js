@@ -362,7 +362,7 @@ function reachableFromUpdate() {
         }
     });
     const body = f => clean.slice(funcs[f][0], funcs[f][1] + 1).join('\n');
-    const seen = new Set(), q = ['update'];
+    const seen = new Set(), q = ['stepWorld'];
     while (q.length) {
         const f = q.shift();
         if (seen.has(f) || !funcs[f]) continue;
@@ -372,7 +372,7 @@ function reachableFromUpdate() {
     return { seen, body, funcs };
 }
 
-test('nothing update() can reach touches the DOM', () => {
+test('nothing the tick can reach touches the DOM', () => {
     const { seen, body, funcs } = reachableFromUpdate();
     const offenders = [...seen]
         .filter(f => funcs[f] && body(f).includes('document.'))
@@ -405,7 +405,7 @@ test('headless keeps the world running while somebody shops', () => {
         'the live sink no longer pauses, which changes single player');
 });
 
-test('update() asks the sink, never the document, whether a modal is open', () => {
+test('the client asks the sink, never the document, whether a modal is open', () => {
     assert.ok(GAME.includes('if (isPaused || ui.modalOpen()) { ui.hud(); return; }'),
         'the game loop does not gate on the sink');
     // anyModalOpenNow is the implementation; only uiLive may call it.
@@ -423,9 +423,11 @@ test('the loop advances in whole fixed steps, never a raw frame delta', () => {
     const i = SRC.indexOf('function gameLoop(timestamp)');
     assert.notEqual(i, -1, 'gameLoop is gone');
     const loop = SRC.slice(i, i + 900);
-    assert.ok(/while \(simAccumulator >= SIM_DT\) \{ update\(SIM_DT\);/.test(loop),
+    assert.ok(/while \(simAccumulator >= SIM_DT\) \{/.test(loop),
         'the loop does not step a fixed accumulator');
-    assert.ok(!/update\(dt\)/.test(loop), 'the loop still hands update() a raw frame delta');
+    assert.ok(/if \(handleLocalIntents\(SIM_DT\)\) stepWorld\(SIM_DT\);/.test(loop),
+        'the loop does not run the client half then the world half in fixed steps');
+    assert.ok(!/stepWorld\(dt\)/.test(loop), 'the loop still hands the tick a raw frame delta');
 });
 
 test('a stall cannot spiral into hundreds of catch-up steps', () => {

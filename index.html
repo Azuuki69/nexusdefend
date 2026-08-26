@@ -2249,7 +2249,13 @@
     // horde kept walking while you were nose-deep in a menu.
     function anyModalOpenNow() { return MODAL_IDS.some(id => !document.getElementById(id).classList.contains('hidden')); }
 
-    function update(dt) {
+    // What this client wants and sees: the camera, the pause, and which of its own windows
+    // to open. A server has none of it - nobody is looking, nobody has a keyboard, and a shop
+    // window belongs to one screen rather than to the match.
+    //
+    // Returns false when the world should not step at all, which is what the early returns
+    // inside update() used to mean.
+    function handleLocalIntents(dt) {
         updateCamera();
         if (world.gameState === 'OVER') return;
         if (isPaused || ui.modalOpen()) { ui.hud(); return; }
@@ -2267,6 +2273,11 @@
             else if (playerAtForge()) { ui.open('forge'); intent.interact = false; }
         }
 
+        return true;
+    }
+
+    // The tick. Everything here is the match rather than the view of it.
+    function stepWorld(dt) {
         world.phaseTimer -= dt;
         
         // Threat Indicator Logic
@@ -2300,7 +2311,7 @@
                     }
                 });
                 
-                ui.closeAll(); if (player) player.placing = null; ui.buildPalette(); spawnWave();
+                ui.closeAll(); world.players.forEach(p => p.placing = null); ui.buildPalette(); spawnWave();
             } else {
                 world.gameState = 'DAY'; world.wave++; world.phaseTimer = 60; setWeather();
                 ui.phase(merchantVisits(world.wave) ? "DAY PHASE - MERCHANT IN TOWN" : "DAY PHASE - GATHER", '#fff');
@@ -2312,16 +2323,20 @@
             }
         }
 
+        // Each player acts on their own intent. With one player this loop runs once and
+        // does exactly what the single global `player` used to do.
+        for (const actor of world.players) {
+        const intent = actor.intent;
         if (intent.attack) {
             let clickedInteractable = false;
             if (world.gameState === 'DAY') {
-                world.entities.npcs.forEach(npc => { if (Math.hypot(intent.aimX - npc.x, intent.aimY - npc.y) < 40 && Math.hypot(player.x - npc.x, player.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
+                world.entities.npcs.forEach(npc => { if (Math.hypot(intent.aimX - npc.x, intent.aimY - npc.y) < 40 && Math.hypot(actor.x - npc.x, actor.y - npc.y) < 150) { if (npc.isShop) ui.open('merchant'); else npc.talk(); clickedInteractable = true; } });
                 if (!clickedInteractable && playerAtForge() && Math.hypot(intent.aimX - forgeX(), intent.aimY - forgeY()) < 90) { ui.open('forge'); clickedInteractable = true; }
             }
             if (!clickedInteractable) {
                 world.entities.resources.forEach(r => {
                     // Hit radius now matches each resource's real sprite size (r.radius), not a guessed constant
-                    if (Math.hypot(intent.aimX - r.x, intent.aimY - r.y) < r.radius && Math.hypot(player.x - r.x, player.y - r.y) < r.radius + 130) {
+                    if (Math.hypot(intent.aimX - r.x, intent.aimY - r.y) < r.radius && Math.hypot(actor.x - r.x, actor.y - r.y) < r.radius + 130) {
                         
                         if (r.type === 'cache') {
                             r.markedForDeletion = true; clickedInteractable = true; playSound('pickup'); spawnParticles(r.x, r.y, '#ffcc00', 20);
@@ -2340,9 +2355,9 @@
                                 } else {
                                     let chosen = upgs[Math.floor(rnd()*upgs.length)];
                                     world.forgeUpgrades[chosen].level++;
-                                    if (chosen === 'weapon') { grantShopBuff(player, 'forgeAtkMult', 0.1); player.recalcStats(); }
-                                    if (chosen === 'mining') { grantShopBuff(player, 'gatherYield', MINING_YIELD_STEP); }
-                                    if (chosen === 'speed') { grantShopBuff(player, 'speedMult', 0.05); }
+                                    if (chosen === 'weapon') { grantShopBuff(actor, 'forgeAtkMult', 0.1); actor.recalcStats(); }
+                                    if (chosen === 'mining') { grantShopBuff(actor, 'gatherYield', MINING_YIELD_STEP); }
+                                    if (chosen === 'speed') { grantShopBuff(actor, 'speedMult', 0.05); }
                                     world.entities.texts.push(new FloatingText(r.x, r.y - 20, "FORGE UPGRADE", '#ffcc00')); ui.forgePanel();
                                 }
                             }
@@ -2355,7 +2370,7 @@
                                 r.markedForDeletion = true;
                                 // gatherYield is fractional now, so round here or the counters
                                 // start showing half a log.
-                                let amt = Math.round(5 * player.buffs.gatherYield);
+                                let amt = Math.round(5 * actor.buffs.gatherYield);
                                 if(r.type === 'wood') { world.inventory.wood += amt; world.gameStats.wood += amt; if (world.gameStats.wood >= 50) checkAchievement('lumberjack'); } 
                                 else { world.inventory.stone += amt; world.gameStats.stone += amt; if (world.gameStats.stone >= 50) checkAchievement('mason'); }
                             }
@@ -2366,10 +2381,12 @@
             // A click used on something interactable is spent: it must not also swing, and
             // must stay spent until the button comes back up.
             if (clickedInteractable) { intent.attackSpent = true; intent.attack = false; }
-            else player.attack(); 
+            else actor.attack(); 
+        }
         }
 
-        player.update(dt); world.base.update(dt);
+        world.players.forEach(p => p.update(dt));
+        world.base.update(dt);
         world.entities.npcs.forEach(n => n.update(dt)); world.entities.critters.forEach(c => c.update(dt)); world.entities.resources.forEach(r => r.update(dt)); world.entities.extractors.forEach(t => t.update(dt));
         world.entities.enemies.forEach(e => e.update(dt)); world.entities.projectiles.forEach(p => p.update(dt)); world.entities.effects.forEach(ef => ef.update(dt));
         world.entities.texts.forEach(txt => txt.update(dt)); world.entities.particles.forEach(p => p.update(dt)); world.entities.items.forEach(i => i.update(dt));
@@ -2384,7 +2401,7 @@
         world.entities.texts = world.entities.texts.filter(txt => !txt.markedForDeletion); world.entities.particles = world.entities.particles.filter(p => !p.markedForDeletion);
         world.entities.items = world.entities.items.filter(i => !i.markedForDeletion);
 
-        if (player.hp <= 0 || world.base.hp <= 0) { triggerGameOver(); }
+        if (livingPlayers().length === 0 || world.base.hp <= 0) { triggerGameOver(); }
 
         ui.hud();
     }
@@ -2863,7 +2880,10 @@
             simAccumulator += elapsed;
             // Whole steps only. The leftover stays in the accumulator for next frame, so the
             // simulation neither drifts nor spirals trying to catch up.
-            while (simAccumulator >= SIM_DT) { update(SIM_DT); simAccumulator -= SIM_DT; }
+            while (simAccumulator >= SIM_DT) {
+                if (handleLocalIntents(SIM_DT)) stepWorld(SIM_DT);
+                simAccumulator -= SIM_DT;
+            }
             draw();
         }
         if (world.gameState !== 'OVER' && world.gameState !== 'MENU') requestAnimationFrame(gameLoop);
@@ -3642,7 +3662,8 @@
         // Whether the rAF chain is alive. Worth exposing: a hidden browser pane never
         // fires rAF at all, which looks exactly like a broken game until you check.
         get loopRunning() { return loopRunning; },
-        startGame, gameLoop, spawnWave, setWeather, generateMap, startNightEarly,
+        startGame, gameLoop, stepWorld, handleLocalIntents,
+        spawnWave, setWeather, generateMap, startNightEarly,
         setFxMode, drainFx, setUiMode, drainUi,
         /** Put the loop's clock somewhere known, so a synthetic run is reproducible. */
         resetClock(t) { lastTime = t; simAccumulator = 0; },

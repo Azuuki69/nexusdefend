@@ -155,3 +155,20 @@ test('a shop buff lands on both the live values and the permanent record', () =>
     assert.equal(p.buffs.hasteMod, 0.8);
     assert.equal(p.shopBuffs.hasteMod, 0.8);
 });
+
+// --- co-op survival ----------------------------------------------------------------------
+// A run used to end when `player.hp <= 0` - the one global player. In co-op that would end
+// everyone's game the moment one person went down. The rule is now "the party is down", which
+// is the same sentence when the party is one.
+
+test('livingPlayers is what a co-op run should end on', () => {
+    W.resetWorld();
+    const a = { hp: 100 }, b = { hp: 100 };
+    W.world.players.push(a, b);
+    assert.equal(W.livingPlayers().length, 2);
+    a.hp = 0;
+    assert.equal(W.livingPlayers().length, 1, 'one down is not the end of a co-op run');
+    b.hp = 0;
+    assert.equal(W.livingPlayers().length, 0, 'the party is down now');
+    W.resetWorld();
+});
