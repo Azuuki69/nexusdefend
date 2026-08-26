@@ -1,88 +1,144 @@
 // The authority for one match.
 //
-// This is a spike, not the finished MatchRoom: the world it simulates is deliberately tiny.
-// What it is proving is the shape everything else depends on -
+// It runs the same simulation the browser runs - src/sim, imported unchanged - on the server's
+// own clock. Clients send what they want to do; the server decides what happened and says so.
 //
-//   * one object owns the state, and clients can only send intents
-//   * a fixed tick runs on the server, independent of any client's frame rate
-//   * every connected client sees the same world at the same tick
-//   * the world is seeded, so the same match can be replayed
+// Three constraints worth knowing before changing anything here:
 //
-// The one non-obvious constraint: this uses a plain WebSocket accept, NOT the Hibernation
-// API. A hibernating object is evicted between messages, which would kill the tick timer
-// mid-match. Hibernation is right for a lobby or a party that sits idle; it is wrong here.
+//   * This uses a plain WebSocket accept, NOT the Hibernation API. A hibernating object is
+//     evicted between messages, which would kill the tick timer mid-match. Hibernation is right
+//     for a lobby or an idle party; it is wrong here.
+//
+//   * Durable Objects share module scope - measured, not assumed. So the simulation's `world`
+//     binding is pointed at this match with useWorld() before every step, and the step must stay
+//     SYNCHRONOUS. An await inside the tick would let another match interleave and quietly
+//     corrupt both.
+//
+//   * The client is not trusted for anything. Input arrives as intent - a direction, an aim
+//     point, some booleans - and is clamped on the way in. A client saying "I am at the boss"
+//     is a client saying something, not a fact.
 
-import { mulberry32 } from '../src/sim/rng.js';
+import { createWorld, useWorld, seedRun, setFxMode, drainFx, livingPlayers } from '../src/sim/world.js';
+import { Base, Player } from '../src/sim/entities.js';
+import { stepWorld, generateMap } from '../src/sim/tick.js';
 
 const TICK_HZ = 20;
 const TICK_MS = 1000 / TICK_HZ;
+const TICK_DT = 1 / TICK_HZ;
 const EMPTY_SHUTDOWN_MS = 30_000;   // stop ticking once everyone has gone
+const MAX_PLAYERS = 4;
+const CLASSES = new Set(['warrior', 'mage', 'archer', 'priest']);
+
+const r1 = n => Math.round(n * 10) / 10;
 
 export class MatchRoom {
     constructor(state, env) {
         this.state = state;
         this.env = env;
 
-        /** @type {Map<WebSocket, {id: string, lastSeq: number}>} */
+        /** @type {Map<WebSocket, Player>} */
         this.clients = new Map();
 
         this.timer = null;
         this.emptySince = null;
-        this.seed = null;
+        this.tick = 0;
         this.world = null;
     }
 
     // ---------------------------------------------------------------- world
 
     initWorld(seed) {
-        const rng = mulberry32(seed);
-        this.seed = seed;
-        this.world = {
-            tick: 0,
-            rng,
-            players: new Map(),
-            // A handful of drifting blobs stands in for the horde. The point is that the
-            // server moves them and nobody else does.
-            enemies: Array.from({ length: 12 }, (_, i) => ({
-                id: i,
-                x: rng() * 1000,
-                y: rng() * 1000,
-                vx: (rng() - 0.5) * 40,
-                vy: (rng() - 0.5) * 40
-            }))
+        this.world = createWorld();
+        useWorld(this.world);
+        seedRun(seed);
+
+        this.world.base = new Base();
+        this.world.gameState = 'DAY';
+        generateMap();
+
+        // Nothing here can play a sound or draw a particle, so the presentation calls the
+        // simulation makes become a list instead. The client renders them.
+        setFxMode('record');
+        drainFx();
+    }
+
+    /** Point the simulation at this match. Every entry point does this first. */
+    enter() {
+        useWorld(this.world);
+        return this.world;
+    }
+
+    addPlayer(netId, cls) {
+        const w = this.enter();
+        const p = new Player(CLASSES.has(cls) ? cls : 'warrior');
+        p.netId = netId;
+        w.players.push(p);
+        w.base.recalcMaxHp();        // the Nexus hardens with the party
+        return p;
+    }
+
+    removePlayer(p) {
+        const w = this.enter();
+        const i = w.players.indexOf(p);
+        if (i >= 0) w.players.splice(i, 1);
+        if (w.base) w.base.recalcMaxHp();
+    }
+
+    // ---------------------------------------------------------------- the tick
+
+    step() {
+        this.enter();
+        stepWorld(TICK_DT);          // synchronous, deliberately - see the note at the top
+        this.tick++;
+        return drainFx();
+    }
+
+    /** The map, which changes at dawn rather than every tick. Sent on join and on regeneration. */
+    mapMessage() {
+        const w = this.enter();
+        return {
+            t: 'map',
+            seed: w.currentSeed,
+            obstacles: w.entities.obstacles.map(o => ({ type: o.type, x: Math.round(o.x), y: Math.round(o.y), w: o.w, h: o.h })),
+            resources: w.entities.resources.map(r => ({ type: r.type, x: Math.round(r.x), y: Math.round(r.y), radius: r.radius })),
+            decorations: w.entities.decorations.map(d => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y) })),
+            npcs: w.entities.npcs.map(n => ({ shop: !!n.isShop, x: Math.round(n.x), y: Math.round(n.y) }))
         };
     }
 
-    step() {
-        const w = this.world;
-        w.tick++;
-        const dt = TICK_MS / 1000;
-
-        for (const e of w.enemies) {
-            e.x += e.vx * dt;
-            e.y += e.vy * dt;
-            if (e.x < 0 || e.x > 1000) { e.vx *= -1; e.x = Math.max(0, Math.min(1000, e.x)); }
-            if (e.y < 0 || e.y > 1000) { e.vy *= -1; e.y = Math.max(0, Math.min(1000, e.y)); }
-        }
-
-        // Intents are applied here, on the server's clock - never trusted as positions.
-        for (const p of w.players.values()) {
-            const speed = 200;
-            p.x = Math.max(0, Math.min(1000, p.x + p.moveX * speed * dt));
-            p.y = Math.max(0, Math.min(1000, p.y + p.moveY * speed * dt));
-        }
-    }
-
-    snapshot() {
-        const w = this.world;
+    /**
+     * A whole world, every tick. JSON and uncompressed on purpose: correctness first, and a
+     * snapshot you can read in a console is worth a lot while the protocol is still moving.
+     * Deltas and a binary encoding are Phase 3.
+     */
+    snapshot(events) {
+        const w = this.enter();
         return {
             t: 'snap',
-            tick: w.tick,
-            seed: this.seed,
-            players: [...w.players.values()].map(p => ({
-                id: p.id, x: Math.round(p.x), y: Math.round(p.y), seq: p.lastSeq
+            tick: this.tick,
+            phase: w.gameState,
+            wave: w.wave,
+            phaseTimer: r1(w.phaseTimer),
+            weather: w.currentWeather,
+            modifier: w.currentModifier,
+            inventory: w.inventory,
+            base: { x: Math.round(w.base.x), y: Math.round(w.base.y), hp: Math.round(w.base.hp), maxHp: w.base.maxHp },
+            players: w.players.map(p => ({
+                id: p.netId, cls: p.cls,
+                x: Math.round(p.x), y: Math.round(p.y),
+                hp: Math.round(p.hp), maxHp: p.maxHp,
+                mp: Math.round(p.mp), maxMp: p.maxMp,
+                level: p.level, angle: r1(p.angle),
+                seq: p.intent.seq
             })),
-            enemies: w.enemies.map(e => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y) }))
+            enemies: w.entities.enemies.map(e => ({
+                type: e.type, x: Math.round(e.x), y: Math.round(e.y),
+                hp: Math.round(e.hp), maxHp: e.maxHp
+            })),
+            projectiles: w.entities.projectiles.map(p => ({ x: Math.round(p.x), y: Math.round(p.y), color: p.color })),
+            items: w.entities.items.map(i => ({ type: i.type, x: Math.round(i.x), y: Math.round(i.y) })),
+            critters: w.entities.critters.map(c => ({ type: c.type, x: Math.round(c.x), y: Math.round(c.y) })),
+            events
         };
     }
 
@@ -92,8 +148,8 @@ export class MatchRoom {
         if (this.timer !== null) return;
         let next = Date.now() + TICK_MS;
         const run = () => {
-            this.step();
-            this.broadcast(this.snapshot());
+            const events = this.step();
+            this.broadcast(this.snapshot(events));
 
             if (this.clients.size === 0) {
                 if (this.emptySince === null) this.emptySince = Date.now();
@@ -122,16 +178,17 @@ export class MatchRoom {
     }
 
     drop(ws) {
+        const p = this.clients.get(ws);
         this.clients.delete(ws);
-        if (this.world) this.world.players.delete(ws.__playerId);
+        if (p) this.removePlayer(p);
     }
 
     // ---------------------------------------------------------------- connections
 
     async fetch(request) {
         const url = new URL(request.url);
-
-        const playerId = (url.searchParams.get('player') || '').slice(0, 32) || crypto.randomUUID();
+        const netId = (url.searchParams.get('player') || '').slice(0, 32) || crypto.randomUUID();
+        const cls = url.searchParams.get('cls') || 'warrior';
 
         if (!this.world) {
             const seedParam = Number(url.searchParams.get('seed'));
@@ -140,40 +197,61 @@ export class MatchRoom {
                 : (crypto.getRandomValues(new Uint32Array(1))[0] >>> 0));
         }
 
+        if (this.clients.size >= MAX_PLAYERS) {
+            return new Response('match is full', { status: 409 });
+        }
+
         const pair = new WebSocketPair();
         const [client, server] = Object.values(pair);
         server.accept();                       // deliberately not hibernation - see the note above
 
-        server.__playerId = playerId;
-        this.clients.set(server, { id: playerId, lastSeq: 0 });
-        this.world.players.set(playerId, {
-            id: playerId, x: 500, y: 500, moveX: 0, moveY: 0, lastSeq: 0
-        });
+        const player = this.addPlayer(netId, cls);
+        this.clients.set(server, player);
 
         server.addEventListener('message', (ev) => {
             let msg;
             try { msg = JSON.parse(ev.data); } catch { return; }
-            const p = this.world.players.get(playerId);
-            if (!p) return;
-
-            if (msg.t === 'input') {
-                // Clamp everything. A client saying "my speed is 9000" is just a client
-                // saying something; the server decides what happens.
-                const mx = Number(msg.moveX) || 0, my = Number(msg.moveY) || 0;
-                const len = Math.hypot(mx, my) || 1;
-                p.moveX = len > 1 ? mx / len : mx;
-                p.moveY = len > 1 ? my / len : my;
-                p.lastSeq = Number(msg.seq) || p.lastSeq;
-            }
+            if (msg.t !== 'input') return;
+            this.applyInput(player, msg);
         });
 
         const close = () => this.drop(server);
         server.addEventListener('close', close);
         server.addEventListener('error', close);
 
-        server.send(JSON.stringify({ t: 'welcome', you: playerId, seed: this.seed, hz: TICK_HZ }));
+        server.send(JSON.stringify({ t: 'welcome', you: netId, cls: player.cls, seed: this.world.currentSeed, hz: TICK_HZ }));
+        server.send(JSON.stringify(this.mapMessage()));
         this.startLoop();
 
         return new Response(null, { status: 101, webSocket: client });
+    }
+
+    /**
+     * Everything a client sends is a request, not a fact. Movement is clamped to a unit vector,
+     * the aim point is clamped to the world, and nothing here can set a position.
+     */
+    applyInput(player, msg) {
+        const i = player.intent;
+        const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+
+        let mx = num(msg.moveX), my = num(msg.moveY);
+        const len = Math.hypot(mx, my);
+        if (len > 1) { mx /= len; my /= len; }
+        i.moveX = mx;
+        i.moveY = my;
+
+        i.aimX = num(msg.aimX, player.x);
+        i.aimY = num(msg.aimY, player.y);
+
+        i.attack = !!msg.attack;
+        i.dash = !!msg.dash;
+        i.place = !!msg.place;
+        // Edge actions are latched until the tick consumes them, so a 30Hz client talking to a
+        // 20Hz server cannot lose a keypress between frames.
+        if (msg.ability) i.ability = true;
+        if (msg.overcharge) i.overcharge = true;
+        if (msg.interact) i.interact = true;
+
+        i.seq = Math.max(i.seq, num(msg.seq, i.seq));
     }
 }

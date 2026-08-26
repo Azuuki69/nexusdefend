@@ -11,10 +11,16 @@ const WS = 'ws://127.0.0.1:8787';
 
 // Probed at module load with top-level await, so `skip` receives a real boolean. Passing a
 // function here silently skips everything, because a function is truthy.
+// Retried: wrangler reloads whenever a watched file changes, and a reload can hold a request
+// for a couple of seconds. A single 2s probe called the server down while it was merely busy,
+// and silently skipped thirteen tests.
 let up = false;
-try {
-    up = (await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(2000) })).ok;
-} catch { up = false; }
+for (let attempt = 0; attempt < 4 && !up; attempt++) {
+    try {
+        up = (await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(4000) })).ok;
+    } catch { up = false; }
+    if (!up) await new Promise(r => setTimeout(r, 500));
+}
 if (!up) console.log('  (wrangler dev not on :8787 - skipping match room tests)');
 const skip = up ? false : 'wrangler dev not running';
 
@@ -126,8 +132,12 @@ describe('MatchRoom', () => {
 
         const p = c.msgs.filter(x => x.t === 'snap').at(-1).players.find(p => p.id === 'pc');
         assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), 'position stayed a real number');
-        assert.ok(p.x >= 0 && p.x <= 1000 && p.y >= 0 && p.y <= 1000,
-            `server kept the player in bounds, got ${p.x},${p.y}`);
+        // The real world is 5760x3240 and everyone spawns at the Nexus in the middle. What
+        // matters is that a client claiming a position did not get one.
+        assert.ok(p.x > 0 && p.x < 5760 && p.y > 0 && p.y < 3240,
+            `server kept the player in the world, got ${p.x},${p.y}`);
+        assert.ok(Math.abs(p.x - 999999) > 1000 && Math.abs(p.y - 999999) > 1000,
+            'the client teleported itself');
         c.close();
     });
 
@@ -139,11 +149,10 @@ describe('MatchRoom', () => {
         const wb = await b.until(m => m.find(x => x.t === 'welcome'));
         assert.notEqual(wa.seed, wb.seed);
 
-        await a.until(m => m.filter(x => x.t === 'snap').length >= 5);
-        await b.until(m => m.filter(x => x.t === 'snap').length >= 5);
-        const ea = a.msgs.filter(x => x.t === 'snap').at(-1).enemies;
-        const eb = b.msgs.filter(x => x.t === 'snap').at(-1).enemies;
-        assert.notDeepEqual(ea, eb, 'different seeds should produce different worlds');
+        const ma = await a.until(m => m.find(x => x.t === 'map'));
+        const mb = await b.until(m => m.find(x => x.t === 'map'));
+        assert.notDeepEqual(ma.resources, mb.resources,
+            'two seeds laid out the same resources');
         a.close(); b.close();
     });
 
@@ -151,9 +160,127 @@ describe('MatchRoom', () => {
         const a = connect(room('t-seed-1'), 'x', '&seed=4242');
         const b = connect(room('t-seed-2'), 'y', '&seed=4242');
         await Promise.all([a.ready, b.ready]);
-        const sa = await a.until(m => m.find(x => x.t === 'snap' && x.tick === 3));
-        const sb = await b.until(m => m.find(x => x.t === 'snap' && x.tick === 3));
-        assert.deepEqual(sa.enemies, sb.enemies, 'same seed, same enemies at the same tick');
+        // The enemy list is empty during the day, so comparing it agreed for the wrong
+        // reason. The map is the thing the seed decides.
+        const ma = await a.until(m => m.find(x => x.t === 'map'));
+        const mb = await b.until(m => m.find(x => x.t === 'map'));
+        assert.deepEqual(ma.resources, mb.resources, 'same seed, different resources');
+        assert.deepEqual(ma.decorations, mb.decorations, 'same seed, different scenery');
         a.close(); b.close();
+    });
+});
+
+// --- the real simulation, server-side ------------------------------------------------------
+// MatchRoom stopped simulating drifting blobs and started running src/sim - the same code the
+// browser runs. These check that what comes down the wire is an actual game.
+
+describe('MatchRoom runs the real game', () => {
+    test('a joining client is handed a real map', { skip }, async () => {
+        const c = connect(room('real-map'), 'p1', '&cls=warrior&seed=4242');
+        await c.ready;
+        const map = await c.until(m => m.find(x => x.t === 'map'));
+        assert.ok(map.resources.length > 10, 'the map has no resources: ' + map.resources.length);
+        assert.ok(map.decorations.length > 100, 'the map has no scenery');
+        assert.equal(typeof map.seed, 'number');
+        for (const r of map.resources.slice(0, 5)) {
+            assert.ok(Number.isFinite(r.x) && Number.isFinite(r.y), 'a resource has no position');
+            assert.ok(['wood', 'stone', 'cache'].includes(r.type) || typeof r.type === 'string');
+        }
+        c.close();
+    });
+
+    test('snapshots carry a whole world, on the server clock', { skip }, async () => {
+        const c = connect(room('real-snap'), 'p1', '&cls=warrior&seed=4242');
+        await c.ready;
+        const snap = await c.until(m => m.find(x => x.t === 'snap' && x.tick >= 5));
+        assert.equal(snap.phase, 'DAY');
+        assert.equal(snap.wave, 1);
+        assert.ok(snap.base.hp > 0 && snap.base.maxHp > 0, 'no Nexus in the snapshot');
+        assert.equal(snap.players.length, 1);
+        const me = snap.players[0];
+        assert.equal(me.id, 'p1');
+        assert.equal(me.cls, 'warrior');
+        assert.ok(me.hp > 0 && me.maxHp > 0 && me.level >= 1, 'the player is not a real player');
+        assert.ok(snap.inventory && typeof snap.inventory.wood === 'number');
+        assert.ok(typeof snap.weather === 'string');
+        c.close();
+    });
+
+    test('the phase clock runs on the server', { skip }, async () => {
+        const c = connect(room('real-clock'), 'p1', '&seed=4242');
+        await c.ready;
+        const early = await c.until(m => m.find(x => x.t === 'snap' && x.tick >= 3));
+        const later = await c.until(m => m.find(x => x.t === 'snap' && x.tick >= early.tick + 20));
+        assert.ok(later.phaseTimer < early.phaseTimer,
+            `the day did not advance: ${early.phaseTimer} -> ${later.phaseTimer}`);
+        // 20 ticks at 20Hz is one second of game time, give or take a tick.
+        const elapsed = early.phaseTimer - later.phaseTimer;
+        assert.ok(elapsed > 0.5 && elapsed < 2.5, `a second of ticks moved the clock ${elapsed}s`);
+        c.close();
+    });
+
+    test('two players share one world and see identical snapshots', { skip }, async () => {
+        const id = room('real-coop');
+        const a = connect(id, 'alice', '&cls=warrior&seed=4242');
+        const b = connect(id, 'bob', '&cls=mage&seed=4242');
+        await Promise.all([a.ready, b.ready]);
+
+        // Both have to be in before the comparison is worth anything, and then both need
+        // long enough to actually share some ticks - stopping at the first two-player snapshot
+        // left exactly one tick in common.
+        await a.until(m => m.find(x => x.t === 'snap' && x.players.length === 2));
+        await b.until(m => m.find(x => x.t === 'snap' && x.players.length === 2));
+        const from = Math.max(
+            a.msgs.filter(x => x.t === 'snap').at(-1).tick,
+            b.msgs.filter(x => x.t === 'snap').at(-1).tick);
+        await a.until(m => m.find(x => x.t === 'snap' && x.tick >= from + 15));
+        await b.until(m => m.find(x => x.t === 'snap' && x.tick >= from + 15));
+
+        const byTick = c => new Map(c.msgs.filter(m => m.t === 'snap' && m.players.length === 2)
+            .map(m => [m.tick, m]));
+        const A = byTick(a), B = byTick(b);
+        const shared = [...A.keys()].filter(t => B.has(t));
+        assert.ok(shared.length >= 5, `only ${shared.length} ticks seen by both`);
+        for (const t of shared) {
+            assert.equal(JSON.stringify(A.get(t)), JSON.stringify(B.get(t)),
+                `the two clients disagree about tick ${t}`);
+        }
+        a.close(); b.close();
+    });
+
+    test('the Nexus hardens for a party', { skip }, async () => {
+        const solo = connect(room('real-solo'), 'p1', '&seed=4242');
+        await solo.ready;
+        const one = await solo.until(m => m.find(x => x.t === 'snap'));
+        const soloHp = one.base.maxHp;
+        solo.close();
+
+        const id = room('real-party');
+        const a = connect(id, 'a', '&seed=4242');
+        const b = connect(id, 'b', '&seed=4242');
+        await Promise.all([a.ready, b.ready]);
+        const two = await a.until(m => m.find(x => x.t === 'snap' && x.players.length === 2));
+        assert.ok(two.base.maxHp > soloHp,
+            `two players got the same Nexus as one: ${two.base.maxHp} vs ${soloHp}`);
+        a.close(); b.close();
+    });
+
+    test('the server moves you; your input is a request', { skip }, async () => {
+        const c = connect(room('real-move'), 'p1', '&cls=warrior&seed=4242');
+        await c.ready;
+        const start = await c.until(m => m.find(x => x.t === 'snap'));
+        const x0 = start.players[0].x;
+
+        const iv = setInterval(() => c.send({ t: 'input', moveX: 1, moveY: 0, seq: Date.now() }), 30);
+        const moved = await c.until(m => m.find(x => x.t === 'snap' && x.players[0] && x.players[0].x > x0 + 40));
+        clearInterval(iv);
+        assert.ok(moved.players[0].x > x0, 'walking right did not move the player');
+
+        // and a client cannot simply declare a position
+        c.send({ t: 'input', x: 99999, y: 99999, moveX: 0, moveY: 0, seq: Date.now() });
+        const after = await c.until(m => m.filter(x => x.t === 'snap').at(-1) &&
+            m.filter(x => x.t === 'snap').length > 10 ? m.filter(x => x.t === 'snap').at(-1) : null);
+        assert.ok(after.players[0].x < 90000, 'a client teleported itself');
+        c.close();
     });
 });
