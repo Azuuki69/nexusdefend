@@ -2,6 +2,16 @@ name = "nexusdefend"
 main = "worker/index.js"
 compatibility_date = "2025-09-01"
 
+# The client and its 21MB of sprites are served by this same Worker rather than by R2 or a
+# separate host. That keeps the game, the API and the WebSocket on one origin - no CORS, one
+# deploy, one domain - and static assets are free and cached at the edge.
+#
+# The directory is the repo root so GitHub Pages can keep serving the identical tree without
+# moving index.html or duplicating assets. .assetsignore keeps worker/, test/ and tooling out.
+[assets]
+directory = "."
+binding = "ASSETS"
+
 # One Durable Object per match. It holds the authoritative world and is the only thing
 # allowed to change it; clients send intents and receive snapshots.
 [[durable_objects.bindings]]

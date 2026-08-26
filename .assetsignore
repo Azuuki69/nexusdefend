@@ -1,0 +1,28 @@
+# What Workers Static Assets must NOT publish.
+#
+# The assets directory is the repo root so that GitHub Pages and Cloudflare can serve the
+# same tree without moving index.html or duplicating the 21MB of sprites. That means
+# everything not part of the shipped client has to be excluded here by hand.
+
+.git
+.github
+.claude
+.wrangler
+node_modules
+
+# Server code. This runs as the Worker itself; it must never be downloadable.
+worker
+
+# Tooling and tests
+test
+package.json
+package-lock.json
+wrangler.toml
+.gitignore
+.assetsignore
+.devserver.pl
+
+# Art that is not wired into the game yet lives on the assets-wip branch, but guard against
+# it being served if a working copy has it.
+assets/textures/fishing
+assets/textures/classes

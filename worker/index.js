@@ -1,6 +1,8 @@
-// HTTP entry point. Its only real job right now is routing a WebSocket upgrade to the
-// Durable Object that owns a given match, so that every client for match "abc" reaches the
-// same object no matter which edge location they connect from.
+// HTTP entry point.
+//
+// Static assets are matched first, so the game client and its sprites are served straight
+// from the edge and never reach this code. Anything with no matching file falls through to
+// here, which is where the API and the WebSocket upgrade live. Same origin for all of it.
 
 export { MatchRoom } from './match-room.js';
 
