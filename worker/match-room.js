@@ -213,11 +213,13 @@ export class MatchRoom {
                 hp: Math.round(p.hp), maxHp: p.maxHp,
                 mp: Math.round(p.mp), maxMp: p.maxMp,
                 level: p.level, angle: r1(p.angle),
-                seq: p.intent.seq
+                seq: p.intent.seq,
+                // Idle, walking or mid-swing. Decided in update(), which runs only here.
+                frameX: p.frameX | 0
             })),
             enemies: w.entities.enemies.map(e => ({
                 id: e.nid, type: e.type, x: Math.round(e.x), y: Math.round(e.y),
-                hp: Math.round(e.hp), maxHp: e.maxHp
+                hp: Math.round(e.hp), maxHp: e.maxHp, frameX: e.frameX | 0
             })),
             projectiles: w.entities.projectiles.map(p => {
                 const c = /^#([0-9a-f]{6})$/i.exec(p.color || '#ffffff');
@@ -225,6 +227,17 @@ export class MatchRoom {
                 return {
                     id: p.nid, x: Math.round(p.x), y: Math.round(p.y),
                     vx: p.vx, vy: p.vy, explosive: !!p.isExplosive,
+                    r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff
+                };
+            }),
+            // Every spell in the game is one of these. Leaving them out made casting invisible.
+            effects: w.entities.effects.map(e => {
+                const c = /^#([0-9a-f]{6})$/i.exec(e.color || '#ffffff');
+                const v = c ? parseInt(c[1], 16) : 0xffffff;
+                return {
+                    id: e.nid, style: e.style, element: e.element,
+                    x: Math.round(e.x), y: Math.round(e.y), radius: Math.round(e.radius),
+                    life: e.life, maxLife: e.maxLife, scorched: !!e.isScorched,
                     r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff
                 };
             }),

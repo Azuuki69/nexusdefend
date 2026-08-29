@@ -232,7 +232,7 @@ test('the wire carries what a projectile is drawn from', async () => {
     const snap = {
         t: 'snap', tick: 1, phase: 'DAY', wave: 1, phaseTimer: 1, weather: 'clear', modifier: 'none',
         inventory: { wood: 0, stone: 0, mana: 0 }, base: { x: 0, y: 0, hp: 1, maxHp: 1 },
-        players, enemies: [], critters: [], items: [],
+        players, enemies: [], critters: [], items: [], effects: [],
         projectiles: [{ id: 5, x: 100, y: 200, vx: 0, vy: 1, r: 0x4d, g: 0xff, b: 0x4d, explosive: false }],
         events: []
     };

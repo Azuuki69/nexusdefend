@@ -33,6 +33,10 @@ export const PHASES = ['MENU', 'DAY', 'NIGHT', 'OVER'];
 export const WEATHERS = ['clear', 'rain', 'fog', 'blizzard', 'bloodmoon'];
 export const MODIFIERS = ['none', 'swarm', 'frenzy', 'armored'];
 export const CLASSES = ['warrior', 'mage', 'archer', 'priest'];
+// How an effect is drawn. Same rule as the lists above: appending is safe, reordering is not.
+export const EFFECT_STYLES = ['blob', 'meteor', 'scorched', 'arrowrain', 'whirl', 'nova',
+    'heal', 'shield', 'chain', 'frost'];
+export const ELEMENTS = ['none', 'fire', 'ice', 'holy', 'poison'];
 
 const idx = (list, v) => {
     const i = list.indexOf(v);
@@ -149,6 +153,9 @@ export function encodeSnapshot(snap, slots, prevHeader) {
         w.u8(Math.min(255, p.level));
         w.u8(Math.round(((p.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2) * 255));
         w.u16(p.seq & 0xffff);
+        // The pose. Chosen inside update(), which only runs here - without this byte every
+        // character on every other screen stands still while gliding around the map.
+        w.u8(p.frameX & 3);
     }
 
     w.u16(snap.enemies.length);
@@ -157,6 +164,7 @@ export function encodeSnapshot(snap, slots, prevHeader) {
         w.u8(idx(ENEMY_TYPES, e.type));
         w.i16(e.x); w.i16(e.y);
         w.u8(packHp(e.hp, e.maxHp));
+        w.u8(e.frameX & 3);
     }
 
     w.u16(snap.critters.length);
@@ -186,6 +194,23 @@ export function encodeSnapshot(snap, slots, prevHeader) {
     }
 
     // Events are rare and irregular, so they stay as text rather than earning a schema.
+    // Every spell in the game is an Effect: the meteor, the arrow rain, the whirlwind, every
+    // explosion. None of it was on the wire, so casting worked and was invisible.
+    w.u16(snap.effects.length);
+    for (const e of snap.effects) {
+        w.u16(e.id & 0xffff);
+        w.u8(idx(EFFECT_STYLES, e.style));
+        w.u8(idx(ELEMENTS, e.element));
+        w.i16(e.x); w.i16(e.y);
+        w.u16(e.radius);
+        w.u8(e.r); w.u8(e.g); w.u8(e.b);
+        // Tenths of a second: an effect is drawn by how much of its life is left, and nobody
+        // can see a hundredth of a second of fade.
+        w.u16(Math.round(e.life * 10));
+        w.u16(Math.round(e.maxLife * 10));
+        w.u8(e.scorched ? 1 : 0);
+    }
+
     const ev = snap.events && snap.events.length ? JSON.stringify(snap.events) : '';
     w.u16(ev.length);
     for (const b of new TextEncoder().encode(ev)) w.u8(b);
@@ -221,7 +246,8 @@ export function decodeSnapshot(ab, roster, prev) {
         phase: head.phase, wave: head.wave, weather: head.weather, modifier: head.modifier,
         inventory: { ...head.inventory }, base: { ...head.base },
         phaseTimer: r.u16() / 10,
-        players: [], enemies: [], critters: [], items: [], projectiles: [], events: []
+        players: [], enemies: [], critters: [], items: [], projectiles: [], effects: [],
+        events: []
     };
 
     const np = r.u8();
@@ -235,7 +261,8 @@ export function decodeSnapshot(ab, roster, prev) {
             mp: r.u16(), maxMp: r.u16(),
             level: r.u8(),
             angle: (r.u8() / 255) * Math.PI * 2,
-            seq: r.u16()
+            seq: r.u16(),
+            frameX: r.u8() & 3
         });
     }
 
@@ -245,7 +272,8 @@ export function decodeSnapshot(ab, roster, prev) {
         const type = at(ENEMY_TYPES, r.u8());
         const x = r.i16(), y = r.i16();
         const hpPct = r.u8() / 255;
-        snap.enemies.push({ id, type, x, y, hpPct, hp: hpPct, maxHp: 1 });
+        const frameX = r.u8() & 3;
+        snap.enemies.push({ id, type, x, y, hpPct, hp: hpPct, maxHp: 1, frameX });
     }
 
     const nc = r.u16();
@@ -272,6 +300,24 @@ export function decodeSnapshot(ab, roster, prev) {
             vx: Math.cos(a), vy: Math.sin(a),
             color: '#' + hex(rr) + hex(gg) + hex(bb),
             explosive: r.u8() === 1
+        });
+    }
+
+    const nfx = r.u16();
+    for (let i = 0; i < nfx; i++) {
+        const id = r.u16();
+        const style = at(EFFECT_STYLES, r.u8());
+        const element = at(ELEMENTS, r.u8());
+        const x = r.i16(), y = r.i16();
+        const radius = r.u16();
+        const hex = v => v.toString(16).padStart(2, '0');
+        const rr = r.u8(), gg = r.u8(), bb = r.u8();
+        snap.effects.push({
+            id, style, element, x, y, radius,
+            color: '#' + hex(rr) + hex(gg) + hex(bb),
+            life: r.u16() / 10,
+            maxLife: r.u16() / 10,
+            scorched: r.u8() === 1
         });
     }
 

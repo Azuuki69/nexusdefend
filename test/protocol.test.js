@@ -32,6 +32,10 @@ function sampleSnapshot(over = {}) {
         critters: [{ id: 11, type: 'deer', x: 100, y: 200, facing: -1 }],
         items: [{ id: 12, type: 'mp', x: 5, y: 6 }],
         projectiles: [{ id: 13, x: 7, y: 8, color: '#fff' }],
+        // Every spell in the game is one of these, and none of them were on the wire until a
+        // playtest found a mage casting into an empty field.
+        effects: [{ id: 14, style: 'meteor', element: 'fire', x: 900, y: 1200, radius: 150,
+                    life: 0.6, maxLife: 1.0, scorched: false, r: 255, g: 102, b: 0 }],
         events: [],
         ...over
     };

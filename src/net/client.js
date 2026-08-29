@@ -16,7 +16,8 @@
 // server corrects you afterwards if it disagreed.
 
 import { world, useWorld, createWorld, seedRun, fx } from '../sim/world.js';
-import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer, Projectile } from '../sim/entities.js';
+import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer, Projectile,
+         Effect } from '../sim/entities.js';
 import { MSG, decodeSnapshot, decodeRoster } from './protocol.js';
 
 const INPUT_HZ = 30;
@@ -203,6 +204,9 @@ export class MatchClient {
                 // The renderer reads the intent for facing, so keep it pointed the right way.
                 p.intent.aimX = s.x + Math.cos(s.angle) * 100;
                 p.intent.aimY = s.y + Math.sin(s.angle) * 100;
+                // The pose is chosen inside update(), which no client ever calls. Without this
+                // every character stands frozen on the idle frame while sliding around.
+                p.frameX = s.frameX;
             });
 
         reconcile(w.entities.enemies, snap.enemies,
@@ -213,6 +217,7 @@ export class MatchClient {
                 // than the bar is wide. maxHp is whatever this client's own sim gave the
                 // creature when it built it, which is the same number the server used.
                 e.hp = s.hpPct * e.maxHp;
+                e.frameX = s.frameX;
             });
 
         reconcile(w.entities.items, snap.items,
@@ -222,6 +227,20 @@ export class MatchClient {
         reconcile(w.entities.critters, snap.critters,
             s => new Critter(s.type, s.x, s.y),      // note the order: (type, x, y)
             (c, s) => { target(c, s); if (s.facing !== undefined) c.facing = s.facing; });
+
+        // Effects are NOT rebuilt each snapshot the way projectiles are. An arrow rain scatters
+        // its shafts once in the constructor precisely so the volley does not jitter between
+        // frames; rebuilding would re-randomise that scatter twenty times a second.
+        reconcile(w.entities.effects, snap.effects,
+            s => new Effect(s.x, s.y, s.radius, s.color, s.maxLife, 0, false,
+                            s.scorched, s.element, 'player', s.style),
+            (e, s) => {
+                e.x = s.x; e.y = s.y;
+                e.radius = s.radius;
+                // The fade is drawn from life against maxLife, so the server owns both.
+                e.life = s.life;
+                e.maxLife = s.maxLife;
+            });
 
         // Projectiles are short-lived and cheap; rebuilding them each snapshot is simpler
         // than tracking them, and nothing about a bullet needs to persist.
