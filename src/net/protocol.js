@@ -173,6 +173,9 @@ export function encodeSnapshot(snap, slots, prevHeader) {
         w.u8(idx(CRITTER_TYPES, c.type));
         w.i16(c.x); w.i16(c.y);
         w.u8(c.facing < 0 ? 1 : 0);
+        // Wildlife animates and wildlife bleeds; neither was on the wire.
+        w.u8(c.frame & 0xff);
+        w.u8(packHp(c.hp, c.maxHp));
     }
 
     w.u16(snap.items.length);
@@ -280,7 +283,8 @@ export function decodeSnapshot(ab, roster, prev) {
     for (let i = 0; i < nc; i++) {
         snap.critters.push({
             id: r.u16(), type: at(CRITTER_TYPES, r.u8()),
-            x: r.i16(), y: r.i16(), facing: r.u8() ? -1 : 1
+            x: r.i16(), y: r.i16(), facing: r.u8() ? -1 : 1,
+            frame: r.u8(), hpPct: r.u8() / 255
         });
     }
 

@@ -226,7 +226,13 @@ export class MatchClient {
 
         reconcile(w.entities.critters, snap.critters,
             s => new Critter(s.type, s.x, s.y),      // note the order: (type, x, y)
-            (c, s) => { target(c, s); if (s.facing !== undefined) c.facing = s.facing; });
+            (c, s) => {
+                target(c, s);
+                if (s.facing !== undefined) c.facing = s.facing;
+                // Without these a deer stands in one pose forever and never shows a wound.
+                c.frame = s.frame;
+                c.hp = s.hpPct * c.maxHp;
+            });
 
         // Effects are NOT rebuilt each snapshot the way projectiles are. An arrow rain scatters
         // its shafts once in the constructor precisely so the volley does not jitter between
@@ -321,11 +327,15 @@ export class MatchClient {
      */
     smooth(dt) {
         if (!this.world) return;
-        const k = Math.min(1, dt * 14);
+        const k = Math.min(1, dt * 18);
         const ease = e => {
             if (e.netX === undefined) return;
-            e.x += (e.netX - e.x) * k;
-            e.y += (e.netY - e.y) * k;
+            const dx = e.netX - e.x, dy = e.netY - e.y;
+            // An exponential ease approaches without ever arriving, so somebody who stopped
+            // walking kept drifting for another few frames. Inside a pixel, just be there.
+            if (dx * dx + dy * dy < 1) { e.x = e.netX; e.y = e.netY; return; }
+            e.x += dx * k;
+            e.y += dy * k;
         };
         const w = this.world;
         // Everyone but us: we are predicted, and easing would fight the prediction.

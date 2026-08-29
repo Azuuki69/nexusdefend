@@ -105,6 +105,28 @@ describe('spells reach the other screen', () => {
     });
 });
 
+describe('wildlife animates and bleeds', () => {
+    test('a critter carries its frame and its wound', () => {
+        const back = roundTrip({
+            critters: [{ id: 11, type: 'deer', x: 100, y: 200, facing: -1,
+                         frame: 3, hp: 20, maxHp: 55 }]
+        });
+        const c = back.critters[0];
+        assert.equal(c.frame, 3, 'without a frame every deer stands in one pose forever');
+        // Health arrives as a byte fraction, the same as an enemy's: the client draws a bar.
+        assert.ok(Math.abs(c.hpPct - 20 / 55) < 0.01, 'hpPct was ' + c.hpPct);
+    });
+
+    test('an untouched animal reads as full rather than as missing', () => {
+        const back = roundTrip({
+            critters: [{ id: 12, type: 'boar', x: 0, y: 0, facing: 1,
+                         frame: 0, hp: 90, maxHp: 90 }]
+        });
+        assert.equal(back.critters[0].hpPct, 1);
+        assert.equal(back.critters[0].facing, 1);
+    });
+});
+
 describe('the enums stay append-only', () => {
     test('the styles and elements are pinned', () => {
         // Reordering these silently changes what every existing client draws.

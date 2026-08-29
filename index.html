@@ -875,6 +875,9 @@
         if (!f || !el) return;
         el.classList.add('skill-icon');
         el.innerText = '';
+        // The slot has to be ON SCREEN for this. A display:none element measures zero, and
+        // the fallback below is only a guess that happens to fit the square E and Q slots -
+        // the Shift slot is 108px wide, so guessing 68 crops the card for the wrong box.
         let boxW = el.clientWidth || 68, boxH = el.clientHeight || 68;
         let scale, ox = 0, oy = 0, wx = f[0], wy = f[1], fw = f[2], fh = f[3];
         if (mode === 'contain') {
@@ -2603,10 +2606,14 @@
         net = client;
 
         player = client.localPlayer();
-        applyClassChrome(cls);
         document.getElementById('ui-class').innerText = cls;
         document.getElementById('mainMenu').classList.add('hidden');
         document.getElementById('hud').classList.remove('hidden');
+        // AFTER the HUD is on screen, never before. setSkillIcon measures the slot it is
+        // filling, and a display:none element measures zero - the icons then get cropped for
+        // the 68px fallback while the Shift slot is really 108px wide, which is why a slice of
+        // the next card showed up beside the dash. Single-player already did it in this order.
+        applyClassChrome(cls);
         isPaused = false;
         lastTime = performance.now();
         simAccumulator = 0;
@@ -2965,9 +2972,13 @@
             // Move ourselves now rather than waiting for the round trip; the server
             // corrects us when its answer arrives.
             net.predict(elapsed);
-            updateCamera();
+            // The half of the loop that answers "what does this client want to open" - the
+            // camera, the talent tree, the buildings menu, the merchant, the camp, the forge.
+            // Leaving it out was why R, B and T did nothing in a match: the keys were read and
+            // sent and then nobody acted on them. Nothing in here touches the match; a shop
+            // window belongs to one screen rather than to the world.
+            handleLocalIntents(elapsed);
             net.smooth(elapsed);
-            if (screenShake > 0) screenShake -= elapsed * 30;
             ui.hud();
             draw();
             if (loopRunning) requestAnimationFrame(gameLoop);

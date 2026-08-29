@@ -256,8 +256,18 @@ test('an online match sets the same class chrome a local one does', () => {
     const calls = (INDEX.match(/applyClassChrome\(/g) || []).length;
     assert.ok(calls >= 3, 'applyClassChrome is called ' + calls + ' times; expected define + both modes');
     assert.ok(/applyClassChrome\(selectedClass\);/.test(INDEX), 'startGame does not set the chrome');
-    assert.ok(/applyClassChrome\(cls\);\r?\n\s*document\.getElementById\('ui-class'\)/.test(INDEX),
-        'joinMatch does not set the chrome');
+    assert.ok(/applyClassChrome\(cls\);/.test(INDEX), 'joinMatch does not set the chrome');
+
+    // and it must do it AFTER the HUD is on screen. setSkillIcon measures the slot it is
+    // filling, and a display:none element measures zero - the icons then get cropped for the
+    // 68px fallback while the Shift slot is really 108px wide, which is what put a slice of the
+    // neighbouring card next to the dash. Ordering rather than logic, so order is what is checked.
+    const joinFn = INDEX.slice(INDEX.indexOf('async function joinMatch('));
+    const unhide = joinFn.indexOf("getElementById('hud').classList.remove('hidden')");
+    const chrome = joinFn.indexOf('applyClassChrome(cls);');
+    assert.ok(unhide > 0 && chrome > unhide,
+        'joinMatch sets the class chrome before the HUD is visible, so every icon is measured '
+        + 'against a zero-sized box');
 });
 
 test('one keypress becomes exactly one packet', () => {

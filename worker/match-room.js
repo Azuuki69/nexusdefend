@@ -242,7 +242,10 @@ export class MatchRoom {
                 };
             }),
             items: w.entities.items.map(i => ({ id: i.nid, type: i.type, x: Math.round(i.x), y: Math.round(i.y) })),
-            critters: w.entities.critters.map(c => ({ id: c.nid, type: c.type, x: Math.round(c.x), y: Math.round(c.y), facing: c.facing })),
+            critters: w.entities.critters.map(c => ({
+                id: c.nid, type: c.type, x: Math.round(c.x), y: Math.round(c.y),
+                facing: c.facing, frame: c.frame | 0, hp: c.hp, maxHp: c.maxHp
+            })),
             events
         };
     }
