@@ -458,7 +458,10 @@ export function stepWorld(dt) {
     world.entities.texts = world.entities.texts.filter(txt => !txt.markedForDeletion); world.entities.particles = world.entities.particles.filter(p => !p.markedForDeletion);
     world.entities.items = world.entities.items.filter(i => !i.markedForDeletion);
 
-    if (livingPlayers().length === 0 || world.base.hp <= 0) { triggerGameOver(); }
+    // A party that is all dead has lost. A party that has merely all dropped has not - somebody
+    // whose wifi blinked should come back to a match, not to a defeat screen.
+    const wiped = livingPlayers().length === 0 && world.pendingReturn === 0;
+    if (wiped || world.base.hp <= 0) { triggerGameOver(); }
 
     ui.hud();
 }

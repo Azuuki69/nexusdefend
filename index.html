@@ -2584,9 +2584,12 @@
         leaveMatch();
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
         const host = (window.NEXUS_SERVER || location.host);
-        const me = 'p' + Math.random().toString(36).slice(2, 8);
+        // The token is what the server believes; `player` is only a fallback for a client
+        // that could not sign in. Both are sent, and the server prefers the signed one.
+        const who = await signIn();
         const url = `${proto}://${host}/ws/match/${encodeURIComponent(matchId)}`
-                  + `?player=${me}&cls=${encodeURIComponent(cls)}`;
+                  + `?player=${encodeURIComponent(who.id)}&cls=${encodeURIComponent(cls)}`
+                  + (who.token ? `&token=${encodeURIComponent(who.token)}` : '');
 
         const client = new MatchClient(url, {
             onClose: () => {
@@ -2662,9 +2665,53 @@
     let partySock = null, queueSock = null, partyMe = null, partyCode = null;
 
     /**
+     * Who you are, across sessions and across matches.
+     *
+     * The browser keeps a UUID; the Worker signs it and hands back a token. There is no password
+     * and no email, and that is the honest bargain: this proves you are the same person as last
+     * time, and deliberately nothing stronger. Anyone who copies the UUID out of localStorage is
+     * you - which is fine for a match history and would not be fine for anything that mattered.
+     *
+     * Signing in is best-effort. A private window, a blocked localStorage or a Worker that is not
+     * there all end the same way: you play, unrecorded, rather than being locked out of the game.
+     */
+    let identity = null;      // { id, name, token } once the Worker has signed us in
+
+    function storedId() {
+        try {
+            let id = localStorage.getItem('nexusId');
+            if (!id) {
+                id = (crypto.randomUUID ? crypto.randomUUID()
+                      : 'x' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+                localStorage.setItem('nexusId', id);
+            }
+            return id;
+        } catch {
+            // A private window forgets you the moment it closes. Still playable.
+            return 'x' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        }
+    }
+
+    async function signIn() {
+        if (identity) return identity;
+        const id = storedId();
+        try {
+            const base = window.NEXUS_SERVER ? location.protocol + '//' + window.NEXUS_SERVER : '';
+            const res = await fetch(base + '/api/identity', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ id, name: myName() })
+            });
+            if (res.ok) identity = await res.json();
+        } catch { /* offline, or no Worker behind this page */ }
+        // Unsigned still gets you into a match; it just will not be written down.
+        if (!identity) identity = { id, name: myName(), token: null };
+        return identity;
+    }
+
+    /**
      * What the party list calls you. Kept in this browser so you are the same person to your
-     * friends between sessions - Phase 5 turns this into a real identity with a record behind
-     * it; for now it is just a name to tell four "player"s apart.
+     * friends between sessions.
      */
     function myName() {
         let name = null;
@@ -2706,8 +2753,10 @@
 
         const ws = new WebSocket(lobbyUrl('/ws/queue'));
         queueSock = ws;
-        ws.addEventListener('open', () => {
-            ws.send(JSON.stringify({ t: 'queue', ids: ['me'] }));
+        ws.addEventListener('open', async () => {
+            // A real id, not a placeholder: the queue passes these through to the match, and two
+            // solo players both calling themselves 'me' would arrive sharing one slot.
+            ws.send(JSON.stringify({ t: 'queue', ids: [(await signIn()).id] }));
         });
         ws.addEventListener('message', ev => {
             const m = JSON.parse(ev.data);
@@ -2759,7 +2808,7 @@
         openParty(code);
     }
 
-    function openParty(code) {
+    async function openParty(code) {
         closeLobbySockets();
         partyCode = code;
         document.getElementById('partyCode').innerText = code;
@@ -2767,7 +2816,7 @@
         document.getElementById('partyStatus').innerText = '';
         showMenuScreen('menuParty');
 
-        const me = 'p' + Math.random().toString(36).slice(2, 8);
+        const me = (await signIn()).id;
         const ws = new WebSocket(lobbyUrl(
             `/ws/party/${encodeURIComponent(code)}?player=${me}`
             + `&name=${encodeURIComponent(myName())}&cls=${encodeURIComponent(menuClass)}`));

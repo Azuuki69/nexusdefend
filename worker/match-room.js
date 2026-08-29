@@ -28,6 +28,7 @@ const TICK_MS = 1000 / TICK_HZ;
 const TICK_DT = 1 / TICK_HZ;
 const EMPTY_SHUTDOWN_MS = 30_000;   // stop ticking once everyone has gone
 const REJOIN_GRACE_MS = 60_000;     // how long a dropped player's place is held
+const MAX_REPLAY_ENTRIES = 200_000; // a very long match, well inside KV's 25MB value limit
 const MAX_PLAYERS = 4;
 const CLASSES = new Set(['warrior', 'mage', 'archer', 'priest']);
 
@@ -53,6 +54,15 @@ export class MatchRoom {
         // netId -> { player, since }. A dropped connection does not throw the character away;
         // a blip on mobile data should not cost somebody their run.
         this.orphans = new Map();
+
+        // Everything needed to write the match down when it ends.
+        this.matchId = null;
+        this.startedAt = null;
+        this.recorded = false;
+        // A seed and a log of input CHANGES is a whole run, because the simulation is
+        // deterministic. Sixty ticks of holding one direction is one entry.
+        this.replay = [];
+        this.lastInput = new Map();       // netId -> the signature of what they were doing
         // The static half of a snapshot - phase, wave, weather, the Nexus - is usually the same
         // as last tick, so it is only sent when it changes. A client that has just arrived has
         // no copy of it, hence the flag.
@@ -86,6 +96,31 @@ export class MatchRoom {
     enter() {
         useWorld(this.world);
         return this.world;
+    }
+
+    /** What this player is doing, as one comparable string. */
+    inputSignature(p) {
+        const i = p.intent;
+        // The three edges belong here as much as the held inputs do: a tick whose only
+        // change is "cast the ability" must not look identical to the tick before it.
+        return [i.moveX, i.moveY, Math.round(i.aimX), Math.round(i.aimY),
+                i.attack ? 1 : 0, i.dash ? 1 : 0, i.place ? 1 : 0,
+                i.ability ? 1 : 0, i.overcharge ? 1 : 0, i.interact ? 1 : 0].join(',');
+    }
+
+    /** Append only what changed, so a replay is a few KB rather than a few MB. */
+    recordInputs() {
+        if (this.replay.length >= MAX_REPLAY_ENTRIES) return;
+        for (const p of this.world.players) {
+            const sig = this.inputSignature(p);
+            if (this.lastInput.get(p.netId) === sig) continue;
+            this.lastInput.set(p.netId, sig);
+            const i = p.intent;
+            this.replay.push([this.tick, this.slots.get(p.netId) ?? 0,
+                i.moveX, i.moveY, Math.round(i.aimX), Math.round(i.aimY),
+                (i.attack ? 1 : 0) | (i.dash ? 2 : 0) | (i.place ? 4 : 0)
+                | (i.ability ? 8 : 0) | (i.overcharge ? 16 : 0) | (i.interact ? 32 : 0)]);
+        }
     }
 
     addPlayer(netId, cls) {
@@ -206,7 +241,17 @@ export class MatchRoom {
         let next = Date.now() + TICK_MS;
         const run = () => {
             this.sweepOrphans();
+            // Anyone whose place is still being held is not a casualty.
+            this.world.pendingReturn = this.orphans.size;
+            this.recordInputs();
             const events = this.step();
+
+            // The run is over. Write it down once, then let the loop wind down on its own.
+            if (this.world.gameState === 'OVER' && !this.recorded) {
+                this.recorded = true;
+                this.state.waitUntil(this.persist(
+                    this.world.base && this.world.base.hp <= 0 ? 'nexus_fell' : 'party_down'));
+            }
             const snap = this.snapshot(events);
             const { buffer, header } = encodeSnapshot(
                 snap, this.slots, this.forceHeader ? null : this.prevHeader);
@@ -216,6 +261,8 @@ export class MatchRoom {
 
             if (this.clients.size === 0) {
                 if (this.emptySince === null) this.emptySince = Date.now();
+                // Nothing is recorded here - drop() already did it, back when this object was
+                // still guaranteed to be awake. This branch only stops the clock.
                 if (Date.now() - this.emptySince > EMPTY_SHUTDOWN_MS) { this.stopLoop(); return; }
             } else {
                 this.emptySince = null;
@@ -253,16 +300,38 @@ export class MatchRoom {
             this.removePlayer(p);
             if (this.clients.size) this.broadcast(this.rosterMessage());
         }
+
+        // The last person just left. Write the match down NOW, while this object is still awake
+        // to handle their disconnect.
+        //
+        // Not thirty seconds from now: a Durable Object with no connections and no request in
+        // flight is evicted, and a pending setTimeout does not keep it alive. Whatever is only
+        // in memory at that point is simply gone - there would be no world left to record. This
+        // is the same trap the tick timer has, arriving from a different direction.
+        //
+        // `recorded` is deliberately NOT set. If somebody rejoins inside the grace period and
+        // plays on, the real ending overwrites this row: every statement in persist() is an
+        // upsert keyed on the match id, which is exactly what that is for.
+        if (this.clients.size === 0 && !this.recorded && this.tick > TICK_HZ) {
+            this.state.waitUntil(this.persist('abandoned'));
+        }
     }
 
     // ---------------------------------------------------------------- connections
 
     async fetch(request) {
         const url = new URL(request.url);
-        const netId = (url.searchParams.get('player') || '').slice(0, 32) || crypto.randomUUID();
+        // The Worker verified a signed token and put the result in a header. What the client
+        // says about itself in the query string is only used when there is no token.
+        const verified = request.headers.get('X-Player-Id');
+        const netId = verified
+            || (url.searchParams.get('player') || '').slice(0, 32)
+            || crypto.randomUUID();
         const cls = url.searchParams.get('cls') || 'warrior';
 
         if (!this.world) {
+            this.matchId = url.pathname.split('/').pop();
+            this.startedAt = Date.now();
             const seedParam = Number(url.searchParams.get('seed'));
             this.initWorld(Number.isFinite(seedParam) && seedParam > 0
                 ? seedParam >>> 0
@@ -302,6 +371,78 @@ export class MatchRoom {
         this.startLoop();
 
         return new Response(null, { status: 101, webSocket: client });
+    }
+
+    /**
+     * The record of a finished match: one row for the match, one per player, and the running
+     * totals a profile page reads instead of summing every match ever played.
+     */
+    async persist(outcome) {
+        const w = this.world;
+        if (!this.env.DB || !this.matchId) return;
+
+        const now = Date.now();
+        // Everyone who was ever in this match, including anyone who dropped and did not return.
+        const all = [...w.players, ...[...this.orphans.values()].map(o => o.player)];
+
+        try {
+            const stmts = [
+                this.env.DB.prepare(
+                    `INSERT INTO matches (id, seed, started_at, ended_at, wave_reached, outcome)
+                     VALUES (?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(id) DO UPDATE SET ended_at = excluded.ended_at,
+                        wave_reached = excluded.wave_reached, outcome = excluded.outcome`
+                ).bind(this.matchId, w.currentSeed, this.startedAt || now, now, w.wave, outcome)
+            ];
+
+            for (const p of all) {
+                if (!p.netId) continue;
+                const kills = Math.round(w.gameStats.kills / Math.max(1, all.length));
+                const damage = Math.round(w.gameStats.dmg / Math.max(1, all.length));
+                stmts.push(this.env.DB.prepare(
+                    `INSERT INTO match_players (match_id, player_id, class, level, kills, damage)
+                     VALUES (?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(match_id, player_id) DO UPDATE SET level = excluded.level,
+                        kills = excluded.kills, damage = excluded.damage`
+                ).bind(this.matchId, p.netId, p.cls, p.level, kills, damage));
+
+                stmts.push(this.env.DB.prepare(
+                    `INSERT INTO player_stats (player_id, matches, best_wave, total_kills, total_damage, updated_at)
+                     VALUES (?, 1, ?, ?, ?, ?)
+                     ON CONFLICT(player_id) DO UPDATE SET
+                        matches = player_stats.matches + 1,
+                        best_wave = MAX(player_stats.best_wave, excluded.best_wave),
+                        total_kills = player_stats.total_kills + excluded.total_kills,
+                        total_damage = player_stats.total_damage + excluded.total_damage,
+                        updated_at = excluded.updated_at`
+                ).bind(p.netId, w.wave, kills, damage, now));
+            }
+            await this.env.DB.batch(stmts);
+        } catch (e) {
+            // A match that cannot be written down is still a match that was played. Losing the
+            // record is not worth taking the room down over.
+            console.log('could not record match ' + this.matchId + ': ' + e.message);
+        }
+
+        if (this.env.REPLAYS) {
+            try {
+                await this.env.REPLAYS.put('replay:' + this.matchId, JSON.stringify({
+                    matchId: this.matchId,
+                    seed: w.currentSeed,
+                    ticks: this.tick,
+                    hz: TICK_HZ,
+                    players: [...this.slots].map(([id, slot]) => ({
+                        id, slot,
+                        // Not cosmetic: a mage and a warrior do not replay the same.
+                        cls: (this.world.players.find(p => p.netId === id)
+                              || (this.orphans.get(id) || {}).player || {}).cls || 'warrior'
+                    })),
+                    inputs: this.replay
+                }), { expirationTtl: 60 * 60 * 24 * 30 });
+            } catch (e) {
+                console.log('could not store replay: ' + e.message);
+            }
+        }
     }
 
     /**

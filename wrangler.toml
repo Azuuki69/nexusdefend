@@ -32,6 +32,19 @@ class_name = "PartyRoom"
 name = "MATCHMAKER"
 class_name = "Matchmaker"
 
+# Match history and player records. Written once when a match ends, never per tick - a
+# Durable Object writing to D1 twenty times a second would be a database with a game attached.
+[[d1_databases]]
+binding = "DB"
+database_name = "nexusdefend"
+database_id = "local-dev-placeholder"
+
+# Replays: a seed and a compressed input log per match. A whole run in a few KB, because the
+# simulation is deterministic, which is what Phase 1 bought.
+[[kv_namespaces]]
+binding = "REPLAYS"
+id = "local-dev-placeholder"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MatchRoom"]

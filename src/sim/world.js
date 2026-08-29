@@ -36,6 +36,10 @@ export function createWorld() {
     w.activeQuest = null;
     w.forgeBuilding = null;
     w.gameState = 'MENU';
+    // How many players are disconnected but still inside their rejoin grace. The simulation
+    // does not know what a socket is; it only needs to know that an empty party is not
+    // necessarily a lost one. A server sets this; single-player leaves it at zero.
+    w.pendingReturn = 0;
     w.base = null;
     w.players = [];
     w.entities = { enemies: [], extractors: [], projectiles: [], resources: [], effects: [], texts: [], particles: [], items: [], obstacles: [], npcs: [], critters: [], decorations: [], solids: [] };

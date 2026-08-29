@@ -15,6 +15,7 @@ worker
 
 # Tooling and tests
 test
+tools
 package.json
 package-lock.json
 wrangler.toml
