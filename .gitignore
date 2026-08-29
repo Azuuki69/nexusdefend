@@ -23,3 +23,8 @@ npm-debug.log
 
 # Cloudflare
 .wrangler/
+
+# The Pages build output: a copy of index.html, src/ and 21MB of assets, plus the bundled
+# _worker.js. All of it is generated from files already tracked here, so committing it would
+# duplicate the repo inside itself. The config beside it IS tracked.
+pages-dist/public/

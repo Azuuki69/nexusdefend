@@ -1,0 +1,43 @@
+# The second front door.
+#
+# `*.workers.dev` gets blocked - by SmartScreen in Edge, and by a fair number of ISPs and
+# school networks - because that shared domain is popular with phishing. Nothing to do with
+# this game, but it means a friend can be told "the site is unsafe" and never reach the page.
+# `pages.dev` is a different domain and is treated better.
+#
+# The Worker stays deployed and is still the only place the Durable Object CLASSES exist:
+# Pages can bind to a Durable Object but cannot define one. So `script_name` below points every
+# binding back at the `nexusdefend` Worker, and this project is a front door in front of the
+# same rooms rather than a second copy of them. Two hostnames, one match when two players join
+# the same code.
+
+name = "nexusdefend"
+compatibility_date = "2025-09-01"
+pages_build_output_dir = "public"
+
+# Bound, not defined. The classes live in the Worker; these are references to them.
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "MatchRoom"
+script_name = "nexusdefend"
+
+[[durable_objects.bindings]]
+name = "PARTY"
+class_name = "PartyRoom"
+script_name = "nexusdefend"
+
+[[durable_objects.bindings]]
+name = "MATCHMAKER"
+class_name = "Matchmaker"
+script_name = "nexusdefend"
+
+# The same database and the same replay store the Worker uses, so a match played through
+# either hostname lands in one history.
+[[d1_databases]]
+binding = "DB"
+database_name = "nexusdefend"
+database_id = "ffb2a778-fb6b-4979-9b9b-24b803ff98b9"
+
+[[kv_namespaces]]
+binding = "REPLAYS"
+id = "388419c25f8f4dea8d2bc32d6e51856d"

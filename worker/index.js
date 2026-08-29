@@ -91,6 +91,13 @@ export default {
             return env.MATCHMAKER.get(id).fetch(request);
         }
 
+        // Anything that is not an API or a socket is a file.
+        //
+        // On Workers Static Assets this rarely runs, because assets are served before the Worker
+        // is even invoked. On Pages a _worker.js receives EVERY request, so without this the
+        // whole game would 404 and only the API would answer. Correct in both, which is the
+        // point - one codebase, two front doors.
+        if (env.ASSETS) return env.ASSETS.fetch(request);
         return new Response('not found', { status: 404 });
     }
 };
