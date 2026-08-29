@@ -20,6 +20,22 @@ class_name = "MatchRoom"
 
 # SQLite-backed Durable Objects, which is what makes this workable without a paid plan.
 # The older KV-backed classes (`new_classes`) are paid-only.
+# A lobby, keyed by friend code. This one hibernates: four people staring at a lobby is four
+# sockets and no work, and hibernation costs nothing while idle. MatchRoom cannot hibernate
+# because eviction would kill its tick timer; a party has no timer to kill.
+[[durable_objects.bindings]]
+name = "PARTY"
+class_name = "PartyRoom"
+
+# One queue for the whole game. Shard it by region or mode long before that stops being true.
+[[durable_objects.bindings]]
+name = "MATCHMAKER"
+class_name = "Matchmaker"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MatchRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PartyRoom", "Matchmaker"]

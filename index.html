@@ -58,6 +58,21 @@
         #matchStatus { min-height: 22px; }
         #matchStatus.bad { color: #ff8a8a; }
         #matchStatus.good { color: #8fe08f; }
+        .party-code {
+            font-family: var(--font-head); font-size: 42px; letter-spacing: 8px;
+            color: var(--gold-bright); margin: 10px 0 4px; text-shadow: 0 0 18px rgba(255,214,120,0.35);
+        }
+        .party-list { list-style: none; padding: 0; margin: 18px 0 0; width: 360px; }
+        .party-list li {
+            display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 8px;
+            background: rgba(14,16,12,0.92); border: 1px solid #3c3a2c; border-radius: 8px;
+            color: #d8d2bd; font-size: 15px;
+        }
+        .party-list .who { flex: 1; }
+        .party-list .cls { color: #9a9480; text-transform: capitalize; }
+        .party-list .is-ready { color: #8fe08f; }
+        .party-list .not-ready { color: #8d8778; }
+        .party-list .crown { color: var(--gold-bright); }
         .class-card { position: relative; background: linear-gradient(180deg, rgba(28,32,26,0.95), rgba(12,14,11,0.96)); border: 2px solid #4a4a42; border-radius: 12px; padding: 22px 20px; width: 250px; cursor: pointer; transition: 0.25s ease; text-align: center; box-shadow: 0 10px 24px rgba(0,0,0,0.6); }
         .class-card:hover { border-color: var(--gold); transform: translateY(-8px); box-shadow: 0 18px 34px rgba(0,0,0,0.7), 0 0 24px rgba(217,178,92,0.35); }
         .class-card h2 { font-family: var(--font-head); color: var(--gold-bright); margin-top: 0; border-bottom: 1px solid var(--panel-border-dim); padding-bottom: 12px; letter-spacing: 1px; font-size: 21px; }
@@ -297,6 +312,49 @@
             </div>
         </div>
 
+        <div id="menuMode" class="menu-screen hidden">
+            <div class="menu-stack">
+                <button class="menu-btn" onclick="menuQuickMatch()">Quick match</button>
+                <button class="menu-btn" onclick="menuCreateParty()">Create a party</button>
+                <button class="menu-btn" onclick="menuJoinPartyScreen()">Join a party</button>
+                <button class="menu-btn ghost" onclick="menuDirectScreen()">Enter a match name</button>
+                <button class="menu-btn ghost" onclick="menuClassScreen()">Back</button>
+            </div>
+        </div>
+
+        <div id="menuQueue" class="menu-screen hidden">
+            <p class="menu-hint" id="queueStatus">Looking for a match...</p>
+            <div class="menu-stack" style="width: 220px;">
+                <button class="menu-btn ghost" onclick="menuLeaveQueue()">Cancel</button>
+            </div>
+        </div>
+
+        <div id="menuPartyJoin" class="menu-screen hidden">
+            <p class="menu-hint">Type the code your friend read out.</p>
+            <div class="match-row">
+                <input id="partyCodeInput" maxlength="8" spellcheck="false" placeholder="code"
+                       style="text-transform: uppercase; letter-spacing: 4px;">
+                <button class="menu-btn" style="font-size:18px; padding:12px 22px;" onclick="menuJoinParty()">Join</button>
+            </div>
+            <p class="menu-hint" id="partyJoinStatus"></p>
+            <div class="menu-stack" style="width: 220px; margin-top: 6px;">
+                <button class="menu-btn ghost" onclick="menuModeScreen()">Back</button>
+            </div>
+        </div>
+
+        <div id="menuParty" class="menu-screen hidden">
+            <p class="menu-hint" style="margin-bottom:0;">Your party code</p>
+            <div class="party-code" id="partyCode">------</div>
+            <p class="menu-hint" style="margin-top:0;">Read it out. Anyone who types it joins you.</p>
+            <ul class="party-list" id="partyMembers"></ul>
+            <div class="menu-stack" style="width: 280px; margin-top: 18px;">
+                <button class="menu-btn" id="partyReadyBtn" onclick="menuToggleReady()">Ready</button>
+                <button class="menu-btn" id="partyStartBtn" onclick="menuStartParty()">Start</button>
+                <button class="menu-btn ghost" onclick="menuLeaveParty()">Leave</button>
+            </div>
+            <p class="menu-hint" id="partyStatus"></p>
+        </div>
+
         <div id="menuMatch" class="menu-screen hidden">
             <p class="menu-hint">
                 Everyone who types the same match name lands in the same world.<br>
@@ -308,7 +366,7 @@
             </div>
             <p class="menu-hint" id="matchStatus"></p>
             <div class="menu-stack" style="width: 200px; margin-top: 10px;">
-                <button class="menu-btn ghost" onclick="menuClassScreen()">Back</button>
+                <button class="menu-btn ghost" onclick="menuModeScreen()">Back</button>
             </div>
         </div>
     </div>
@@ -1860,6 +1918,7 @@
         // Stop the run properly - without this the loop kept simulating behind the menu.
         world.gameState = 'MENU'; isPaused = false;
         leaveMatch();               // a run reached from a match should also leave the match
+        closeLobbySockets();
         closeSettings();
         menuHome();
         MODAL_IDS.forEach(id => closeModal(id));
@@ -2571,8 +2630,10 @@
     let menuMode = 'local';
     let menuClass = 'warrior';
 
+    const MENU_SCREENS = ['menuHome', 'menuClass', 'menuMode', 'menuQueue',
+                          'menuPartyJoin', 'menuParty', 'menuMatch'];
     function showMenuScreen(id) {
-        for (const s of ['menuHome', 'menuClass', 'menuMatch'])
+        for (const s of MENU_SCREENS)
             document.getElementById(s).classList.toggle('hidden', s !== id);
     }
 
@@ -2592,18 +2653,188 @@
     }
 
     function menuClassScreen() { showMenuScreen('menuClass'); }
+    function menuModeScreen() { showMenuScreen('menuMode'); }
+    function menuDirectScreen() { showMenuScreen('menuMatch'); }
+
+    // --- Party and queue ---------------------------------------------------------------
+    // Both are plain WebSockets carrying JSON: they exchange a handful of messages while
+    // nobody is playing, so there is nothing here worth a binary format.
+    let partySock = null, queueSock = null, partyMe = null, partyCode = null;
+
+    /**
+     * What the party list calls you. Kept in this browser so you are the same person to your
+     * friends between sessions - Phase 5 turns this into a real identity with a record behind
+     * it; for now it is just a name to tell four "player"s apart.
+     */
+    function myName() {
+        let name = null;
+        try { name = localStorage.getItem('nexusName'); } catch { /* private window */ }
+        if (!name) {
+            name = 'Player ' + Math.random().toString(36).slice(2, 5).toUpperCase();
+            try { localStorage.setItem('nexusName', name); } catch { /* nothing to do */ }
+        }
+        return name;
+    }
+
+    function closeLobbySockets() {
+        if (partySock) { try { partySock.close(); } catch {} partySock = null; }
+        if (queueSock) { try { queueSock.close(); } catch {} queueSock = null; }
+    }
+
+    function lobbyUrl(path) {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        return `${proto}://${window.NEXUS_SERVER || location.host}${path}`;
+    }
+
+    /** Both lobbies end the same way: everybody is told one match id, and everybody joins it. */
+    async function enterMatch(matchId) {
+        closeLobbySockets();
+        try {
+            await joinMatch(matchId, menuClass);
+        } catch (e) {
+            showMenuScreen('menuMode');
+            setMatchStatus('The match would not start. ' + (e.message || ''), 'bad');
+        }
+    }
+
+    // ---- quick match ------------------------------------------------------------------
+    function menuQuickMatch() {
+        closeLobbySockets();
+        showMenuScreen('menuQueue');
+        const status = document.getElementById('queueStatus');
+        status.innerText = 'Joining the queue...';
+
+        const ws = new WebSocket(lobbyUrl('/ws/queue'));
+        queueSock = ws;
+        ws.addEventListener('open', () => {
+            ws.send(JSON.stringify({ t: 'queue', ids: ['me'] }));
+        });
+        ws.addEventListener('message', ev => {
+            const m = JSON.parse(ev.data);
+            if (m.t === 'waiting') {
+                status.innerText = m.players > 1
+                    ? `Waiting - you are ${m.place} of ${m.players} looking for a match.`
+                    : 'Waiting for another player. You will be started on your own shortly.';
+            } else if (m.t === 'matched') {
+                status.innerText = 'Found a match. Joining...';
+                enterMatch(m.matchId);
+            }
+        });
+        ws.addEventListener('error', () => {
+            status.innerText = 'Could not reach the matchmaker at ' + location.host + '.';
+        });
+    }
+
+    function menuLeaveQueue() {
+        if (queueSock) { try { queueSock.send(JSON.stringify({ t: 'leave' })); } catch {} }
+        closeLobbySockets();
+        showMenuScreen('menuMode');
+    }
+
+    // ---- party ------------------------------------------------------------------------
+    async function menuCreateParty() {
+        try {
+            const r = await fetch('/api/party/new');
+            const { code } = await r.json();
+            openParty(code);
+        } catch {
+            showMenuScreen('menuMode');
+            setMatchStatus('Could not reach a party server at ' + location.host + '.', 'bad');
+        }
+    }
+
+    function menuJoinPartyScreen() {
+        document.getElementById('partyJoinStatus').innerText = '';
+        showMenuScreen('menuPartyJoin');
+        document.getElementById('partyCodeInput').focus();
+    }
+
+    function menuJoinParty() {
+        const code = (document.getElementById('partyCodeInput').value || '')
+            .toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (code.length < 4) {
+            document.getElementById('partyJoinStatus').innerText = 'That does not look like a code.';
+            return;
+        }
+        openParty(code);
+    }
+
+    function openParty(code) {
+        closeLobbySockets();
+        partyCode = code;
+        document.getElementById('partyCode').innerText = code;
+        document.getElementById('partyMembers').innerHTML = '';
+        document.getElementById('partyStatus').innerText = '';
+        showMenuScreen('menuParty');
+
+        const me = 'p' + Math.random().toString(36).slice(2, 8);
+        const ws = new WebSocket(lobbyUrl(
+            `/ws/party/${encodeURIComponent(code)}?player=${me}`
+            + `&name=${encodeURIComponent(myName())}&cls=${encodeURIComponent(menuClass)}`));
+        partySock = ws;
+        ws.addEventListener('message', ev => {
+            const m = JSON.parse(ev.data);
+            if (m.t === 'you') partyMe = m.id;
+            else if (m.t === 'party') renderParty(m.members);
+            else if (m.t === 'start') enterMatch(m.matchId);
+            else if (m.t === 'error') document.getElementById('partyStatus').innerText = m.why;
+        });
+        ws.addEventListener('error', () => {
+            document.getElementById('partyStatus').innerText =
+                'Could not reach a party server at ' + location.host + '.';
+        });
+        ws.addEventListener('close', () => {
+            if (partySock === ws) document.getElementById('partyStatus').innerText = 'Disconnected.';
+        });
+    }
+
+    function renderParty(members) {
+        const list = document.getElementById('partyMembers');
+        list.innerHTML = '';
+        for (const m of members) {
+            const li = document.createElement('li');
+            const crown = m.leader ? '<span class="crown">&#9733;</span>' : '<span></span>';
+            const state = m.ready
+                ? '<span class="is-ready">ready</span>'
+                : '<span class="not-ready">not ready</span>';
+            li.innerHTML = `${crown}<span class="who">${m.name}</span>`
+                         + `<span class="cls">${m.cls}</span>${state}`;
+            list.appendChild(li);
+        }
+        const mine = members.find(m => m.id === partyMe);
+        const leader = !!(mine && mine.leader);
+        document.getElementById('partyReadyBtn').innerText = mine && mine.ready ? 'Not ready' : 'Ready';
+        // Only the leader gets a Start button, and only once everyone has said yes.
+        const startBtn = document.getElementById('partyStartBtn');
+        startBtn.classList.toggle('hidden', !leader);
+        startBtn.disabled = !members.every(m => m.ready);
+        startBtn.style.opacity = startBtn.disabled ? '0.45' : '1';
+    }
+
+    function menuToggleReady() {
+        if (!partySock) return;
+        const wantReady = document.getElementById('partyReadyBtn').innerText === 'Ready';
+        partySock.send(JSON.stringify({ t: 'ready', ready: wantReady }));
+    }
+
+    function menuStartParty() {
+        if (partySock) partySock.send(JSON.stringify({ t: 'start' }));
+    }
+
+    function menuLeaveParty() {
+        closeLobbySockets();
+        showMenuScreen('menuMode');
+    }
 
     /** A class card was clicked. Where that leads depends on the mode chosen a screen ago. */
     function menuPick(cls) {
         menuClass = cls;
         if (menuMode === 'local') { startGame(cls); return; }
         const field = document.getElementById('matchName');
-        // A suggested name beats an empty box: something to read out to a friend.
         if (!field.value) field.value = suggestMatchName();
         setMatchStatus('');
-        showMenuScreen('menuMatch');
-        field.focus();
-        field.select();
+        // Quick match, a party, or a name you already agreed on.
+        showMenuScreen('menuMode');
     }
 
     /** Two short words are easier to say down a phone than eight random characters. */
@@ -3499,6 +3730,9 @@
     Object.assign(window, {
         joinMatch, leaveMatch,
         menuHome, menuSingle, menuMulti, menuClassScreen, menuPick, menuJoin, menuSettings,
+        menuModeScreen, menuDirectScreen, menuQuickMatch, menuLeaveQueue,
+        menuCreateParty, menuJoinPartyScreen, menuJoinParty, menuToggleReady,
+        menuStartParty, menuLeaveParty,
         startGame, buyMerchant, buyForge, buyCamp, closeModal, setVolume, toggleMute, startNightEarly, selectTalentPath, selectBuildingTab, retryRun, restartRun, resetGameToMenu, quitToMenu, openBuildings, closeSettings, buyTalent, buyParagon, armBuilding
     });
 </script>

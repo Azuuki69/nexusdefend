@@ -27,6 +27,7 @@ const TICK_HZ = 20;
 const TICK_MS = 1000 / TICK_HZ;
 const TICK_DT = 1 / TICK_HZ;
 const EMPTY_SHUTDOWN_MS = 30_000;   // stop ticking once everyone has gone
+const REJOIN_GRACE_MS = 60_000;     // how long a dropped player's place is held
 const MAX_PLAYERS = 4;
 const CLASSES = new Set(['warrior', 'mage', 'archer', 'priest']);
 
@@ -49,6 +50,9 @@ export class MatchRoom {
         // most of why a snapshot fits in a few hundred bytes.
         this.slots = new Map();      // netId -> slot
         this.nextSlot = 0;
+        // netId -> { player, since }. A dropped connection does not throw the character away;
+        // a blip on mobile data should not cost somebody their run.
+        this.orphans = new Map();
         // The static half of a snapshot - phase, wave, weather, the Nexus - is usually the same
         // as last tick, so it is only sent when it changes. A client that has just arrived has
         // no copy of it, hence the flag.
@@ -86,6 +90,16 @@ export class MatchRoom {
 
     addPlayer(netId, cls) {
         const w = this.enter();
+
+        // Coming back to a place we kept: the same character, where they left it.
+        const held = this.orphans.get(netId);
+        if (held) {
+            this.orphans.delete(netId);
+            w.players.push(held.player);
+            w.base.recalcMaxHp();
+            return held.player;
+        }
+
         const p = new Player(CLASSES.has(cls) ? cls : 'warrior');
         p.netId = netId;
         if (!this.slots.has(netId)) this.slots.set(netId, this.nextSlot++ & 0xff);
@@ -94,11 +108,24 @@ export class MatchRoom {
         return p;
     }
 
+    /** Forget anyone who did not come back in time. */
+    sweepOrphans() {
+        const now = Date.now();
+        for (const [netId, held] of this.orphans) {
+            if (now - held.since > REJOIN_GRACE_MS) {
+                this.orphans.delete(netId);
+                this.slots.delete(netId);
+            }
+        }
+    }
+
     removePlayer(p) {
         const w = this.enter();
         const i = w.players.indexOf(p);
         if (i >= 0) w.players.splice(i, 1);
         if (w.base) w.base.recalcMaxHp();
+        // Out of the world, but not gone: held for a minute in case they come back.
+        if (p.netId) this.orphans.set(p.netId, { player: p, since: Date.now() });
     }
 
     // ---------------------------------------------------------------- the tick
@@ -178,6 +205,7 @@ export class MatchRoom {
         if (this.timer !== null) return;
         let next = Date.now() + TICK_MS;
         const run = () => {
+            this.sweepOrphans();
             const events = this.step();
             const snap = this.snapshot(events);
             const { buffer, header } = encodeSnapshot(

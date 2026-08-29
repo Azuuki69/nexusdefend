@@ -5,6 +5,8 @@
 // here, which is where the API and the WebSocket upgrade live. Same origin for all of it.
 
 export { MatchRoom } from './match-room.js';
+export { PartyRoom, makePartyCode } from './party-room.js';
+export { Matchmaker } from './matchmaker.js';
 
 export default {
     async fetch(request, env) {
@@ -23,6 +25,25 @@ export default {
             }
             const id = env.MATCH.idFromName(match[1]);
             return env.MATCH.get(id).fetch(request);
+        }
+
+        // A friend code, handed out rather than chosen, so two parties cannot collide.
+        if (url.pathname === '/api/party/new') {
+            const { makePartyCode } = await import('./party-room.js');
+            return Response.json({ code: makePartyCode() });
+        }
+
+        // /ws/party/<code> - the lobby you and your friends sit in before a match exists.
+        const party = url.pathname.match(/^\/ws\/party\/([A-Za-z0-9]{4,12})$/);
+        if (party) {
+            const id = env.PARTY.idFromName(party[1].toUpperCase());
+            return env.PARTY.get(id).fetch(request);
+        }
+
+        // /ws/queue - one queue for the whole game, which is right at this scale.
+        if (url.pathname === '/ws/queue' || url.pathname === '/api/queue/status') {
+            const id = env.MATCHMAKER.idFromName('global');
+            return env.MATCHMAKER.get(id).fetch(request);
         }
 
         return new Response('not found', { status: 404 });
