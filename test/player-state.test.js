@@ -574,9 +574,13 @@ test('input is read once per frame, not once per simulation step', () => {
 test('held and edge-triggered actions are produced differently', () => {
     const i = GAME.indexOf('function readLocalIntent(p)');
     const body = GAME.slice(i, i + 1400);
-    // edge actions go through the edge helper
+    // Edge actions LATCH rather than assign. readLocalIntent runs once a frame from the loop
+    // and again per send from the network client; assigning meant whichever ran first ate the
+    // keypress and the other saw nothing, so most abilities never fired online.
     for (const a of ['ability', 'overcharge', 'interact', 'openTalents', 'openBuildings'])
-        assert.ok(body.includes('i.' + a + ' = edge('), a + ' is not edge-triggered');
+        assert.ok(body.includes('i.' + a + ' = true;'), a + ' is not latched');
+    assert.ok(/if \(edge\('e'\)\) i\.ability = true;/.test(body), 'abilities are not edge-latched');
+    assert.ok(!/i\.ability = edge\(/.test(body), 'an assigned edge survived, and will be eaten');
     // held actions read the device state directly
     assert.ok(/i\.dash = !!keys\['shift'\]/.test(body), 'dash should be held, not edged');
     // and the two spend-latches exist, or a click on an NPC would also swing

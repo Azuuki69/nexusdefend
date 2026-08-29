@@ -1252,11 +1252,15 @@
         i.attack = !!mouse.clicked && !i.attackSpent;
         i.place = !!mouse.rightClicked && !i.placeSpent;
         i.dash = !!keys['shift'];
-        i.ability = edge('e');
-        i.overcharge = edge('q');
-        i.interact = edge('r');
-        i.openTalents = edge('t');
-        i.openBuildings = edge('b');
+        // Latched, not assigned. This runs once a frame from the loop AND once per send from
+        // the network client; whichever ran first used to consume the keypress and the other
+        // saw nothing. Whatever acts on an edge clears it - the simulation does for abilities,
+        // the input sender does for an online match.
+        if (edge('e')) i.ability = true;
+        if (edge('q')) i.overcharge = true;
+        if (edge('r')) i.interact = true;
+        if (edge('t')) i.openTalents = true;
+        if (edge('b')) i.openBuildings = true;
         i.seq++;
         prevKeys = Object.assign({}, keys);
     }
@@ -1909,6 +1913,30 @@
 
     
 
+    /**
+     * The bits of the HUD that depend on which class you are: the portrait, the two ability
+     * icons and their names.
+     *
+     * Split out of startGame because an online match never calls startGame, and so came up
+     * with a placeholder glyph where the ability icon belongs.
+     */
+    function applyClassChrome(cls) {
+        const classIcons = { warrior: '⚔️', mage: '🔥', archer: '🏹', priest: '✨' };
+        const abilityNames = { warrior: 'Whirlwind', mage: 'Meteor', archer: 'Rain of Arrows', priest: 'Holy Nova' };
+        document.getElementById('classPortrait').className = 'cls-' + cls;
+        document.getElementById('classPortraitIcon').innerText = classIcons[cls];
+        setSkillIcon(document.getElementById('ability-e-icon'), E_ICON_SHEET, cls);
+        document.getElementById('ability-e-name').innerText = abilityNames[cls];
+        setSkillIcon(document.getElementById('ability-shift-icon'), SHIFT_ICON_SHEET, cls, 'contain');
+        // Shift is two different moves wearing one button: the warrior and archer plant their feet
+        // and burst forward, invincible for the length of it: the mage and priest instead blink
+        // toward the cursor, closing distance without ever crossing the ground between. The label
+        // said "Dash" for all four before this, which the mage and priest's own icon now visibly
+        // contradicts.
+        document.getElementById('ability-shift-name').innerText =
+            (cls === 'mage' || cls === 'priest') ? 'Teleport' : 'Dash';
+    }
+
     function startGame(selectedClass, seed) {
         seedRun(seed);
         document.getElementById('mainMenu').classList.add('hidden'); document.getElementById('hud').classList.remove('hidden');
@@ -1936,20 +1964,7 @@
         document.getElementById('ui-class').innerText = selectedClass;
         updateBuildUI(); updateTrinkets(); restockMerchant();
 
-        const classIcons = { warrior: '⚔️', mage: '🔥', archer: '🏹', priest: '✨' };
-        const abilityNames = { warrior: 'Whirlwind', mage: 'Meteor', archer: 'Rain of Arrows', priest: 'Holy Nova' };
-        document.getElementById('classPortrait').className = 'cls-' + selectedClass;
-        document.getElementById('classPortraitIcon').innerText = classIcons[selectedClass];
-        setSkillIcon(document.getElementById('ability-e-icon'), E_ICON_SHEET, selectedClass);
-        document.getElementById('ability-e-name').innerText = abilityNames[selectedClass];
-        setSkillIcon(document.getElementById('ability-shift-icon'), SHIFT_ICON_SHEET, selectedClass, 'contain');
-        // Shift is two different moves wearing one button: the warrior and archer plant their feet
-        // and burst forward, invincible for the length of it: the mage and priest instead blink
-        // toward the cursor, closing distance without ever crossing the ground between. The label
-        // said "Dash" for all four before this, which the mage and priest's own icon now visibly
-        // contradicts.
-        document.getElementById('ability-shift-name').innerText =
-            (selectedClass === 'mage' || selectedClass === 'priest') ? 'Teleport' : 'Dash';
+        applyClassChrome(selectedClass);
         
         generateMap(); world.gameState = 'DAY'; if (merchantVisits(world.wave)) world.entities.npcs.push(new Merchant());
         world.entities.npcs.push(new Wanderer());
@@ -2526,14 +2541,25 @@
         net = client;
 
         player = client.localPlayer();
+        applyClassChrome(cls);
+        document.getElementById('ui-class').innerText = cls;
         document.getElementById('mainMenu').classList.add('hidden');
         document.getElementById('hud').classList.remove('hidden');
         isPaused = false;
         lastTime = performance.now();
         simAccumulator = 0;
         client.startSendingInput(() => {
-            readLocalIntent(player);
-            return player ? player.intent : null;
+            // The loop already read the keyboard this frame. Take what is latched and clear it,
+            // so one keypress becomes exactly one packet.
+            const i = player && player.intent;
+            if (!i) return null;
+            const out = {
+                moveX: i.moveX, moveY: i.moveY, aimX: i.aimX, aimY: i.aimY,
+                attack: i.attack, dash: i.dash, place: i.place,
+                ability: i.ability, overcharge: i.overcharge, interact: i.interact
+            };
+            i.ability = i.overcharge = i.interact = false;
+            return out;
         });
         if (!loopRunning) { loopRunning = true; requestAnimationFrame(gameLoop); }
         return client;

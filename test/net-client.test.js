@@ -207,3 +207,70 @@ test('the unconfirmed queue is bounded', () => {
     assert.ok(/if \(this\.unconfirmed\.length > \d+\) this\.unconfirmed\.shift\(\);/.test(SRC),
         'the replay buffer has no bound');
 });
+
+// --- three bugs found by playing -----------------------------------------------------------
+// None of these were reachable from the suite as it stood, because every existing test asked
+// whether the world was CORRECT, and all three were about whether it could be drawn or acted on.
+
+test('a snapshot projectile can draw itself', () => {
+    // draw() calls p.draw(ctx) on every projectile. The client used to rebuild them as plain
+    // objects, so the first arrow anybody fired threw TypeError inside the render loop and the
+    // game stopped. It only looked like a two-player bug because a warrior is melee - it took a
+    // ranged class in the match to produce a projectile at all.
+    assert.ok(/Object\.create\(Projectile\.prototype\)/.test(SRC),
+        'projectiles are rebuilt as plain objects and cannot draw');
+    assert.ok(/Projectile\b/.test(SRC.slice(0, SRC.indexOf('const INPUT_HZ'))),
+        'Projectile is not imported');
+    // and the fields its draw() actually reads have to be there
+    for (const f of ['vx:', 'vy:', 'color:', 'isExplosive:'])
+        assert.ok(SRC.includes(f), 'a rebuilt projectile has no ' + f);
+});
+
+test('the wire carries what a projectile is drawn from', async () => {
+    const P = await import('../src/net/protocol.js');
+    const players = [{ id: 'a', cls: 'warrior', x: 0, y: 0, hp: 1, maxHp: 1, mp: 0, maxMp: 1, level: 1, angle: 0, seq: 0 }];
+    const snap = {
+        t: 'snap', tick: 1, phase: 'DAY', wave: 1, phaseTimer: 1, weather: 'clear', modifier: 'none',
+        inventory: { wood: 0, stone: 0, mana: 0 }, base: { x: 0, y: 0, hp: 1, maxHp: 1 },
+        players, enemies: [], critters: [], items: [],
+        projectiles: [{ id: 5, x: 100, y: 200, vx: 0, vy: 1, r: 0x4d, g: 0xff, b: 0x4d, explosive: false }],
+        events: []
+    };
+    const slots = new Map([['a', 0]]);
+    const roster = new Map([[0, { slot: 0, id: 'a', cls: 'warrior' }]]);
+    const { buffer } = P.encodeSnapshot(snap, slots, null);
+    const { snap: back } = P.decodeSnapshot(buffer, roster, null);
+    const p = back.projectiles[0];
+    assert.equal(p.x, 100);
+    assert.ok(Math.abs(p.vy - 1) < 0.05 && Math.abs(p.vx) < 0.05, 'the heading was lost');
+    assert.equal(p.color, '#4dff4d', 'the colour was lost, so an arrow draws as a bolt');
+    assert.equal(p.explosive, false);
+});
+
+test('an online match sets the same class chrome a local one does', () => {
+    const INDEX = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
+    assert.ok(/function applyClassChrome\(cls\) \{/.test(INDEX),
+        'the class chrome is still buried inside startGame');
+    // both entry points must call it, or one of them shows a placeholder glyph
+    const calls = (INDEX.match(/applyClassChrome\(/g) || []).length;
+    assert.ok(calls >= 3, 'applyClassChrome is called ' + calls + ' times; expected define + both modes');
+    assert.ok(/applyClassChrome\(selectedClass\);/.test(INDEX), 'startGame does not set the chrome');
+    assert.ok(/applyClassChrome\(cls\);\r?\n\s*document\.getElementById\('ui-class'\)/.test(INDEX),
+        'joinMatch does not set the chrome');
+});
+
+test('one keypress becomes exactly one packet', () => {
+    // readLocalIntent runs once a frame from the loop and again per send from the network
+    // client. Assigning the edge meant whichever ran first ate the keypress, so most abilities
+    // never left the browser.
+    const INDEX = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
+    assert.ok(/if \(edge\('e'\)\) i\.ability = true;/.test(INDEX), 'the ability edge is not latched');
+    assert.ok(/i\.ability = i\.overcharge = i\.interact = false;/.test(INDEX),
+        'the sender never clears the latch, so one press would fire forever');
+    // and the sender must not re-read the keyboard, or it clears the latch before reading it
+    const sender = INDEX.slice(INDEX.indexOf('client.startSendingInput('));
+    assert.ok(!/readLocalIntent\(player\);/.test(sender.slice(0, 500)),
+        'the input sender reads the keyboard again and eats the keypress');
+});

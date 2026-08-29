@@ -16,7 +16,7 @@
 // server corrects you afterwards if it disagreed.
 
 import { world, useWorld, createWorld, seedRun, fx } from '../sim/world.js';
-import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer } from '../sim/entities.js';
+import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer, Projectile } from '../sim/entities.js';
 import { MSG, decodeSnapshot, decodeRoster } from './protocol.js';
 
 const INPUT_HZ = 30;
@@ -223,12 +223,19 @@ export class MatchClient {
             s => new Critter(s.type, s.x, s.y),      // note the order: (type, x, y)
             (c, s) => { target(c, s); if (s.facing !== undefined) c.facing = s.facing; });
 
-        // Projectiles are short-lived and cheap; rebuilding them each snapshot is simpler than
-        // tracking them, and nothing about a bullet needs to persist.
-        w.entities.projectiles = snap.projectiles.map(p => ({
-            nid: p.id, x: p.x, y: p.y, netX: p.x, netY: p.y,
-            color: p.color, radius: 5, markedForDeletion: false
-        }));
+        // Projectiles are short-lived and cheap; rebuilding them each snapshot is simpler
+        // than tracking them, and nothing about a bullet needs to persist.
+        //
+        // They must be real Projectiles, though. draw() calls p.draw(ctx) on every one, and a
+        // plain object has no draw - the first arrow anybody fired took the render loop with it.
+        w.entities.projectiles = snap.projectiles.map(p => {
+            const proj = Object.create(Projectile.prototype);
+            return Object.assign(proj, {
+                nid: p.id, x: p.x, y: p.y, netX: p.x, netY: p.y,
+                vx: p.vx, vy: p.vy, color: p.color, isExplosive: p.explosive,
+                radius: 5, life: 2, markedForDeletion: false
+            });
+        });
 
         this.playEvents(snap.events);
         if (this.opts.onSnapshot) this.opts.onSnapshot(snap);

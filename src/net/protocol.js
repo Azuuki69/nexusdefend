@@ -178,6 +178,11 @@ export function encodeSnapshot(snap, slots, prevHeader) {
     for (const p of snap.projectiles) {
         w.u16(p.id & 0xffff);
         w.i16(p.x); w.i16(p.y);
+        // Heading and colour: the renderer rotates the sprite to the direction of travel and
+        // picks an arrow or a bolt by colour. Without them a projectile cannot be drawn at all.
+        w.u8(Math.round(((Math.atan2(p.vy || 0, p.vx || 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2) * 255));
+        w.u8(p.r || 255); w.u8(p.g || 255); w.u8(p.b || 255);
+        w.u8(p.explosive ? 1 : 0);
     }
 
     // Events are rare and irregular, so they stay as text rather than earning a schema.
@@ -258,7 +263,16 @@ export function decodeSnapshot(ab, roster, prev) {
 
     const nj = r.u16();
     for (let i = 0; i < nj; i++) {
-        snap.projectiles.push({ id: r.u16(), x: r.i16(), y: r.i16(), color: '#ffffff' });
+        const id = r.u16(), x = r.i16(), y = r.i16();
+        const a = (r.u8() / 255) * Math.PI * 2;
+        const hex = v => v.toString(16).padStart(2, '0');
+        const rr = r.u8(), gg = r.u8(), bb = r.u8();
+        snap.projectiles.push({
+            id, x, y,
+            vx: Math.cos(a), vy: Math.sin(a),
+            color: '#' + hex(rr) + hex(gg) + hex(bb),
+            explosive: r.u8() === 1
+        });
     }
 
     const evLen = r.u16();

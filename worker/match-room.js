@@ -157,7 +157,15 @@ export class MatchRoom {
                 id: e.nid, type: e.type, x: Math.round(e.x), y: Math.round(e.y),
                 hp: Math.round(e.hp), maxHp: e.maxHp
             })),
-            projectiles: w.entities.projectiles.map(p => ({ id: p.nid, x: Math.round(p.x), y: Math.round(p.y), color: p.color })),
+            projectiles: w.entities.projectiles.map(p => {
+                const c = /^#([0-9a-f]{6})$/i.exec(p.color || '#ffffff');
+                const v = c ? parseInt(c[1], 16) : 0xffffff;
+                return {
+                    id: p.nid, x: Math.round(p.x), y: Math.round(p.y),
+                    vx: p.vx, vy: p.vy, explosive: !!p.isExplosive,
+                    r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff
+                };
+            }),
             items: w.entities.items.map(i => ({ id: i.nid, type: i.type, x: Math.round(i.x), y: Math.round(i.y) })),
             critters: w.entities.critters.map(c => ({ id: c.nid, type: c.type, x: Math.round(c.x), y: Math.round(c.y), facing: c.facing })),
             events
