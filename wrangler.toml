@@ -37,13 +37,13 @@ class_name = "Matchmaker"
 [[d1_databases]]
 binding = "DB"
 database_name = "nexusdefend"
-database_id = "local-dev-placeholder"
+database_id = "ffb2a778-fb6b-4979-9b9b-24b803ff98b9"
 
 # Replays: a seed and a compressed input log per match. A whole run in a few KB, because the
 # simulation is deterministic, which is what Phase 1 bought.
 [[kv_namespaces]]
 binding = "REPLAYS"
-id = "local-dev-placeholder"
+id = "388419c25f8f4dea8d2bc32d6e51856d"
 
 [[migrations]]
 tag = "v1"
