@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 
 import * as W from '../src/sim/world.js';
 import * as E from '../src/sim/entities.js';
+import { MatchClient } from '../src/net/client.js';
 
 const SRC = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'net', 'client.js'), 'utf8');
@@ -195,7 +196,11 @@ test('the client predicts, reconciles, and does not ease its own player', () => 
         'prediction does not run the simulation’s own movement');
     assert.ok(/this\.unconfirmed = this\.unconfirmed\.filter\(u => u\.seq > s\.seq\);/.test(SRC),
         'confirmed inputs are never dropped, so the queue grows forever');
-    assert.ok(/w\.players\.forEach\(p => \{ if \(p\.netId !== this\.you\) ease\(p\); \}\);/.test(SRC),
+    // The local player must be skipped by the easing, whatever shape that loop takes - easing
+    // somebody who is also being predicted makes the two fight each other.
+    const smoothAt = SRC.indexOf('smooth(dt) {');
+    const smooth = SRC.slice(smoothAt, SRC.indexOf('localPlayer() {', smoothAt));
+    assert.ok(/p\.netId === this\.you\) return;|if \(p\.netId !== this\.you\) ease\(p\)/.test(smooth),
         'the local player is eased as well as predicted, which fights itself');
     const INDEX = readFileSync(
         join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
@@ -277,10 +282,107 @@ test('one keypress becomes exactly one packet', () => {
     const INDEX = readFileSync(
         join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
     assert.ok(/if \(edge\('e'\)\) i\.ability = true;/.test(INDEX), 'the ability edge is not latched');
-    assert.ok(/i\.ability = i\.overcharge = i\.interact = false;/.test(INDEX),
-        'the sender never clears the latch, so one press would fire forever');
+    // Every edge-triggered input has to be cleared by the sender, or one press fires forever.
+    // Named individually rather than as one exact line, so adding another edge does not silently
+    // pass by matching a stale string.
+    for (const edgeName of ['ability', 'overcharge', 'interact', 'startNight']) {
+        assert.ok(new RegExp('i\\.' + edgeName + ' = ').test(INDEX)
+                  && new RegExp('i\\.' + edgeName + '\\b[^;]*= false;').test(INDEX.replace(/\s+/g, ' ')),
+            edgeName + ' is never cleared by the sender, so one press would fire forever');
+    }
     // and the sender must not re-read the keyboard, or it clears the latch before reading it
     const sender = INDEX.slice(INDEX.indexOf('client.startSendingInput('));
     assert.ok(!/readLocalIntent\(player\);/.test(sender.slice(0, 500)),
         'the input sender reads the keyboard again and eats the keypress');
+});
+
+test('a remote character walks rather than sliding', () => {
+    // The walk cycle is driven by walkDist, and walkDist is set inside update(), which no
+    // client ever runs. Sending frameX got the POSE right - "this one is walking" - and left the
+    // sprite frozen on the first frame of that pose, which is what sliding looks like.
+    //
+    // It is not sent. It is ground covered, and the client can watch a sprite move.
+    const c = new MatchClient('ws://x', {});
+    c.you = 'me';
+    c.world = W.createWorld();
+    W.useWorld(c.world);
+
+    const them = new E.Player('warrior');
+    them.netId = 'them';
+    them.x = 0; them.y = 0; them.netX = 600; them.netY = 0;
+    them.frameX = 1;
+    c.world.players.push(them);
+
+    // Keep the target ahead of them, the way a stream of snapshots does for somebody who is
+    // still walking. Arriving and stopping is a different case, checked below.
+    for (let i = 0; i < 120; i++) { them.netX += 3; c.smooth(1 / 60); }
+    assert.ok(them.walkDist > 30,
+        'the remote character covered ground without the walk cycle advancing: '
+        + them.walkDist);
+
+    // Standing still restarts the cycle planted, exactly as the simulation does.
+    them.netX = them.x; them.netY = them.y;
+    for (let i = 0; i < 30; i++) c.smooth(1 / 60);
+    assert.equal(them.walkDist, 0, 'a character who stopped keeps walking on the spot');
+});
+
+test('the walk cycle does not reset every time they swing', () => {
+    // Gating on the pose rather than on movement was wrong: somebody walking AND attacking
+    // shows the attack pose, so keying off frameX restarted the cycle at every swing.
+    const c = new MatchClient('ws://x', {});
+    c.you = 'me';
+    c.world = W.createWorld();
+    W.useWorld(c.world);
+
+    const them = new E.Player('warrior');
+    them.netId = 'them';
+    them.x = 0; them.y = 0; them.netX = 900; them.netY = 0;
+    them.frameX = 2;                     // mid-swing the whole way
+    c.world.players.push(them);
+
+    for (let i = 0; i < 120; i++) { them.netX += 3; c.smooth(1 / 60); }
+    assert.ok(them.walkDist > 30,
+        'walking while attacking reset the walk cycle: ' + them.walkDist);
+});
+
+test('the local player is never given a walk cycle by the smoothing', () => {
+    // We predict ourselves, so our own walkDist comes from stepMovement. Easing us here would
+    // fight the prediction and double-count the distance.
+    const c = new MatchClient('ws://x', {});
+    c.you = 'me';
+    c.world = W.createWorld();
+    W.useWorld(c.world);
+
+    const me = new E.Player('mage');
+    me.netId = 'me';
+    me.x = 0; me.y = 0; me.netX = 600; me.netY = 0;
+    me.walkDist = 0;
+    c.world.players.push(me);
+
+    for (let i = 0; i < 60; i++) c.smooth(1 / 60);
+    assert.equal(me.x, 0, 'the local player was eased, which fights the prediction');
+    assert.equal(me.walkDist, 0);
+});
+
+test('every edge-triggered intent reaches the wire', () => {
+    // The sender builds its payload from an explicit list, so an intent that is not named is
+    // silently dropped - which is what happened to startNight: it was latched by the input
+    // producer, cleared by the sender, and never actually sent.
+    const SENT = [];
+    const c = new MatchClient('ws://x', {});
+    c.connected = true;
+    c.ws = { send: s => SENT.push(JSON.parse(s)) };
+    c.startSendingInput(() => ({
+        moveX: 0, moveY: 0, aimX: 1, aimY: 2,
+        attack: false, dash: false, place: false,
+        ability: true, overcharge: true, interact: true, startNight: true
+    }));
+    return new Promise(resolve => setTimeout(() => {
+        c.stopSendingInput();
+        assert.ok(SENT.length > 0, 'nothing was sent at all');
+        for (const field of ['ability', 'overcharge', 'interact', 'startNight']) {
+            assert.equal(SENT[0][field], true, field + ' never leaves the browser');
+        }
+        resolve();
+    }, 120));
 });

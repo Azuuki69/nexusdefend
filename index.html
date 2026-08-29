@@ -292,6 +292,9 @@
         <p class="menu-sub">Hold the Nexus until dawn</p>
 
         <div id="menuHome" class="menu-screen">
+            <!-- How the last match ended. A finished match hands you back here, and arriving at
+                 the menu with no explanation reads like the game dropped you. -->
+            <p class="menu-hint hidden" id="menuNote"></p>
             <div class="menu-stack">
                 <button class="menu-btn" onclick="menuSingle()">Single-player</button>
                 <button class="menu-btn" onclick="menuMulti()">Multiplayer</button>
@@ -2116,9 +2119,11 @@
         // Weather is drawn where the camera is looking, so it is a view effect rather than
         // part of the match. It used to live in the tick, where `cam` had no business being.
         if (world.currentWeather === 'blizzard') spawnParticles(cam.x + Math.random()*VIEW_W, cam.y - 10, '#ffffff', 1);
+        // Before the early returns, not after. A lost run used to leave the shake running
+        // forever, because this line sat below a `return` that a finished match always took.
+        if (screenShake > 0) screenShake -= dt * 30;
         if (world.gameState === 'OVER') return;
         if (isPaused || ui.modalOpen()) { ui.hud(); return; }
-        if (screenShake > 0) screenShake -= dt * 30;
 
         const intent = player ? player.intent : makeIntent();
         if (intent.openTalents) { ui.open('talent'); intent.openTalents = false; }
@@ -2582,6 +2587,34 @@
 
     function isOnline() { return net !== null && net.ready; }
 
+    /**
+     * Start Night Early, from either kind of run.
+     *
+     * In a match the simulation is on the server, so calling into it here would change a copy
+     * that the next snapshot overwrites - which is why the button did nothing online. It has to
+     * be a request, like every other input.
+     */
+    /**
+     * The match is over. There is no Retry here - the run belonged to a room on a server and
+     * that room has finished - so this hands the player back to the menu with a word about what
+     * happened, rather than leaving them in a dead world.
+     */
+    function endOnlineMatch() {
+        const fell = net && net.world && net.world.base && net.world.base.hp <= 0;
+        screenShake = 0;
+        resetGameToMenu();
+        const note = document.getElementById('menuNote');
+        if (note) {
+            note.innerText = fell ? 'The Nexus fell.' : 'Your party fell.';
+            note.classList.remove('hidden');
+        }
+    }
+
+    function requestNightEarly() {
+        if (isOnline()) { if (player) player.intent.startNight = true; }
+        else startNightEarly();
+    }
+
     /** Join a match. `matchId` is any short name; everyone using it lands in the same world. */
     async function joinMatch(matchId, cls) {
         leaveMatch();
@@ -2625,9 +2658,10 @@
             const out = {
                 moveX: i.moveX, moveY: i.moveY, aimX: i.aimX, aimY: i.aimY,
                 attack: i.attack, dash: i.dash, place: i.place,
-                ability: i.ability, overcharge: i.overcharge, interact: i.interact
+                ability: i.ability, overcharge: i.overcharge, interact: i.interact,
+                startNight: i.startNight
             };
-            i.ability = i.overcharge = i.interact = false;
+            i.ability = i.overcharge = i.interact = i.startNight = false;
             return out;
         });
         if (!loopRunning) { loopRunning = true; requestAnimationFrame(gameLoop); }
@@ -2649,13 +2683,21 @@
 
     function menuHome() { showMenuScreen('menuHome'); }
 
+    /** Clear the last match's epitaph, so it does not sit over the next run's menu. */
+    function clearMenuNote() {
+        const note = document.getElementById('menuNote');
+        if (note) { note.innerText = ''; note.classList.add('hidden'); }
+    }
+
     function menuSingle() {
+        clearMenuNote();
         menuMode = 'local';
         document.getElementById('menuClassHint').innerText = 'Choose your class';
         showMenuScreen('menuClass');
     }
 
     function menuMulti() {
+        clearMenuNote();
         menuMode = 'online';
         document.getElementById('menuClassHint').innerText =
             'Choose your class, then pick a match to join';
@@ -2977,6 +3019,10 @@
             // Leaving it out was why R, B and T did nothing in a match: the keys were read and
             // sent and then nobody acted on them. Nothing in here touches the match; a shop
             // window belongs to one screen rather than to the world.
+            // Online, game over arrives as a fact in a snapshot rather than as a call to
+            // ui.gameOver() - the server's presentation sink goes nowhere. Nothing was watching
+            // for it, so a finished match left you holding a screen with nothing to press.
+            if (net.world && net.world.gameState === 'OVER') { endOnlineMatch(); return; }
             handleLocalIntents(elapsed);
             net.smooth(elapsed);
             ui.hud();
@@ -3793,7 +3839,8 @@
         menuModeScreen, menuDirectScreen, menuQuickMatch, menuLeaveQueue,
         menuCreateParty, menuJoinPartyScreen, menuJoinParty, menuToggleReady,
         menuStartParty, menuLeaveParty,
-        startGame, buyMerchant, buyForge, buyCamp, closeModal, setVolume, toggleMute, startNightEarly, selectTalentPath, selectBuildingTab, retryRun, restartRun, resetGameToMenu, quitToMenu, openBuildings, closeSettings, buyTalent, buyParagon, armBuilding
+        startGame, buyMerchant, buyForge, buyCamp, closeModal, setVolume, toggleMute,
+        startNightEarly: requestNightEarly, selectTalentPath, selectBuildingTab, retryRun, restartRun, resetGameToMenu, quitToMenu, openBuildings, closeSettings, buyTalent, buyParagon, armBuilding
     });
 </script>
 </body>

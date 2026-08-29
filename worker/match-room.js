@@ -20,7 +20,8 @@
 
 import { createWorld, useWorld, seedRun, setFxMode, drainFx, livingPlayers } from '../src/sim/world.js';
 import { Base, Player, Merchant, Wanderer, merchantVisits } from '../src/sim/entities.js';
-import { stepWorld, generateMap, stockWildlife } from '../src/sim/tick.js';
+import { stepWorld, generateMap, stockWildlife, startNightEarly } from '../src/sim/tick.js';
+import { ATTACK_ANIM_TIME } from '../src/sim/constants.js';
 import { encodeSnapshot, encodeRoster } from '../src/net/protocol.js';
 
 const TICK_HZ = 20;
@@ -215,7 +216,12 @@ export class MatchRoom {
                 level: p.level, angle: r1(p.angle),
                 seq: p.intent.seq,
                 // Idle, walking or mid-swing. Decided in update(), which runs only here.
-                frameX: p.frameX | 0
+                frameX: p.frameX | 0,
+                // And how far through the swing, so the other screens play the whole arc
+                // rather than freezing on the wind-up.
+                swing: p.attackCd > 0
+                    ? Math.max(0, Math.min(1, (p.attackCd - p.lastAttack) / Math.min(ATTACK_ANIM_TIME, p.attackCd)))
+                    : 1
             })),
             enemies: w.entities.enemies.map(e => ({
                 id: e.nid, type: e.type, x: Math.round(e.x), y: Math.round(e.y),
@@ -466,6 +472,11 @@ export class MatchRoom {
      * the aim point is clamped to the world, and nothing here can set a position.
      */
     applyInput(player, msg) {
+        // Point the simulation at THIS match first. Durable Objects share a module scope, so the
+        // module-level `world` binding belongs to whichever room last entered - and a message
+        // handler runs between ticks, not inside one. Anything here that calls into src/sim
+        // would otherwise reach into another match's world entirely.
+        this.enter();
         const i = player.intent;
         const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
@@ -486,6 +497,9 @@ export class MatchRoom {
         if (msg.ability) i.ability = true;
         if (msg.overcharge) i.overcharge = true;
         if (msg.interact) i.interact = true;
+        // Anybody may call the night in. It is a shared decision in a shared base, and it is
+        // the same button the single-player run has.
+        if (msg.startNight && this.world.gameState === 'DAY') startNightEarly();
 
         i.seq = Math.max(i.seq, num(msg.seq, i.seq));
     }

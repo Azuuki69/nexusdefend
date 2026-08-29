@@ -197,6 +197,7 @@ export function makeIntent() {
         ability: false,              // edge
         overcharge: false,           // edge
         interact: false,             // edge
+        startNight: false,          // edge; the Start Night Early button
         openTalents: false,          // edge
         openBuildings: false,        // edge
         seq: 0

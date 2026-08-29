@@ -156,6 +156,13 @@ export function encodeSnapshot(snap, slots, prevHeader) {
         // The pose. Chosen inside update(), which only runs here - without this byte every
         // character on every other screen stands still while gliding around the map.
         w.u8(p.frameX & 3);
+        // How far through a swing they are, 0..1. The pose alone was not enough: it says WHICH
+        // animation to play and nothing about where in it to be, so a remote character picked
+        // the right sequence and then held its first frame.
+        //
+        // The walk cycle needs no equivalent. It is driven by ground covered, and the client can
+        // watch a sprite move for itself.
+        w.u8(Math.round(Math.max(0, Math.min(1, p.swing)) * 255));
     }
 
     w.u16(snap.enemies.length);
@@ -265,7 +272,8 @@ export function decodeSnapshot(ab, roster, prev) {
             level: r.u8(),
             angle: (r.u8() / 255) * Math.PI * 2,
             seq: r.u16(),
-            frameX: r.u8() & 3
+            frameX: r.u8() & 3,
+            swing: r.u8() / 255
         });
     }
 

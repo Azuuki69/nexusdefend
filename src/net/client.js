@@ -19,6 +19,7 @@ import { world, useWorld, createWorld, seedRun, fx } from '../sim/world.js';
 import { Base, Enemy, Item, Critter, Player, Obstacle, Resource, Merchant, Wanderer, Projectile,
          Effect } from '../sim/entities.js';
 import { MSG, decodeSnapshot, decodeRoster } from './protocol.js';
+import { ATTACK_ANIM_TIME } from '../sim/constants.js';
 
 const INPUT_HZ = 30;
 
@@ -207,6 +208,11 @@ export class MatchClient {
                 // The pose is chosen inside update(), which no client ever calls. Without this
                 // every character stands frozen on the idle frame while sliding around.
                 p.frameX = s.frameX;
+                // attackFrame() reads these two and works out which frame of the swing to draw.
+                // Reconstructing them from one byte of progress makes that function return
+                // exactly the right frame without the renderer needing to know about the network.
+                p.attackCd = ATTACK_ANIM_TIME;
+                p.lastAttack = ATTACK_ANIM_TIME * (1 - s.swing);
             });
 
         reconcile(w.entities.enemies, snap.enemies,
@@ -339,7 +345,18 @@ export class MatchClient {
         };
         const w = this.world;
         // Everyone but us: we are predicted, and easing would fight the prediction.
-        w.players.forEach(p => { if (p.netId !== this.you) ease(p); });
+        w.players.forEach(p => {
+            if (p.netId === this.you) return;
+            const px = p.x, py = p.y;
+            ease(p);
+            // The walk cycle is ground covered, and this is a sprite we can watch move - so it
+            // costs nothing to send. Gated on movement rather than on the pose, exactly as the
+            // simulation gates it: someone walking AND swinging shows the attack pose, and
+            // keying off that would reset the walk cycle every time they took a swing.
+            const moved = Math.hypot(p.x - px, p.y - py);
+            if (moved > 0.05) p.walkDist = (p.walkDist || 0) + moved;
+            else p.walkDist = 0;      // stood still, so the cycle restarts planted
+        });
         w.entities.enemies.forEach(ease);
         w.entities.critters.forEach(ease);
         w.entities.items.forEach(ease);
@@ -363,6 +380,10 @@ export class MatchClient {
                 aimX: Math.round(i.aimX), aimY: Math.round(i.aimY),
                 attack: i.attack, dash: i.dash, place: i.place,
                 ability: i.ability, overcharge: i.overcharge, interact: i.interact,
+                // Every edge the caller latched has to be listed here. This is an allowlist, so
+                // a new intent that is not named is silently dropped - which is exactly what
+                // happened to startNight the first time.
+                startNight: i.startNight,
                 seq: ++this.seq
             }));
         }, 1000 / INPUT_HZ);
