@@ -1,0 +1,23 @@
+# Madrid, deliberately. The players this exists for are in Spain, and the Cloudflare edge it
+# forwards to is one short hop away in the same city.
+app = "nexusdefend-relay"
+primary_region = "mad"
+
+[build]
+
+[env]
+  UPSTREAM = "nexusdefend.azuuki3.workers.dev"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # A match is a socket held open for a whole run. Stopping the machine under it would drop
+  # everyone mid-wave, so this one stays awake.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

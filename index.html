@@ -556,9 +556,25 @@
     </div>
 </div>
 
-
-
 <script type="module">
+    // Which server multiplayer talks to.
+    //
+    // Measured, not guessed: this page opens from Poland and Turkey and fails from Spain and
+    // the Canary Islands when served from Cloudflare, because Spanish ISPs block Cloudflare IP
+    // ranges under court orders aimed at football piracy. The same page from GitHub Pages
+    // (Fastly, different addresses) opens from all four.
+    //
+    // So the GitHub Pages copy sends its match traffic to a relay that is not a Cloudflare
+    // address. On the Cloudflare-hosted copies the server IS this origin, and pointing
+    // somewhere else would only add a hop for nothing.
+    //
+    // In the module rather than a classic script tag of its own: the game is one module
+    // now, and there is a test that keeps it that way - one that reads the markup, so even
+    // a script tag written inside a comment trips it. Ask me how I know.
+    if (location.hostname.endsWith("github.io")) {
+        window.NEXUS_SERVER = "nexusdefend-relay.fly.dev";
+    }
+
     // The game is a module so it can import from src/sim/. Two consequences worth knowing:
     //
     //   - Module scope is not global scope, so the inline onclick handlers in the markup
@@ -1102,8 +1118,6 @@
     const REPAIR_FRACTION = 0.25, REPAIR_W = 40, REPAIR_S = 40, REPAIR_M = 20;
     const FORGE_CROP = { sx: 112, sy: 38, sw: 475, sh: 296 };
 
-
-
     // The chest sits in the middle of its 677x369 sheet; crop to the art itself.
     const CHEST_SX = 0.2777, CHEST_SY = 0.1707, CHEST_SW = 0.4431, CHEST_SH = 0.6450;
     // Walk strip on the bottom row of merchant.png; 6 evenly spaced 68x92 cells.
@@ -1288,15 +1302,9 @@
     // "this client": the horde asks nearestPlayer() who to walk towards, and anything with
     // an area of effect asks playersInRange() who is standing in it.
 
-
-
-
-
     let screenShake = 0; 
     let isPaused = false;
     
-
-
 
     const keys = {}; let mouse = { x: 0, y: 0, sx: 0, sy: 0, clicked: false, rightClicked: false };
 
@@ -1856,10 +1864,6 @@
         document.getElementById('trinketList').innerHTML = t;
     }
 
-
-
-
-
     const QUEST_NOUN = { boar:'Boar', rabbit:'Hares', deer:'Deer', goblin:'Goblins', wolf:'Wolves',
                          orcarcher:'Orc Archers', goblinarcher:'Wolf Riders', harpy:'Harpies',
                          golem:'Golems', troll:'Troll', cyclop:'Cyclops', orcrider:'Warg Riders' };
@@ -1889,20 +1893,6 @@
         }
         ctx.restore();
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     let lastResVals = {};
     function flashResource(id, val) {
@@ -1974,8 +1964,6 @@
         startGame(cls);
     }
 
-
-
     
 
     /**
@@ -2044,8 +2032,6 @@
         if (!loopRunning) { loopRunning = true; requestAnimationFrame(gameLoop); }
     }
 
-
-
     // --- UI sink ------------------------------------------------------------------
     // The other half of the headless problem. update() opens windows, writes the phase
     // banner, and asks whether a modal is open; a Durable Object has no document to ask.
@@ -2078,8 +2064,6 @@
     // server - a Durable Object simply never calls these.
     installFx(fxLive);
     installUi(uiLive);
-
-
 
     /** One name per window, so the simulation never says `getElementById`. */
     function openWindowNow(name) {

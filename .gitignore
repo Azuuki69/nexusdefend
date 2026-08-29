@@ -28,3 +28,6 @@ npm-debug.log
 # _worker.js. All of it is generated from files already tracked here, so committing it would
 # duplicate the repo inside itself. The config beside it IS tracked.
 pages-dist/public/
+
+# The relay has its own dependency (ws); its install is not the repo's to carry.
+relay/node_modules/
